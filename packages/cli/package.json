@@ -1,0 +1,40 @@
+{
+  "name": "@astroid/cli",
+  "version": "0.1.0",
+  "description": "The `astroid` command-line interface: login, init, agent/wallet/policy management, deploy and doctor.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "astroid": "./dist/bin.js"
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": ["dist"],
+  "publishConfig": { "access": "public" },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@astroid/client": "workspace:*",
+    "@astroid/core": "workspace:*",
+    "@astroid/types": "workspace:*",
+    "@astroid/errors": "workspace:*",
+    "@astroid/utils": "workspace:*",
+    "commander": "12.1.0"
+  },
+  "devDependencies": {
+    "tsup": "8.3.5",
+    "typescript": "5.7.3",
+    "vitest": "2.1.8"
+  }
+}

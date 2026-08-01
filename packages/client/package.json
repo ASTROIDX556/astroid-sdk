@@ -1,0 +1,45 @@
+{
+  "name": "@astroid/client",
+  "version": "0.1.0",
+  "description": "The main Astroid SDK entry point: `new Astroid({ apiKey })` with resource namespaces, an event system, a plugin system and AI-native helpers.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": ["dist"],
+  "sideEffects": false,
+  "publishConfig": { "access": "public" },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@astroid/core": "workspace:*",
+    "@astroid/types": "workspace:*",
+    "@astroid/errors": "workspace:*",
+    "@astroid/utils": "workspace:*",
+    "@astroid/auth": "workspace:*",
+    "@astroid/wallet": "workspace:*",
+    "@astroid/agent": "workspace:*",
+    "@astroid/policy": "workspace:*",
+    "@astroid/budget": "workspace:*",
+    "@astroid/transaction": "workspace:*",
+    "@astroid/analytics": "workspace:*",
+    "@astroid/notification": "workspace:*",
+    "@astroid/webhook": "workspace:*"
+  },
+  "devDependencies": {
+    "tsup": "8.3.5",
+    "typescript": "5.7.3",
+    "vitest": "2.1.8"
+  }
+}

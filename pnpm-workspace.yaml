@@ -1,0 +1,13 @@
+packages:
+  - "packages/*"
+
+# esbuild ships prebuilt platform binaries as optional dependencies, so its
+# postinstall build script is not required for it to function. We still allow it
+# explicitly so pnpm does not treat the ignored script as a hard error.
+onlyBuiltDependencies:
+  - esbuild
+
+# Examples are intentionally excluded from the workspace so `pnpm install` at the
+# root stays lightweight and the build/typecheck/test gates cover only shippable
+# packages. Each example is a standalone project that consumes the published
+# `@astroid/*` packages (see examples/README.md).

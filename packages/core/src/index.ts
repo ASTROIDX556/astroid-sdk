@@ -1,0 +1,48 @@
+/**
+ * `@astroid/core` — the transport foundation of the Astroid SDK.
+ *
+ * Everything higher up (resources, the client, the CLI) is built on the
+ * `HttpClient`, the middleware pipeline, the pagination iterator and the offline
+ * queue exported here. This package holds no domain knowledge.
+ *
+ * @packageDocumentation
+ */
+
+export { HttpClient, SDK_VERSION } from './http-client.js';
+export {
+  resolveConfig,
+  DEFAULT_BASE_URL,
+  type AstroidClientConfig,
+  type ResolvedConfig,
+  type AuthConfig,
+  type RetryConfig,
+} from './config.js';
+export {
+  MiddlewareStack,
+  type HttpMethod,
+  type QueryValue,
+  type RequestOptions,
+  type PreparedRequest,
+  type RawResponse,
+  type AstroidResponse,
+  type ErrorPayload,
+  type Middleware,
+} from './http-types.js';
+export { Resource, type ListRequestOptions } from './resource.js';
+export { buildUrl, buildQueryString } from './url.js';
+export { backoffDelay, isRetryableStatus, sleep } from './backoff.js';
+export { paginate, collect, type PageFetcher } from './pagination.js';
+export {
+  OfflineQueue,
+  MemoryQueueStorage,
+  type QueueStorage,
+  type QueuedRequest,
+  type QueueReplayer,
+} from './offline-queue.js';
+export {
+  loggingMiddleware,
+  headerMiddleware,
+  redactHeaders,
+  type LogEntry,
+  type LogSink,
+} from './middleware.js';
