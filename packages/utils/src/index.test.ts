@@ -21,7 +21,7 @@ import {
   relativeTime,
 } from './index.js';
 
-const VALID_ADDRESS = 'GABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUV';
+const VALID_ADDRESS = 'GABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUVW';
 
 describe('formatting', () => {
   it('formats amounts and assets', () => {

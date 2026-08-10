@@ -1,6 +1,15 @@
 packages:
   - "packages/*"
 
+# Skip pnpm's implicit pre-run dependency-status check. The recursive script
+# gates (build/typecheck/test) must run vitest/tsup directly and must not fail
+# because pnpm wants to re-verify the store (which flags esbuild's optional,
+# unneeded build script as "ignored" and exits non-zero on Windows).
+verifyDepsBeforeRun: false
+
+allowBuilds:
+  esbuild: set this to true or false
+
 # esbuild ships prebuilt platform binaries as optional dependencies, so its
 # postinstall build script is not required for it to function. We still allow it
 # explicitly so pnpm does not treat the ignored script as a hard error.
