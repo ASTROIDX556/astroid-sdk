@@ -1,74 +1,108 @@
 # astroid-sdk
 
-> The official TypeScript developer toolkit for **Astroid** — the Financial Operating System for autonomous AI agents on Stellar.
+[![CI](https://github.com/ASTROIDX556/astroid-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/ASTROIDX556/astroid-sdk/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Stellar](https://img.shields.io/badge/Built%20on-Stellar-7C3AED)](https://stellar.org)
+[![Drips Wave](https://img.shields.io/badge/Drips-Stellar%20Wave-blue)](https://www.drips.network/wave/stellar)
 
-A Stripe-like developer experience for giving AI agents safe, governed financial autonomy. Create agents, provision wallets, define spending policies, simulate them, execute governed transactions, and verify webhooks — all fully typed, tree-shakeable, and runtime-agnostic (Node, edge, browser, React).
+> TypeScript SDK — the **developer surface** of Astroid, the Financial Operating System for autonomous AI agents on Stellar. Built for the [Drips Stellar Wave Program](https://www.drips.network/wave/stellar).
 
-```bash
-npm install @astroid/client
-```
-
-```ts
-import { Astroid } from '@astroid/client';
-
-const astroid = new Astroid({ apiKey: process.env.ASTROID_API_KEY! });
-
-const agent = await astroid.agents.create({ name: 'research-bot' });
-const wallet = await astroid.wallets.create({ agentId: agent.id });
-
-// Governed spend — evaluated against policy, budget, and risk before it settles
-const tx = await astroid.transactions.create({
-  walletId: wallet.id,
-  to: 'GABC…',
-  amount: '25.0',
-  asset: 'USDC',
-  reason: 'Dataset access',
-});
-```
+`astroid-sdk` is a TypeScript monorepo that provides typed clients, React hooks, and CLI tooling so developers can integrate Astroid into their own applications and agent runtimes.
 
 ## Packages
 
-This is a pnpm workspace. Each resource ships as its own package so consumers pull only what they use; everything depends on `@astroid/core`.
-
 | Package | Description |
-| --- | --- |
-| `@astroid/client` | Main entry point — `new Astroid({ apiKey })`, resource namespaces, events, plugins, AI-native helpers. |
-| `@astroid/core` | HTTP client, retries, middleware, pagination iterator, offline queue. |
-| `@astroid/types` | Shared types, DTOs, enums, response envelopes — mirrored 1:1 with the API. |
-| `@astroid/errors` | Typed error classes and API error-code mapping. |
-| `@astroid/utils` | Date, pagination, formatting, validation, and asset helpers. |
-| `@astroid/agent` | Agents: create, update, pause, resume, delete, activity. |
-| `@astroid/wallet` | Wallets: create, import, freeze, archive, transfer, balance, history. |
-| `@astroid/policy` | Policies: create, update, simulate, enable, disable. |
-| `@astroid/budget` | Budgets: create, update, consume, history, analytics. |
-| `@astroid/transaction` | Transactions & proposals: create, execute, cancel, status, history, approvals. |
-| `@astroid/analytics` | Analytics: overview, cashflow, risk, agents, budgets. |
-| `@astroid/auth` | Auth: login, refresh, sessions, passkeys, API keys. |
-| `@astroid/notification` | Notifications: list, read, delete, preferences. |
-| `@astroid/webhook` | Webhooks with automatic HMAC signature verification. |
-| `@astroid/react` | React hooks + provider built on TanStack Query; Suspense- and RSC-ready. |
-| `@astroid/cli` | The `astroid` command line: login, init, agent/wallet/policy management, deploy, doctor. |
+|---|---|
+| `@astroid/client` | Typed HTTP client for the Astroid REST API |
+| `@astroid/types` | Shared entity and DTO type definitions |
+| `@astroid/react` | React hooks (TanStack Query) + `<AstroidProvider>` |
+| `@astroid/agent` | Agent resource methods: create, list, update |
+| `@astroid/wallet` | Wallet resource methods |
+| `@astroid/transaction` | Transaction building and submission helpers |
+| `@astroid/policy` | Policy CRUD and simulation |
+| `@astroid/budget` | Budget resource methods |
+| `@astroid/analytics` | Analytics and metrics |
+| `@astroid/auth` | Auth resource methods |
+| `@astroid/notification` | Notification subscription |
+| `@astroid/webhook` | Webhook management |
+| `@astroid/errors` | Typed error classes |
+| `@astroid/utils` | Pagination helpers, formatters |
+| `@astroid/core` | Core client internals |
+| `@astroid/cli` | CLI tooling for Astroid |
 
-## Develop
+## Quick Start
 
-```bash
-pnpm install
-pnpm build        # build every package (tsup → ESM + CJS + d.ts)
-pnpm typecheck    # tsc --noEmit across the workspace
-pnpm test         # vitest across the workspace
-pnpm lint         # eslint
+```typescript
+import { Astroid } from '@astroid/client';
+
+const client = new Astroid({ apiKey: 'your-api-key' });
+
+// List all AI agents
+const agents = await client.agents.list();
+
+// Create a wallet
+const wallet = await client.wallets.create({ agentId: 'agent_123' });
+
+// Submit a payment
+const tx = await client.transactions.submit({
+  walletId: wallet.id,
+  destination: 'GABC...',
+  amount: '10.00',
+  asset: 'XLM',
+});
 ```
 
-## Examples
+### React
 
-Runnable integrations live in [`examples/`](examples) — CrewAI, LangGraph, Discord bot, Express API, MCP client, Next.js and React dashboards. Each is a standalone project that consumes the published `@astroid/*` packages.
+```tsx
+import { AstroidProvider, useAgents } from '@astroid/react';
 
-## Design principles
+function App() {
+  return (
+    <AstroidProvider config={{ apiKey: process.env.NEXT_PUBLIC_ASTROID_KEY! }}>
+      <AgentList />
+    </AstroidProvider>
+  );
+}
 
-- **Developers first.** Every Astroid capability is reachable from the SDK; you never hand-write a type or an HTTP call.
-- **Composable.** Import a single resource package or the full client — the tree-shakeable build keeps bundles small.
-- **Safe by default.** Governed transactions carry a `reason`, are evaluated before settlement, and surface typed errors on denial.
+function AgentList() {
+  const { data: agents } = useAgents();
+  return <ul>{agents?.map(a => <li key={a.id}>{a.name}</li>)}</ul>;
+}
+```
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Language | TypeScript 5 (strict) |
+| Package manager | npm workspaces |
+| Build | tsc |
+| Test | Vitest |
+| React | TanStack Query v5 |
+
+## Related Repositories
+
+| Repo | Description |
+|---|---|
+| [astroid-api](https://github.com/ASTROIDX556/astroid-api) | NestJS backend |
+| [astroid-web](https://github.com/ASTROIDX556/astroid-web) | Next.js dashboard |
+| [astroid-contract](https://github.com/ASTROIDX556/astroid-contract) | Soroban smart contracts |
+
+## Maintainers
+
+| Name | GitHub | Contact |
+|---|---|---|
+| Astroid Team | [@ASTROIDX556](https://github.com/ASTROIDX556) | Open an issue or discussion |
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). PRs require passing `build`, `typecheck`, and `lint`.
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for the responsible disclosure policy.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Part of the [Astroid](https://github.com/ASTROIDX556) open-source platform.
+MIT — see [LICENSE](LICENSE).
