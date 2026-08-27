@@ -12,13 +12,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - run: corepack enable
+      - run: corepack prepare pnpm@11.1.2 --activate
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
-      - run: corepack enable
-      - run: corepack prepare pnpm@11.1.2 --activate
       - run: pnpm install --frozen-lockfile
       - run: pnpm run build
 
@@ -28,13 +28,13 @@ jobs:
     needs: build
     steps:
       - uses: actions/checkout@v4
+      - run: corepack enable
+      - run: corepack prepare pnpm@11.1.2 --activate
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
-      - run: corepack enable
-      - run: corepack prepare pnpm@11.1.2 --activate
       - run: pnpm install --frozen-lockfile
       - run: pnpm run typecheck
 
@@ -44,12 +44,12 @@ jobs:
     needs: build
     steps:
       - uses: actions/checkout@v4
+      - run: corepack enable
+      - run: corepack prepare pnpm@11.1.2 --activate
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
-      - run: corepack enable
-      - run: corepack prepare pnpm@11.1.2 --activate
       - run: pnpm install --frozen-lockfile
       - run: pnpm run lint
