@@ -24,6 +24,8 @@ import type {
   TransactionListParams,
 } from '@astroid/types';
 
+export * from './validation.js';
+
 /** Filters accepted by {@link TransactionResource.listProposals}. */
 export interface ProposalListParams extends PaginationParams {
   status?: ProposalStatus;
