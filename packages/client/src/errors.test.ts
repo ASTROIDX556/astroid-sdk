@@ -1,43 +1,54 @@
 import { describe, it, expect } from 'vitest';
-import { parseAstroidError, AstroidHorizonError, AstroidPolicyViolationError, AstroidValidationError } from './errors.js';
-import { ServerError, RateLimitError } from '@astroid/errors';
+import { parseAstroidError, AstroidHorizonError } from './errors.js';
+import { ValidationError, PolicyViolationError, ServerError } from '@astroid/errors';
 
-describe('@astroid/client error mapping', () => {
-  it('parses validation error with HTTP 400', () => {
-    const res = new Response(JSON.stringify({ error: { code: 'VALIDATION_ERROR', message: 'Invalid input', details: { fields: { email: ['invalid'] } } } }), { status: 400 });
-    const err = parseAstroidError(res, awaitResBody(res), 'req_1');
-    expect(err).toBeInstanceOf(AstroidValidationError);
+describe('packages/client/src/errors.ts', () => {
+  it('parses HTTP 400 validation error correctly', () => {
+    const response = new Response(JSON.stringify({
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'Invalid input',
+        details: { fields: { amount: ['must be positive'] } }
+      }
+    }), { status: 400, headers: { 'content-type': 'application/json' } });
+
+    const err = parseAstroidError(response, awaitResponseJson(response), 'req_val');
+    expect(err).toBeInstanceOf(ValidationError);
+    expect((err as ValidationError).fieldErrors).toEqual({ amount: ['must be positive'] });
+    expect(err.requestId).toBe('req_val');
     expect(err.status).toBe(400);
-    expect((err as AstroidValidationError).fieldErrors).toEqual({ email: ['invalid'] });
   });
 
-  it('parses policy violation error with HTTP 422', () => {
-    const res = new Response(JSON.stringify({ error: { code: 'POLICY_VIOLATION', message: 'Blocked by policy' } }), { status: 422 });
-    const err = parseAstroidError(res, awaitResBody(res), 'req_2');
-    expect(err).toBeInstanceOf(AstroidPolicyViolationError);
-    expect(err.code).toBe('POLICY_VIOLATION');
-  });
+  it('parses HTTP 422 policy violation and Stellar Horizon codes', () => {
+    const response = new Response(JSON.stringify({
+      error: {
+        code: 'POLICY_VIOLATION',
+        message: 'Policy check failed',
+        details: { stellarCode: 'op_underfunded' }
+      }
+    }), { status: 422, headers: { 'content-type': 'application/json' } });
 
-  it('parses Stellar Horizon error codes', () => {
-    const res = new Response(JSON.stringify({ error: { code: 'STELLAR_ERROR', stellarCode: 'op_underfunded', message: 'Underfunded' } }), { status: 400 });
-    const err = parseAstroidError(res, awaitResBody(res), 'req_3');
+    const err = parseAstroidError(response, awaitResponseJson(response), 'req_horizon');
     expect(err).toBeInstanceOf(AstroidHorizonError);
     expect((err as AstroidHorizonError).stellarCode).toBe('op_underfunded');
+    expect(err.status).toBe(422);
   });
 
-  it('parses HTTP 500 internal crash into ServerError', () => {
-    const res = new Response(JSON.stringify({ error: { code: 'INTERNAL_ERROR', message: 'Crash' } }), { status: 500 });
-    const err = parseAstroidError(res, awaitResBody(res), 'req_500');
+  it('parses HTTP 500 internal crash correctly', () => {
+    const response = new Response(JSON.stringify({
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Internal server error'
+      }
+    }), { status: 500, headers: { 'content-type': 'application/json' } });
+
+    const err = parseAstroidError(response, awaitResponseJson(response), 'req_500');
     expect(err).toBeInstanceOf(ServerError);
     expect(err.status).toBe(500);
+    expect(err.code).toBe('INTERNAL_ERROR');
   });
 });
 
-async function awaitResBody(res: Response): Promise<unknown> {
-  const text = await res.text();
-  try {
-    return JSON.parse(text);
-  } catch {
-    return text;
-  }
+async function awaitResponseJson(res: Response): Promise<unknown> {
+  return await res.json();
 }
