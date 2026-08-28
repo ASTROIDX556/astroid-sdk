@@ -32,7 +32,7 @@ import {
 } from '@astroid/core';
 import { AgentResource } from '@astroid/agent';
 import { AnalyticsResource } from '@astroid/analytics';
-import { AuthResource } from '@astroid/auth';
+import { AuthResource, SessionManager, createSessionMiddleware } from '@astroid/auth';
 import { BudgetResource } from '@astroid/budget';
 import { NotificationResource } from '@astroid/notification';
 import { PolicyResource } from '@astroid/policy';
@@ -40,6 +40,7 @@ import { TransactionResource } from '@astroid/transaction';
 import { WalletResource } from '@astroid/wallet';
 import { WebhookResource } from '@astroid/webhook';
 import type {
+  AuthTokens,
   EventHandlerMap,
   PaymentIntent,
   PaymentIntentResult,
@@ -148,6 +149,7 @@ export class Astroid {
   /** The shared low-level HTTP client (escape hatch for un-wrapped calls). */
   readonly http: HttpClient;
 
+  readonly sessionManager: SessionManager;
   readonly auth: AuthResource;
   readonly wallets: WalletResource;
   readonly agents: AgentResource;
@@ -165,7 +167,13 @@ export class Astroid {
   constructor(config: AstroidClientConfig | HttpClient) {
     this.http = config instanceof HttpClient ? config : new HttpClient(config);
 
-    this.auth = new AuthResource(this.http);
+    const authConfig = this.http.config.auth;
+    this.sessionManager = new SessionManager({
+      accessToken: authConfig.accessToken,
+      refreshToken: authConfig.refreshToken,
+    });
+
+    this.auth = new AuthResource(this.http, this.sessionManager);
     this.wallets = new WalletResource(this.http);
     this.agents = new AgentResource(this.http);
     this.policies = new PolicyResource(this.http);
@@ -175,6 +183,14 @@ export class Astroid {
     this.analytics = new AnalyticsResource(this.http);
     this.webhooks = new WebhookResource(this.http);
     this.ai = new AiResource(this.http);
+
+    this.use(
+      createSessionMiddleware(this.sessionManager, async (refreshToken: string) => {
+        const res = await this.http.post<AuthTokens>('/auth/refresh', { refreshToken });
+        this.setAccessToken(res.data.accessToken);
+        return res.data;
+      })
+    );
   }
 
   /** Register a request/response middleware. Returns `this` for chaining. */
@@ -250,7 +266,16 @@ export default Astroid;
 
 // Re-export the resource classes and their param types so consumers can name
 // them without reaching into individual packages.
-export { AuthResource } from '@astroid/auth';
+export {
+  AuthResource,
+  SessionManager,
+  createSessionMiddleware,
+  parseJwt,
+  isTokenExpired,
+  getTokenExpiration,
+  type TokenStorage,
+  type SessionManagerConfig,
+} from '@astroid/auth';
 export { WalletResource, type WalletListParams } from '@astroid/wallet';
 export { AgentResource, type AgentListParams } from '@astroid/agent';
 export { PolicyResource, type PolicyListParams } from '@astroid/policy';
