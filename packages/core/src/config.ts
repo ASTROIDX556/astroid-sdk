@@ -1,102 +1,83 @@
 /**
- * Client configuration and its normalisation.
- *
- * `resolveConfig` turns the loose, user-facing `AstroidClientConfig` into a
- * fully-populated `ResolvedConfig` with every default applied, so the rest of
- * the SDK never has to reason about `undefined`.
+ * Configuration parsing and normalization for the Astroid HTTP client.
  */
 
-/** How the SDK authenticates each request. */
-export interface AuthConfig {
-  /** A secret API key (`sk_live_…` / `sk_test_…`). Sent as a Bearer token. */
-  apiKey?: string;
-  /** A short-lived JWT access token (alternative to an API key). */
-  accessToken?: string;
-}
+import type { HttpMethod } from './http-types.js';
 
-/** Retry/backoff behaviour for transient failures. */
 export interface RetryConfig {
-  /** Maximum number of retries after the first attempt. Default 2. */
   maxRetries: number;
-  /** Base backoff in ms; grows exponentially with jitter. Default 250. */
-  baseDelayMs: number;
-  /** Upper bound for a single backoff delay in ms. Default 8000. */
+  initialDelayMs: number;
   maxDelayMs: number;
+  backoffFactor: number;
 }
 
-/** User-facing configuration passed to `new Astroid({ ... })`. */
-export interface AstroidClientConfig extends AuthConfig {
-  /** API base URL. Defaults to the public API. */
-  baseUrl?: string;
-  /** API version path segment. Default `v1`. */
+export interface AuthConfig {
+  apiKey?: string;
+  accessToken?: string | (() => Promise<string>);
+}
+
+export interface AstroidClientConfig {
+  baseUrl: string;
   apiVersion?: string;
-  /** Per-request timeout in milliseconds. Default 30_000. */
+  apiKey?: string;
+  accessToken?: string | (() => Promise<string>);
   timeoutMs?: number;
-  /** Retry configuration, or `false` to disable retries entirely. */
-  retry?: Partial<RetryConfig> | false;
-  /** Extra headers merged into every request. */
   headers?: Record<string, string>;
-  /** Injected fetch implementation (for tests / non-standard runtimes). */
-  fetch?: typeof fetch;
-  /** Default Stellar network fallback when a request doesn't specify one. */
-  network?: string;
-  /** Opt into the offline queue for mutating requests. Default false. */
-  enableOfflineQueue?: boolean;
+  retry?: Partial<RetryConfig> | boolean;
+  fetch?: typeof globalThis.fetch;
 }
 
-/** Fully-resolved configuration with all defaults applied. */
 export interface ResolvedConfig {
   baseUrl: string;
   apiVersion: string;
-  timeoutMs: number;
-  retry: RetryConfig | null;
-  headers: Record<string, string>;
   auth: AuthConfig;
-  fetch: typeof fetch;
-  network: string | undefined;
-  enableOfflineQueue: boolean;
+  timeoutMs: number;
+  headers: Record<string, string>;
+  retry: RetryConfig | undefined;
+  fetch: typeof globalThis.fetch;
 }
 
-/** The default public API base URL. */
-export const DEFAULT_BASE_URL = 'https://api.astroid.finance';
+const DEFAULT_API_VERSION = 'v1';
+const DEFAULT_TIMEOUT_MS = 30_000;
 
 const DEFAULT_RETRY: RetryConfig = {
-  maxRetries: 2,
-  baseDelayMs: 250,
-  maxDelayMs: 8000,
+  maxRetries: 3,
+  initialDelayMs: 500,
+  maxDelayMs: 10_000,
+  backoffFactor: 2,
 };
 
-/** Strip a single trailing slash so URL joins stay clean. */
-function trimTrailingSlash(url: string): string {
-  return url.endsWith('/') ? url.slice(0, -1) : url;
-}
-
-/**
- * Normalise user config into a `ResolvedConfig`. Throws if neither an API key
- * nor an access token is supplied (the SDK cannot authenticate otherwise).
- */
 export function resolveConfig(config: AstroidClientConfig): ResolvedConfig {
-  const fetchImpl = config.fetch ?? globalThis.fetch;
-  if (typeof fetchImpl !== 'function') {
-    throw new TypeError(
-      'No fetch implementation found. Pass `fetch` in the client config on runtimes without a global fetch.',
-    );
+  if (!config.baseUrl) {
+    throw new Error('AstroidClientConfig: `baseUrl` is required.');
   }
 
-  const retry =
-    config.retry === false
-      ? null
-      : { ...DEFAULT_RETRY, ...(config.retry ?? {}) };
+  let retry: RetryConfig | undefined;
+  if (config.retry === true) {
+    retry = DEFAULT_RETRY;
+  } else if (config.retry === false) {
+    retry = undefined;
+  } else if (config.retry) {
+    retry = { ...DEFAULT_RETRY, ...config.retry };
+  } else {
+    retry = DEFAULT_RETRY;
+  }
+
+  const fetchImpl = config.fetch ?? globalThis.fetch;
+  if (!fetchImpl) {
+    throw new Error('AstroidClientConfig: No global `fetch` found. Pass a fetch implementation.');
+  }
 
   return {
-    baseUrl: trimTrailingSlash(config.baseUrl ?? DEFAULT_BASE_URL),
-    apiVersion: config.apiVersion ?? 'v1',
-    timeoutMs: config.timeoutMs ?? 30_000,
+    baseUrl: config.baseUrl.replace(/\/+$/, ''),
+    apiVersion: config.apiVersion ?? DEFAULT_API_VERSION,
+    auth: {
+      apiKey: config.apiKey,
+      accessToken: config.accessToken,
+    },
+    timeoutMs: config.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    headers: config.headers ?? {},
     retry,
-    headers: { ...(config.headers ?? {}) },
-    auth: { apiKey: config.apiKey, accessToken: config.accessToken },
     fetch: fetchImpl,
-    network: config.network,
-    enableOfflineQueue: config.enableOfflineQueue ?? false,
   };
 }
