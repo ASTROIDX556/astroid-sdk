@@ -2,68 +2,78 @@ import {
   AstroidError,
   ValidationError,
   PolicyViolationError,
-  ServerError,
   fromApiError,
   fromStatus,
+  type AstroidErrorOptions,
 } from '@astroid/errors';
+import type { ApiError } from '@astroid/types';
 
 export class AstroidHorizonError extends AstroidError {
   readonly stellarCode: string;
 
-  constructor(message: string, options: { code: string; stellarCode: string; status?: number; requestId?: string; details?: Record<string, unknown>; cause?: unknown }) {
+  constructor(message: string, options: AstroidErrorOptions & { stellarCode: string }) {
     super(message, options);
     this.stellarCode = options.stellarCode;
+  }
+
+  override toJSON(): Record<string, unknown> {
+    return {
+      ...super.toJSON(),
+      stellarCode: this.stellarCode,
+    };
   }
 }
 
 export class AstroidPolicyViolationError extends PolicyViolationError {}
-export class AstroidValidationError extends ValidationError {}
 
-export function parseAstroidError(res: Response, body: unknown, requestId?: string): AstroidError {
-  const status = res.status;
-  
-  if (body && typeof body === 'object' && 'error' in body) {
-    const errObj = (body as { error: any }).error;
-    if (errObj && typeof errObj === 'object') {
-      const stellarCode = errObj.stellarCode ?? errObj.stellar_code;
-      if (stellarCode) {
-        return new AstroidHorizonError(errObj.message || 'Stellar Horizon error', {
-          code: errObj.code || 'STELLAR_HORIZON_ERROR',
-          stellarCode,
-          status,
-          requestId,
-          details: errObj.details,
-        });
-      }
-      if (errObj.code === 'POLICY_VIOLATION') {
-        return new AstroidPolicyViolationError(errObj.message || 'Policy violation', {
-          code: errObj.code,
-          status,
-          requestId,
-          details: errObj.details,
-        });
-      }
-      return fromApiError(errObj, { status, requestId });
+export function parseAstroidError(response: Response, body: unknown, requestId?: string): AstroidError {
+  const status = response.status;
+  const contentType = response.headers.get('content-type') ?? '';
+
+  let apiError: ApiError | undefined;
+  let stellarCode: string | undefined;
+
+  if (contentType.includes('application/json') && body && typeof body === 'object') {
+    const obj = body as Record<string, unknown>;
+    if (obj['error'] && typeof obj['error'] === 'object') {
+      apiError = obj['error'] as ApiError;
+    } else if (typeof obj['code'] === 'string' && typeof obj['message'] === 'string') {
+      apiError = obj as unknown as ApiError;
+    }
+
+    if (typeof obj['stellarCode'] === 'string') {
+      stellarCode = obj['stellarCode'];
+    } else if (apiError?.details && typeof apiError.details['stellarCode'] === 'string') {
+      stellarCode = apiError.details['stellarCode'] as string;
     }
   }
 
-  if (status === 422 || status === 400) {
-    return new AstroidValidationError('Validation failed', {
-      code: 'VALIDATION_ERROR',
+  const cause = new Error(`HTTP ${status} response error`);
+
+  if (stellarCode) {
+    const message = apiError?.message ?? `Stellar Horizon error: ${stellarCode}`;
+    return new AstroidHorizonError(message, {
+      code: apiError?.code ?? 'STELLAR_ERROR',
       status,
       requestId,
-      details: typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : undefined,
+      details: apiError?.details,
+      stellarCode,
+      cause,
     });
   }
 
-  if (status === 403 && body && typeof body === 'object' && 'policyId' in body) {
-    return new AstroidPolicyViolationError('Policy violation', {
-      code: 'POLICY_VIOLATION',
+  if (apiError) {
+    return fromApiError(apiError, {
       status,
       requestId,
-      details: body as Record<string, unknown>,
+      cause,
     });
   }
 
-  return fromStatus(status, `HTTP error ${status}`, { requestId, details: typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : undefined });
+  const message = typeof body === 'object' && body !== null && 'message' in body ? String((body as any).message) : `Request failed with status ${status}`;
+  return fromStatus(status, message, {
+    requestId,
+    details: typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : undefined,
+    cause,
+  });
 }
