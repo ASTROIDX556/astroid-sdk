@@ -93,3 +93,13 @@ export class PolicyResource extends Resource {
     return res.data;
   }
 }
+
+// Re-export the local policy simulation engine
+export { simulatePolicies } from './simulator.js';
+export type {
+  PolicyRule,
+  PolicyConfiguration as SimulatorPolicyConfiguration,
+  SimulatedTransaction,
+  Violation,
+  SimulationResult,
+} from './simulator.js';
