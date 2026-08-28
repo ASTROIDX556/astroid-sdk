@@ -1,118 +1,137 @@
 import { describe, it, expect } from 'vitest';
 import {
-  parseErrorResponse,
   AstroidSDKError,
   AstroidValidationError,
-  AstroidPolicyViolationError,
   AstroidHorizonError,
+  AstroidPolicyViolationError,
+  parseAstroidError,
 } from './errors.js';
+import { AuthenticationError, ServerError } from '@astroid/errors';
 
-describe('@astroid/client error mapping & parsing', () => {
-  it('parses HTTP 400 validation array into AstroidValidationError with field mappings', async () => {
-    const response = new Response(
+describe('@astroid/client errors and parser', () => {
+  it('defines the custom error hierarchy', () => {
+    const base = new AstroidSDKError('test', { code: 'TEST_ERROR', status: 400 });
+    expect(base).toBeInstanceOf(AstroidSDKError);
+
+    const valErr = new AstroidValidationError('invalid', {
+      code: 'VALIDATION_ERROR',
+      status: 400,
+      details: { fields: { email: ['required'] } },
+    });
+    expect(valErr).toBeInstanceOf(AstroidSDKError);
+    expect(valErr.fieldErrors).toEqual({ email: ['required'] });
+
+    const horizonErr = new AstroidHorizonError('stellar failed', {
+      code: 'op_underfunded',
+      status: 400,
+      details: { stellarErrorCode: 'op_underfunded', horizonCode: 'bad_req' },
+    });
+    expect(horizonErr).toBeInstanceOf(AstroidSDKError);
+    expect(horizonErr.stellarErrorCode).toBe('op_underfunded');
+    expect(horizonErr.horizonCode).toBe('bad_req');
+
+    const policyErr = new AstroidPolicyViolationError('blocked', {
+      code: 'POLICY_VIOLATION',
+      status: 422,
+    });
+    expect(policyErr).toBeInstanceOf(AstroidSDKError);
+  });
+
+  it('parses HTTP 400 validation array payload correctly', async () => {
+    const res = new Response(
       JSON.stringify({
         error: {
           code: 'VALIDATION_ERROR',
-          message: 'Invalid input parameters',
-          details: {
-            fields: {
-              email: ['must be a valid email'],
-              amount: ['must be greater than 0'],
-            },
-          },
+          message: 'Validation failed',
+          details: { fields: { amount: ['must be positive'] } },
         },
       }),
       {
         status: 400,
-        headers: {
-          'content-type': 'application/json',
-          'x-request-id': 'req_val_123',
-        },
-      }
+        headers: { 'content-type': 'application/json', 'x-request-id': 'req_val_1' },
+      },
     );
 
-    const err = await parseErrorResponse(response);
+    const err = await parseAstroidError(res);
     expect(err).toBeInstanceOf(AstroidValidationError);
-    expect(err).toBeInstanceOf(AstroidSDKError);
     expect(err.code).toBe('VALIDATION_ERROR');
     expect(err.status).toBe(400);
-    expect(err.requestId).toBe('req_val_123');
-    expect((err as AstroidValidationError).fieldErrors).toEqual({
-      email: ['must be a valid email'],
-      amount: ['must be greater than 0'],
-    });
+    expect(err.requestId).toBe('req_val_1');
+    expect((err as AstroidValidationError).fieldErrors).toEqual({ amount: ['must be positive'] });
   });
 
-  it('parses HTTP 422 policy blocking error into AstroidPolicyViolationError', async () => {
-    const response = new Response(
+  it('parses HTTP 422 policy blocking payload correctly', async () => {
+    const res = new Response(
       JSON.stringify({
         error: {
           code: 'POLICY_VIOLATION',
-          message: 'Transaction blocked by policy rules',
-          details: {
-            policyCodes: ['MAX_AMOUNT_EXCEEDED'],
-          },
+          message: 'Policy check failed',
+          details: { policyId: 'pol_99' },
         },
       }),
       {
         status: 422,
-        headers: {
-          'content-type': 'application/json',
-          'x-request-id': 'req_pol_456',
-        },
-      }
+        headers: { 'content-type': 'application/json', 'x-request-id': 'req_policy_1' },
+      },
     );
 
-    const err = await parseErrorResponse(response);
+    const err = await parseAstroidError(res);
     expect(err).toBeInstanceOf(AstroidPolicyViolationError);
     expect(err.code).toBe('POLICY_VIOLATION');
     expect(err.status).toBe(422);
-    expect((err as AstroidPolicyViolationError).policyCodes).toEqual(['MAX_AMOUNT_EXCEEDED']);
+    expect(err.requestId).toBe('req_policy_1');
+    expect(err.details).toEqual({ policyId: 'pol_99' });
   });
 
-  it('parses Stellar Horizon specific error codes into AstroidHorizonError', async () => {
-    const response = new Response(
+  it('parses Stellar Horizon specific error codes correctly', async () => {
+    const res = new Response(
       JSON.stringify({
         error: {
           code: 'op_underfunded',
-          message: 'Operation failed due to lack of funds',
-          details: {
-            horizonCode: 'op_underfunded',
-            resultCodes: { transaction: 'tx_failed', operation: 'op_underfunded' },
-          },
+          message: 'Transaction failed on Stellar ledger',
+          details: { stellarErrorCode: 'op_underfunded', horizonCode: 'tx_failed' },
         },
       }),
       {
         status: 400,
-        headers: {
-          'content-type': 'application/json',
-          'x-request-id': 'req_hor_789',
-        },
-      }
+        headers: { 'content-type': 'application/json', 'x-request-id': 'req_hz_1' },
+      },
     );
 
-    const err = await parseErrorResponse(response);
+    const err = await parseAstroidError(res);
     expect(err).toBeInstanceOf(AstroidHorizonError);
-    expect((err as AstroidHorizonError).horizonCode).toBe('op_underfunded');
-    expect((err as AstroidHorizonError).stellarResultCodes).toEqual({
-      transaction: 'tx_failed',
-      operation: 'op_underfunded',
-    });
+    expect((err as AstroidHorizonError).stellarErrorCode).toBe('op_underfunded');
+    expect((err as AstroidHorizonError).horizonCode).toBe('tx_failed');
   });
 
-  it('parses HTTP 500 internal crash with non-json or plain text safely', async () => {
-    const response = new Response('Internal Server Error Crash', {
-      status: 500,
-      headers: {
-        'content-type': 'text/plain',
-        'x-request-id': 'req_500_abc',
+  it('parses HTTP 500 internal crash payload correctly', async () => {
+    const res = new Response(
+      JSON.stringify({
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'Internal server error occurred',
+        },
+      }),
+      {
+        status: 500,
+        headers: { 'content-type': 'application/json', 'x-request-id': 'req_500_1' },
       },
+    );
+
+    const err = await parseAstroidError(res);
+    expect(err).toBeInstanceOf(ServerError);
+    expect(err.code).toBe('INTERNAL_ERROR');
+    expect(err.status).toBe(500);
+  });
+
+  it('handles non-JSON error responses gracefully', async () => {
+    const res = new Response('Gateway Timeout', {
+      status: 504,
+      headers: { 'content-type': 'text/plain' },
     });
 
-    const err = await parseErrorResponse(response);
-    expect(err).toBeInstanceOf(AstroidSDKError);
-    expect(err.status).toBe(500);
-    expect(err.requestId).toBe('req_500_abc');
-    expect(err.details).toEqual({ raw: 'Internal Server Error Crash' });
+    const err = await parseAstroidError(res);
+    expect(err.status).toBe(504);
+    expect(err.message).toContain('Gateway Timeout');
   });
 });
