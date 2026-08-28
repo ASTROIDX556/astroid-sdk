@@ -1,4 +1,5 @@
-import { TransactionBuilder, Transaction, FeeBumpTransaction, Asset } from '@stellar/stellar-base';
+import { TransactionBuilder, Asset, FeeBumpTransaction } from '@stellar/stellar-base';
+import type { Transaction, Operation } from '@stellar/stellar-base';
 import { ValidationError } from '@astroid/errors';
 
 export interface BaseOperation {
@@ -88,16 +89,16 @@ function formatAsset(asset: unknown): string {
     return asset.isNative() ? 'XLM' : `${asset.code}:${asset.issuer}`;
   }
   // In stellar-base, asset might be plain objects or instances
-  const a = asset as { code?: string; issuer?: string };
+  const a = asset as { code?: string; issuer?: string; type?: string };
   if (a.code && a.issuer) {
     return `${a.code}:${a.issuer}`;
-  } else if (a.code === 'XLM' || (asset as any).type === 'native') {
+  } else if (a.code === 'XLM' || a.type === 'native') {
     return 'XLM';
   }
   return String(asset);
 }
 
-function decodeOperation(op: any): DecodedOperation {
+function decodeOperation(op: Operation): DecodedOperation {
   const base: BaseOperation = {
     type: op.type,
     ...(op.source && { sourceAccount: op.source }),
@@ -139,7 +140,7 @@ function decodeOperation(op: any): DecodedOperation {
         ...base,
         type: 'manageData',
         name: op.name,
-        value: op.value ? Buffer.from(op.value).toString('base64') : null,
+        value: op.value ? Buffer.from(op.value as Buffer).toString('base64') : null,
       };
     case 'changeTrust':
       return {
@@ -165,7 +166,7 @@ function decodeOperation(op: any): DecodedOperation {
       const details: Record<string, unknown> = {};
       for (const key of Object.keys(op)) {
         if (key !== 'type' && key !== 'source') {
-          details[key] = op[key];
+          details[key] = (op as unknown as Record<string, unknown>)[key];
         }
       }
       return {
@@ -191,7 +192,7 @@ export function decodeTransactionXDR(xdr: string, networkPassphrase: string): De
     tx = TransactionBuilder.fromXDR(xdr, networkPassphrase);
   } catch (err: unknown) {
     throw new ValidationError('Invalid transaction XDR', {
-      code: 'VALIDATION_ERROR', // Assuming ApiErrorCode.VALIDATION_ERROR maps to 'VALIDATION_ERROR'
+      code: 'VALIDATION_ERROR',
       cause: err,
     });
   }
