@@ -171,6 +171,7 @@ export class Astroid {
     this.sessionManager = new SessionManager({
       accessToken: authConfig.accessToken,
       refreshToken: authConfig.refreshToken,
+      onTokenUpdate: authConfig.onTokenUpdate,
     });
 
     this.auth = new AuthResource(this.http, this.sessionManager);
@@ -191,6 +192,22 @@ export class Astroid {
         return res.data;
       })
     );
+
+    this.http.set401Handler(async () => {
+      if (!this.sessionManager.getRefreshToken()) {
+        return false;
+      }
+      try {
+        await this.sessionManager.refreshSession(async (refreshToken: string) => {
+          const res = await this.http.post<AuthTokens>('/auth/refresh', { refreshToken });
+          this.setAccessToken(res.data.accessToken);
+          return res.data;
+        });
+        return true;
+      } catch {
+        return false;
+      }
+    });
   }
 
   /** Register a request/response middleware. Returns `this` for chaining. */

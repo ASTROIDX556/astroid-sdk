@@ -22,6 +22,7 @@ export interface SessionManagerConfig {
   storage?: TokenStorage;
   storageKeyPrefix?: string;
   bufferSeconds?: number;
+  onTokenUpdate?: (tokens: AuthTokens) => void | Promise<void>;
 }
 
 /** Standard JWT payload claims. */
@@ -95,6 +96,7 @@ export class SessionManager {
   private readonly storage?: TokenStorage;
   private readonly prefix: string;
   private readonly bufferSeconds: number;
+  private readonly onTokenUpdate?: (tokens: AuthTokens) => void | Promise<void>;
   private activeRefreshPromise: Promise<AuthTokens> | null = null;
 
   constructor(config: SessionManagerConfig = {}) {
@@ -103,6 +105,7 @@ export class SessionManager {
     this.storage = config.storage;
     this.prefix = config.storageKeyPrefix ?? 'astroid_auth_';
     this.bufferSeconds = config.bufferSeconds ?? 30;
+    this.onTokenUpdate = config.onTokenUpdate;
   }
 
   /** The active access token. */
@@ -134,6 +137,23 @@ export class SessionManager {
         // Storage quota exceptions should not crash token adoption
         // eslint-disable-next-line no-console
         console.warn('Failed to persist tokens to storage:', err);
+      }
+    }
+
+    if (this.onTokenUpdate) {
+      try {
+        const exp = getTokenExpiration(tokens.accessToken);
+        const now = Math.floor(Date.now() / 1000);
+        const expiresIn = exp ? Math.max(0, exp - now) : 3600;
+        await this.onTokenUpdate({
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken ?? this.refreshToken ?? '',
+          expiresIn,
+          tokenType: 'Bearer',
+        });
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn('Failed to execute onTokenUpdate callback:', err);
       }
     }
   }

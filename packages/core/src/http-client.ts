@@ -33,6 +33,7 @@ export const SDK_VERSION = '0.1.0';
 export class HttpClient {
   readonly config: ResolvedConfig;
   readonly middleware = new MiddlewareStack();
+  private on401Handler?: (req: PreparedRequest) => Promise<boolean>;
 
   constructor(config: AstroidClientConfig) {
     this.config = resolveConfig(config);
@@ -42,6 +43,11 @@ export class HttpClient {
   use(middleware: Middleware): this {
     this.middleware.use(middleware);
     return this;
+  }
+
+  /** Register an automatic 401 retry handler. */
+  set401Handler(handler: (req: PreparedRequest) => Promise<boolean>): void {
+    this.on401Handler = handler;
   }
 
   /** Update auth credentials at runtime (e.g. after a token refresh). */
@@ -87,6 +93,32 @@ export class HttpClient {
 
         if (raw.status >= 200 && raw.status < 300) {
           return this.unwrap<TData>(raw);
+        }
+
+        // Intercept 401 Unauthorized for automatic token refresh and request replay
+        if (
+          raw.status === 401 &&
+          this.on401Handler &&
+          !prepared.options.context?._is401Retry &&
+          !prepared.url.includes('/auth/refresh') &&
+          !prepared.url.includes('/auth/login') &&
+          !prepared.url.includes('/auth/register')
+        ) {
+          prepared.options.context = { ...prepared.options.context, _is401Retry: true };
+          const refreshed = await this.on401Handler(prepared);
+          if (refreshed) {
+            if (this.config.auth.accessToken) {
+              prepared.headers['authorization'] = `Bearer ${this.config.auth.accessToken}`;
+            }
+            const retriedRaw = await this.send(prepared);
+            await this.middleware.applyResponse(retriedRaw, prepared);
+            if (retriedRaw.status >= 200 && retriedRaw.status < 300) {
+              return this.unwrap<TData>(retriedRaw);
+            }
+            const retryError = this.toError(retriedRaw);
+            await this.middleware.applyError(retryError, prepared);
+            throw retryError;
+          }
         }
 
         // Non-2xx: decide whether to retry, otherwise throw a typed error.

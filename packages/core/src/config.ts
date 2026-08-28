@@ -6,6 +6,8 @@
  * the SDK never has to reason about `undefined`.
  */
 
+import type { AuthTokens } from '@astroid/types';
+
 /** How the SDK authenticates each request. */
 export interface AuthConfig {
   /** A secret API key (`sk_live_…` / `sk_test_…`). Sent as a Bearer token. */
@@ -14,6 +16,8 @@ export interface AuthConfig {
   accessToken?: string;
   /** A refresh token used to obtain a new access token pair. */
   refreshToken?: string;
+  /** Callback invoked whenever tokens are refreshed or updated. */
+  onTokenUpdate?: (tokens: AuthTokens) => void | Promise<void>;
 }
 
 /** Retry/backoff behaviour for transient failures. */
@@ -96,7 +100,12 @@ export function resolveConfig(config: AstroidClientConfig): ResolvedConfig {
     timeoutMs: config.timeoutMs ?? 30_000,
     retry,
     headers: { ...(config.headers ?? {}) },
-    auth: { apiKey: config.apiKey, accessToken: config.accessToken, refreshToken: config.refreshToken },
+    auth: {
+      apiKey: config.apiKey,
+      accessToken: config.accessToken,
+      refreshToken: config.refreshToken,
+      onTokenUpdate: config.onTokenUpdate,
+    },
     fetch: fetchImpl,
     network: config.network,
     enableOfflineQueue: config.enableOfflineQueue ?? false,
