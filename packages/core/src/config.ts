@@ -21,8 +21,8 @@ export interface AstroidClientConfig {
   apiVersion?: string;
   apiKey?: string;
   accessToken?: string | (() => Promise<string>);
-  timeoutMs?: number;
   headers?: Record<string, string>;
+  timeoutMs?: number;
   retry?: Partial<RetryConfig> | boolean;
   fetch?: typeof globalThis.fetch;
 }
@@ -31,53 +31,46 @@ export interface ResolvedConfig {
   baseUrl: string;
   apiVersion: string;
   auth: AuthConfig;
-  timeoutMs: number;
   headers: Record<string, string>;
+  timeoutMs: number;
   retry: RetryConfig | undefined;
   fetch: typeof globalThis.fetch;
 }
 
-const DEFAULT_API_VERSION = 'v1';
-const DEFAULT_TIMEOUT_MS = 30_000;
-
 const DEFAULT_RETRY: RetryConfig = {
   maxRetries: 3,
   initialDelayMs: 500,
-  maxDelayMs: 10_000,
+  maxDelayMs: 10000,
   backoffFactor: 2,
 };
 
 export function resolveConfig(config: AstroidClientConfig): ResolvedConfig {
   if (!config.baseUrl) {
-    throw new Error('AstroidClientConfig: `baseUrl` is required.');
+    throw new Error('Astroid client configuration requires a `baseUrl`.');
   }
 
   let retry: RetryConfig | undefined;
   if (config.retry === true) {
     retry = DEFAULT_RETRY;
-  } else if (config.retry === false) {
+  } else if (config.retry === false || config.retry === undefined) {
     retry = undefined;
-  } else if (config.retry) {
-    retry = { ...DEFAULT_RETRY, ...config.retry };
   } else {
-    retry = DEFAULT_RETRY;
-  }
-
-  const fetchImpl = config.fetch ?? globalThis.fetch;
-  if (!fetchImpl) {
-    throw new Error('AstroidClientConfig: No global `fetch` found. Pass a fetch implementation.');
+    retry = {
+      ...DEFAULT_RETRY,
+      ...config.retry,
+    };
   }
 
   return {
     baseUrl: config.baseUrl.replace(/\/+$/, ''),
-    apiVersion: config.apiVersion ?? DEFAULT_API_VERSION,
+    apiVersion: config.apiVersion ?? 'v1',
     auth: {
       apiKey: config.apiKey,
       accessToken: config.accessToken,
     },
-    timeoutMs: config.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     headers: config.headers ?? {},
+    timeoutMs: config.timeoutMs ?? 30000,
     retry,
-    fetch: fetchImpl,
+    fetch: config.fetch ?? globalThis.fetch,
   };
 }
