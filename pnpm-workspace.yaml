@@ -8,7 +8,7 @@ packages:
 verifyDepsBeforeRun: false
 
 allowBuilds:
-  esbuild: set this to true or false
+  esbuild: true
 
 # esbuild ships prebuilt platform binaries as optional dependencies, so its
 # postinstall build script is not required for it to function. We still allow it

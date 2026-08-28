@@ -269,6 +269,7 @@ export {
 } from '@astroid/webhook';
 
 // Convenience re-exports of the most-used types and errors.
+export { verifyWebhookSignature } from './webhooks.js';
 export type { AstroidClientConfig, Middleware } from '@astroid/core';
 export * from '@astroid/types';
 export {
