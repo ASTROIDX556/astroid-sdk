@@ -311,7 +311,16 @@ export {
 } from '@astroid/webhook';
 
 // Convenience re-exports of the most-used types and errors.
-export type { AstroidClientConfig, Middleware } from '@astroid/core';
+export {
+  createRetryMiddleware,
+  retryMiddleware,
+  backoffDelay,
+  isRetryableStatus,
+  type AstroidClientConfig,
+  type Middleware,
+  type RetryConfig,
+  type RetryMiddlewareOptions,
+} from '@astroid/core';
 export * from '@astroid/types';
 export {
   AstroidError,
@@ -328,3 +337,4 @@ export {
   ServerError,
   isAstroidError,
 } from '@astroid/errors';
+

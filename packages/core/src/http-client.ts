@@ -12,7 +12,8 @@ import {
 } from '@astroid/errors';
 import type { ApiError } from '@astroid/types';
 
-import { resolveConfig, type AstroidClientConfig, type ResolvedConfig } from './config.js';
+import { resolveConfig, type AstroidClientConfig, type ResolvedConfig, type RetryConfig } from './config.js';
+import type { RetryMiddlewareOptions } from './middleware.js';
 import {
   MiddlewareStack,
   type AstroidResponse,
@@ -82,7 +83,9 @@ export class HttpClient {
   /** Issue a request with retries, returning the unwrapped, typed response. */
   async request<TData>(options: RequestOptions): Promise<AstroidResponse<TData>> {
     const prepared = await this.prepare(options);
-    const retry = this.config.retry;
+    const contextRetry = prepared.options.context?._retryConfig as RetryConfig | undefined;
+    const contextOptions = prepared.options.context?._retryOptions as RetryMiddlewareOptions | undefined;
+    const retry = contextRetry !== undefined ? contextRetry : this.config.retry;
     const maxAttempts = retry && prepared.retryable ? retry.maxRetries + 1 : 1;
 
     let lastError: unknown;
@@ -123,9 +126,14 @@ export class HttpClient {
 
         // Non-2xx: decide whether to retry, otherwise throw a typed error.
         const error = this.toError(raw);
-        if (retry && prepared.retryable && attempt < maxAttempts && isRetryableStatus(raw.status)) {
+        const shouldRetryStatus = contextOptions?.shouldRetryStatus ?? isRetryableStatus;
+        if (retry && prepared.retryable && attempt < maxAttempts && shouldRetryStatus(raw.status)) {
           lastError = error;
-          await sleep(this.retryDelay(attempt, raw), prepared.signal);
+          const delay = this.retryDelay(attempt, raw, retry);
+          if (contextOptions?.onRetry) {
+            contextOptions.onRetry(attempt, error, delay, prepared);
+          }
+          await sleep(delay, prepared.signal);
           continue;
         }
         await this.middleware.applyError(error, prepared);
@@ -138,7 +146,11 @@ export class HttpClient {
         const networkError = toNetworkError(err);
         if (retry && prepared.retryable && attempt < maxAttempts) {
           lastError = networkError;
-          await sleep(backoffDelay(attempt, retry), prepared.signal);
+          const delay = backoffDelay(attempt, retry);
+          if (contextOptions?.onRetry) {
+            contextOptions.onRetry(attempt, networkError, delay, prepared);
+          }
+          await sleep(delay, prepared.signal);
           continue;
         }
         await this.middleware.applyError(networkError, prepared);
@@ -255,8 +267,7 @@ export class HttpClient {
   }
 
   /** Honour `Retry-After` (seconds) on 429s, else exponential backoff. */
-  private retryDelay(attempt: number, raw: RawResponse): number {
-    const retry = this.config.retry;
+  private retryDelay(attempt: number, raw: RawResponse, retry: RetryConfig | null = this.config.retry): number {
     if (!retry) return 0;
     if (raw.status === 429) {
       const header = raw.headers.get('retry-after');
