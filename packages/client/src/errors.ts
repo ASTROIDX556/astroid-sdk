@@ -1,160 +1,142 @@
 /**
- * Robust error mapping and error parser utility for `@astroid/client`.
+ * `@astroid/client` error mapping and parsing utilities.
  */
 
 import {
   AstroidError,
-  ValidationError,
-  PolicyViolationError,
+  AuthenticationError,
+  AuthorizationError,
+  ConflictError,
+  NotFoundError,
+  RateLimitError,
+  ServerError,
   fromApiError,
-  fromStatus,
-  type AstroidErrorOptions,
+  codeForStatus,
 } from '@astroid/errors';
 
-/**
- * Base SDK Error for `@astroid/client`, preserving status codes, tracing headers,
- * and underlying error callstacks via the standard `cause` property.
- */
-export class AstroidSDKError extends AstroidError {
-  readonly headers: Headers;
+/** Base SDK error class alias or re-export */
+export class AstroidSDKError extends AstroidError {}
 
-  constructor(message: string, options: AstroidErrorOptions & { headers?: Headers; cause?: unknown }) {
+/** Stellar Horizon ledger / transaction error details */
+export interface HorizonErrorDetails {
+  stellarErrorCode?: string;
+  horizonCode?: string;
+  extras?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+/** Error when Stellar Horizon encounters transaction/operation rejections */
+export class AstroidHorizonError extends AstroidError {
+  readonly stellarErrorCode: string | undefined;
+  readonly horizonCode: string | undefined;
+
+  constructor(message: string, options: { code: string; status?: number; requestId?: string; details?: Record<string, unknown>; cause?: unknown }) {
     super(message, options);
-    this.headers = options.headers ?? new Headers();
+    const details = options.details as HorizonErrorDetails | undefined;
+    this.stellarErrorCode = details?.stellarErrorCode ?? (details?.extras as Record<string, unknown>)?.result_codes as string | undefined;
+    this.horizonCode = details?.horizonCode;
   }
 }
 
-/**
- * Validation error mapping specific properties directly to input keys.
- */
-export class AstroidValidationError extends AstroidSDKError {
+/** Error when an operation violates spending or operational policies */
+export class AstroidPolicyViolationError extends AstroidError {}
+
+/** Error when field validation fails */
+export class AstroidValidationError extends AstroidError {
   get fieldErrors(): Record<string, string[]> | undefined {
-    return (this.details?.fields ?? this.details) as Record<string, string[]> | undefined;
+    return this.details?.fields as Record<string, string[]> | undefined;
   }
 }
 
 /**
- * Policy violation error containing policy block codes or details.
+ * Parse a raw Response or response body/headers into a structured Astroid SDK error.
  */
-export class AstroidPolicyViolationError extends AstroidSDKError {
-  get policyCodes(): string[] | undefined {
-    const codes = this.details?.policyCodes ?? this.details?.codes;
-    return Array.isArray(codes) ? (codes as string[]) : undefined;
-  }
-}
+export async function parseAstroidError(response: Response): Promise<AstroidError> {
+  let status = response.status;
+  let requestId = response.headers.get('x-request-id') ?? undefined;
+  let body: unknown;
 
-/**
- * Error wrapping Stellar Horizon specific codes (e.g. op_underfunded, tx_bad_seq).
- */
-export class AstroidHorizonError extends AstroidSDKError {
-  get horizonCode(): string | undefined {
-    return (this.details?.horizonCode ?? this.details?.code) as string | undefined;
-  }
-
-  get stellarResultCodes(): Record<string, unknown> | undefined {
-    return this.details?.resultCodes as Record<string, unknown> | undefined;
-  }
-}
-
-/**
- * Securely inspects response content-type and parses raw response bodies into
- * structured, typed, and context-rich hierarchy of custom classes.
- */
-export async function parseErrorResponse(response: Response): Promise<AstroidSDKError> {
-  const status = response.status;
-  const requestId = response.headers.get('x-request-id') ?? undefined;
-  const contentType = response.headers.get('content-type') ?? '';
-
-  let rawBody: unknown = undefined;
-  let text = '';
-
+  const contentType = response.headers.get('content-type') || '';
   if (contentType.includes('application/json')) {
     try {
-      text = await response.text();
-      if (text) {
-        rawBody = JSON.parse(text);
-      }
-    } catch (parseErr) {
-      rawBody = { raw: text };
+      body = await response.json();
+    } catch {
+      body = undefined;
     }
   } else {
     try {
-      text = await response.text();
-      rawBody = text ? { raw: text } : undefined;
-    } catch {
-      rawBody = undefined;
-    }
-  }
-
-  const errorObj = rawBody && typeof rawBody === 'object' && 'error' in rawBody
-    ? (rawBody as { error: any }).error
-    : rawBody;
-
-  let code = 'INTERNAL_ERROR';
-  let message = response.statusText || 'Unknown error';
-  let details: Record<string, unknown> | undefined = undefined;
-
-  if (errorObj && typeof errorObj === 'object') {
-    if (typeof (errorObj as any).code === 'string') {
-      code = (errorObj as any).code;
-    }
-    if (typeof (errorObj as any).message === 'string') {
-      message = (errorObj as any).message;
-    }
-    if ((errorObj as any).details && typeof (errorObj as any).details === 'object') {
-      details = (errorObj as any).details;
-    } else {
-      const rest = { ...(errorObj as Record<string, unknown>) };
-      delete rest.code;
-      delete rest.message;
-      if (Object.keys(rest).length > 0) {
-        details = rest;
+      const text = await response.text();
+      if (text) {
+        try {
+          body = JSON.parse(text);
+        } catch {
+          body = { message: text };
+        }
       }
+    } catch {
+      body = undefined;
     }
   }
 
-  // Check for Stellar Horizon specific codes in details or top-level
-  const horizonCandidate = details?.horizonCode ?? details?.stellarCode ?? (rawBody as any)?.horizonCode;
-  if (horizonCandidate || code === 'HORIZON_ERROR' || code.startsWith('op_') || code.startsWith('tx_')) {
-    return new AstroidHorizonError(message, {
-      code,
-      status,
-      requestId,
-      details: { ...details, horizonCode: horizonCandidate ?? code },
-      headers: response.headers,
-    });
+  let apiError: { code?: string; message?: string; details?: Record<string, unknown> } | undefined;
+
+  if (body && typeof body === 'object') {
+    const b = body as Record<string, unknown>;
+    if (b.error && typeof b.error === 'object') {
+      apiError = b.error as Record<string, unknown>;
+    } else if (b.code && typeof b.code === 'string') {
+      apiError = b as Record<string, unknown>;
+    }
   }
 
-  if (status === 422 || code === 'POLICY_VIOLATION') {
-    return new AstroidPolicyViolationError(message, {
-      code,
-      status,
-      requestId,
-      details,
-      headers: response.headers,
-    });
+  const code = apiError?.code ?? codeForStatus(status);
+  const message = apiError?.message ?? (body && typeof body === 'object' && typeof (body as Record<string, unknown>).message === 'string' ? ((body as Record<string, unknown>).message as string) : response.statusText || 'Unknown error');
+  const details = (apiError?.details ?? (body && typeof body === 'object' ? (body as Record<string, unknown>).details : undefined)) as Record<string, unknown> | undefined;
+
+  const errPayload = {
+    code,
+    status,
+    requestId,
+    details,
+  };
+
+  if (code === 'POLICY_VIOLATION' || status === 422) {
+    if (details?.stellarErrorCode || details?.horizonCode || details?.result_codes || code?.startsWith('op_') || code?.startsWith('tx_')) {
+      return new AstroidHorizonError(message, errPayload);
+    }
+    if (code === 'POLICY_VIOLATION') {
+      return new AstroidPolicyViolationError(message, errPayload);
+    }
+    if (code === 'VALIDATION_ERROR' || status === 400 || status === 422) {
+      return new AstroidValidationError(message, errPayload);
+    }
   }
 
-  if (status === 400 || status === 422 || code === 'VALIDATION_ERROR') {
-    return new AstroidValidationError(message, {
-      code,
-      status,
-      requestId,
-      details,
-      headers: response.headers,
-    });
+  if (details?.stellarErrorCode || details?.horizonCode || code?.startsWith('op_') || code?.startsWith('tx_')) {
+    return new AstroidHorizonError(message, errPayload);
   }
 
-  const baseMapped = fromApiError(
-    { code, message, details },
-    { status, requestId, details }
-  );
-
-  return new AstroidSDKError(baseMapped.message, {
-    code: baseMapped.code,
-    status: baseMapped.status,
-    requestId: baseMapped.requestId,
-    details: baseMapped.details,
-    headers: response.headers,
-  });
+  switch (code) {
+    case 'AUTHENTICATION_ERROR':
+    case 'UNAUTHORIZED':
+    case 'INVALID_API_KEY':
+    case 'TOKEN_EXPIRED':
+      return new AuthenticationError(message, errPayload);
+    case 'FORBIDDEN':
+      return new AuthorizationError(message, errPayload);
+    case 'VALIDATION_ERROR':
+    case 'BAD_REQUEST':
+      return new AstroidValidationError(message, errPayload);
+    case 'NOT_FOUND':
+      return new NotFoundError(message, errPayload);
+    case 'CONFLICT':
+      return new ConflictError(message, errPayload);
+    case 'RATE_LIMITED':
+      return new RateLimitError(message, errPayload);
+    case 'INTERNAL_ERROR':
+    case 'SERVICE_UNAVAILABLE':
+      return new ServerError(message, errPayload);
+    default:
+      return fromApiError({ code, message, details }, { status, requestId });
+  }
 }
