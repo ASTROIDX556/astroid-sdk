@@ -17,7 +17,7 @@ import type {
   TransactionStatus,
   WalletType,
 } from './enums.js';
-import type { PolicyConfiguration } from './entities.js';
+import type { Organization, PolicyConfiguration, Session, User } from './entities.js';
 
 /* -------------------------------------------------------------------------- */
 /* Wallet                                                                      */
@@ -256,9 +256,9 @@ export interface AuthTokens {
 }
 
 export interface AuthSession {
-  user: import('./entities.js').User;
-  organization: import('./entities.js').Organization;
-  session: import('./entities.js').Session;
+  user: User;
+  organization: Organization;
+  session: Session;
 }
 
 export interface PasskeyRegisterInput {
