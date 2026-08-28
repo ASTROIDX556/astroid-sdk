@@ -35,82 +35,67 @@ describe('Astroid client', () => {
     expect(astroid.installedPlugins).toEqual(['metrics']);
   });
 
-  it('supports dynamic accessToken function and injects bearer header', async () => {
-    const tokenFn = vi.fn().mockResolvedValue('dynamic_token_abc');
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: true, data: { id: 'w_1' } }), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    }));
+  it('injects static bearer token into request headers', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: true, data: {} }), { status: 200 }));
+    const astroid = new Astroid({ baseUrl: 'https://api.example.test', accessToken: 'static_token_123', fetch: fetchMock });
 
-    const client = new Astroid({
-      baseUrl: 'https://api.example.test',
-      accessToken: tokenFn,
-      fetch: fetchMock,
-    });
-
-    const res = await client.wallets.list();
-    expect(tokenFn).toHaveBeenCalled();
-    expect(fetchMock).toHaveBeenCalledWith(
-      'https://api.example.test/v1/wallets',
-      expect.objectContaining({
-        headers: expect.objectContaining({
-          authorization: 'Bearer dynamic_token_abc',
-        }),
-      }),
-    );
-    expect(res.data).toEqual({ id: 'w_1' });
+    await astroid.client.get('/test');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const callArgs = fetchMock.mock.calls[0];
+    const headers = callArgs[1].headers;
+    expect(headers['authorization']).toBe('Bearer static_token_123');
   });
 
-  it('retries request once on 401 when dynamic accessToken is provided', async () => {
-    const tokenFn = vi.fn()
-      .mockResolvedValueOnce('expired_token')
-      .mockResolvedValueOnce('fresh_token');
+  it('evaluates asynchronous dynamic token configuration', async () => {
+    const tokenFn = vi.fn().mockResolvedValue('dynamic_token_456');
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: true, data: {} }), { status: 200 }));
+    const astroid = new Astroid({ baseUrl: 'https://api.example.test', accessToken: tokenFn, fetch: fetchMock });
 
+    await astroid.client.get('/test');
+    expect(tokenFn).toHaveBeenCalledOnce();
+    const callArgs = fetchMock.mock.calls[0];
+    const headers = callArgs[1].headers;
+    expect(headers['authorization']).toBe('Bearer dynamic_token_456');
+  });
+
+  it('retries request once on 401 Unauthorized when dynamic token function is registered', async () => {
+    const tokenFn = vi.fn().mockResolvedValueOnce('old_token').mockResolvedValueOnce('fresh_token');
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ error: { message: 'Unauthorized' } }), { status: 401 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ success: true, data: { id: 'w_1' } }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      }));
+      .mockResolvedValueOnce(new Response(JSON.stringify({ success: true, data: { ok: true } }), { status: 200 }));
 
-    const client = new Astroid({
-      baseUrl: 'https://api.example.test',
-      accessToken: tokenFn,
-      fetch: fetchMock,
-    });
+    const astroid = new Astroid({ baseUrl: 'https://api.example.test', accessToken: tokenFn, fetch: fetchMock });
 
-    const res = await client.wallets.list();
+    const res = await astroid.client.get('/test');
+    expect(res.data).toEqual({ ok: true });
     expect(tokenFn).toHaveBeenCalledTimes(2);
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(res.data).toEqual({ id: 'w_1' });
+    expect(fetchMock.mock.calls[0][1].headers['authorization']).toBe('Bearer old_token');
+    expect(fetchMock.mock.calls[1][1].headers['authorization']).toBe('Bearer fresh_token');
   });
 
-  it('prevents concurrent identical token refresh invocations by caching the pending promise', async () => {
+  it('does not retry 401 when token is static', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { message: 'Unauthorized' } }), { status: 401 }));
+    const astroid = new Astroid({ baseUrl: 'https://api.example.test', accessToken: 'static_token', fetch: fetchMock });
+
+    await expect(astroid.client.get('/test')).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('prevents concurrent identical token refresh invocations by caching pending promise', async () => {
     let resolveToken!: (token: string) => void;
-    const tokenPromise = new Promise<string>((res) => {
-      resolveToken = res;
-    });
-    const tokenFn = vi.fn().mockReturnValue(tokenPromise);
+    const tokenFn = vi.fn().mockReturnValue(new Promise((res) => { resolveToken = res; }));
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: true, data: {} }), { status: 200 }));
 
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: true, data: {} }), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    }));
+    const astroid = new Astroid({ baseUrl: 'https://api.example.test', accessToken: tokenFn, fetch: fetchMock });
 
-    const client = new Astroid({
-      baseUrl: 'https://api.example.test',
-      accessToken: tokenFn,
-      fetch: fetchMock,
-      retry: false,
-    });
+    const p1 = astroid.client.get('/test1');
+    const p2 = astroid.client.get('/test2');
 
-    const p1 = client.wallets.list();
-    const p2 = client.wallets.list();
-
-    resolveToken('shared_token');
-
+    resolveToken('concurrent_token');
     await Promise.all([p1, p2]);
-    expect(tokenFn).toHaveBeenCalledTimes(1);
+
+    expect(tokenFn).toHaveBeenCalledOnce();
   });
 });
 
@@ -146,7 +131,7 @@ describe('Astroid event system', () => {
     const listener = vi.fn();
     astroid.once('transaction.completed', listener);
     astroid.emit(envelope);
-    expect(envelope);
+    astroid.emit(envelope);
     expect(listener).toHaveBeenCalledOnce();
   });
 
