@@ -33,7 +33,7 @@ export const SDK_VERSION = '0.1.0';
 export class HttpClient {
   readonly config: ResolvedConfig;
   readonly middleware = new MiddlewareStack();
-  private tokenPromise: Promise<string> | null = null;
+  private tokenPromise: Promise<string> | undefined;
 
   constructor(config: AstroidClientConfig) {
     this.config = resolveConfig(config);
@@ -48,6 +48,7 @@ export class HttpClient {
   /** Update auth credentials at runtime (e.g. after a token refresh). */
   setAccessToken(accessToken: string | (() => Promise<string>) | undefined): void {
     this.config.auth.accessToken = accessToken;
+    this.tokenPromise = undefined;
   }
 
   /* ----------------------------- verb helpers ----------------------------- */
@@ -81,7 +82,7 @@ export class HttpClient {
     const maxAttempts = retry && prepared.retryable ? retry.maxRetries + 1 : 1;
 
     let lastError: unknown;
-    let hasRetriedUnauthorized = false;
+    let hasRetriedAuth = false;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
@@ -92,12 +93,12 @@ export class HttpClient {
           return this.unwrap<TData>(raw);
         }
 
-        // Handle 401 Unauthorized single retry if accessToken is a function and not yet retried
-        if (raw.status === 401 && typeof this.config.auth.accessToken === 'function' && !hasRetriedUnauthorized) {
-          hasRetriedUnauthorized = true;
-          this.tokenPromise = null; // force token refresh
+        // Handle 401 Unauthorized retry with dynamic token function
+        if (raw.status === 401 && !hasRetriedAuth && typeof this.config.auth.accessToken === 'function') {
+          hasRetriedAuth = true;
+          this.tokenPromise = undefined; // clear cache to force fresh token retrieval
           prepared = await this.prepare(options);
-          attempt--; // don't count this against maxAttempts
+          attempt--; // don't count the auth retry against standard retry count
           continue;
         }
 
@@ -142,27 +143,28 @@ export class HttpClient {
       ...(options.headers ?? {}),
     };
 
-    let resolvedToken: string | undefined;
+    let token: string | undefined;
     if (typeof auth.accessToken === 'function') {
       if (!this.tokenPromise) {
-        this.tokenPromise = Promise.resolve().then(() => (auth.accessToken as () => Promise<string>)());
+        this.tokenPromise = auth.accessToken().finally(() => {
+          // keep or clear? Caching pending promise during execution is desired.
+        });
       }
       try {
-        resolvedToken = await this.tokenPromise;
+        token = await this.tokenPromise;
       } finally {
-        // Keep cached or clear? The requirement says:
+        // once resolved, we can keep it or clear it. The requirement states:
         // "Prevent concurrent identical token refresh invocations by caching the pending promise during authorization flow execution."
       }
     } else if (typeof auth.accessToken === 'string') {
-      resolvedToken = auth.accessToken;
+      token = auth.accessToken;
     }
 
-    if (resolvedToken) {
-      headers['authorization'] = `Bearer ${resolvedToken}`;
+    if (token) {
+      headers['authorization'] = `Bearer ${token}`;
     } else if (auth.apiKey) {
       headers['authorization'] = `Bearer ${auth.apiKey}`;
     }
-
     if (options.idempotencyKey) {
       headers['idempotency-key'] = options.idempotencyKey;
     }
@@ -225,37 +227,24 @@ export class HttpClient {
 
   /** Unwrap a success envelope `{ success, data, meta, requestId }`. */
   private unwrap<TData>(raw: RawResponse): AstroidResponse<TData> {
-    const envelope = raw.body as { success?: boolean; data?: TData; meta?: unknown; error?: unknown } | undefined;
-    if (envelope && typeof envelope === 'object' && 'success' in envelope && 'data' in envelope) {
-      if (envelope.success === false) {
-        const apiError = fromApiError(envelope.error as ApiError, raw.status, raw.requestId);
-        throw apiError;
-      }
-      return {
-        data: envelope.data as TData,
-        meta: envelope.meta as any,
-        requestId: raw.requestId,
-        status: raw.status,
-        headers: raw.headers,
-      };
-    }
-    // Fallback if backend does not use standard envelope
+    const envelope = raw.body as { success?: boolean; data?: TData; meta?: any; error?: ApiError } | undefined;
+
     return {
-      data: raw.body as TData,
-      meta: undefined,
+      data: (envelope && 'data' in envelope ? envelope.data : raw.body) as TData,
+      meta: envelope?.meta,
       requestId: raw.requestId,
       status: raw.status,
       headers: raw.headers,
     };
   }
 
-  /** Map a non-2xx raw response to an AstroidError. */
+  /** Map a failed RawResponse to an AstroidError. */
   private toError(raw: RawResponse): AstroidError {
-    const body = raw.body as { error?: ApiError } | undefined;
-    if (body && typeof body === 'object' && body.error) {
-      return fromApiError(body.error, raw.status, raw.requestId);
+    const apiError = (raw.body as { error?: ApiError })?.error;
+    if (apiError) {
+      return fromApiError(apiError, raw.status, raw.requestId);
     }
-    return fromStatus(raw.status, raw.body ? JSON.stringify(raw.body) : 'API error', raw.requestId);
+    return fromStatus(raw.status, (raw.body as { message?: string })?.message ?? 'API Error', raw.requestId);
   }
 
   private retryDelay(attempt: number, raw: RawResponse): number {
@@ -273,9 +262,9 @@ export class HttpClient {
 }
 
 function isAbortError(err: unknown): boolean {
-  return err instanceof Error && (err.name === 'AbortError' || err.message.includes('aborted'));
+  return err instanceof Error && err.name === 'AbortError';
 }
 
 function isAstroidErrorLike(err: unknown): boolean {
-  return err !== null && typeof err === 'object' && 'code' in err && 'status' in err;
+  return err !== null && typeof err === 'object' && 'name' in err && typeof (err as any).name === 'string' && (err as any).name.endsWith('Error') && 'status' in err;
 }
