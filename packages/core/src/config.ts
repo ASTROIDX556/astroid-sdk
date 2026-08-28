@@ -12,6 +12,8 @@ export interface AuthConfig {
   apiKey?: string;
   /** A short-lived JWT access token (alternative to an API key). */
   accessToken?: string;
+  /** A refresh token used to obtain a new access token pair. */
+  refreshToken?: string;
 }
 
 /** Retry/backoff behaviour for transient failures. */
@@ -94,7 +96,7 @@ export function resolveConfig(config: AstroidClientConfig): ResolvedConfig {
     timeoutMs: config.timeoutMs ?? 30_000,
     retry,
     headers: { ...(config.headers ?? {}) },
-    auth: { apiKey: config.apiKey, accessToken: config.accessToken },
+    auth: { apiKey: config.apiKey, accessToken: config.accessToken, refreshToken: config.refreshToken },
     fetch: fetchImpl,
     network: config.network,
     enableOfflineQueue: config.enableOfflineQueue ?? false,
