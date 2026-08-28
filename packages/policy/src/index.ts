@@ -22,6 +22,12 @@ import type {
   UpdatePolicyInput,
 } from '@astroid/types';
 
+export {
+  simulatePolicy,
+  type PolicySimulationReport,
+  type SimulatedTransaction,
+} from './simulator.js';
+
 /** Filters accepted by {@link PolicyResource.list}. */
 export interface PolicyListParams extends PaginationParams {
   type?: PolicyType;

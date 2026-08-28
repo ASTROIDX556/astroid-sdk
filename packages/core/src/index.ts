@@ -42,7 +42,11 @@ export {
 export {
   loggingMiddleware,
   headerMiddleware,
+  createRetryMiddleware,
+  retryMiddleware,
   redactHeaders,
   type LogEntry,
   type LogSink,
+  type RetryMiddlewareOptions,
 } from './middleware.js';
+
