@@ -121,3 +121,5 @@ export class TransactionResource extends Resource {
     return res.data ?? [];
   }
 }
+
+export * from './decoder';
