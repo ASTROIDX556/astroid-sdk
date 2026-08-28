@@ -114,3 +114,26 @@ export type QueryValue = string | number | boolean | null | undefined | Array<st
 
 /** A raw query parameter map. */
 export type QueryParams = Record<string, QueryValue>;
+
+/* -------------------------------------------------------------------------- */
+/* Cursor-based pagination                                                     */
+/* -------------------------------------------------------------------------- */
+
+/** Query parameters for cursor-based (keyset) pagination. */
+export interface CursorPaginationParams {
+  /** Maximum number of items per page. Defaults to the endpoint default; capped at 100. */
+  limit?: number;
+  /** Opaque cursor from the previous page, used to fetch the next page. */
+  cursor?: string;
+  /** Sort direction. Defaults to `'desc'` (newest first). */
+  order?: 'asc' | 'desc';
+}
+
+/** A page of results returned by a cursor-paginated list endpoint. */
+export interface CursorPaginated<TItem> {
+  items: TItem[];
+  /** Opaque cursor for the next page, or `null` when there are no more pages. */
+  nextCursor: string | null;
+  /** Whether more pages are available after this one. */
+  hasMore: boolean;
+}

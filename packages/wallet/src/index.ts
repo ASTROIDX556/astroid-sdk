@@ -23,6 +23,14 @@ import type {
   WalletStatus,
 } from '@astroid/types';
 
+export {
+  signTransactionOffline,
+  StellarNetworkPassphrase,
+  type OfflineSigningResult,
+  type SignerLike,
+  type TransactionLike,
+} from './signing.js';
+
 /** Filters accepted by {@link WalletResource.list}. */
 export interface WalletListParams extends PaginationParams {
   status?: WalletStatus;
