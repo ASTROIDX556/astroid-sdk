@@ -111,3 +111,6 @@ export class WalletResource extends Resource {
     return res.data;
   }
 }
+
+export * from './multisig.js';
+

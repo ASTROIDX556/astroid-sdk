@@ -415,3 +415,5 @@ export function useAstroidEvent<K extends WebhookEventName>(
 }
 
 export { Astroid } from '@astroid/client';
+export * from './hooks/useAgentMetrics.js';
+

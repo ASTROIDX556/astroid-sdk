@@ -93,3 +93,6 @@ export class PolicyResource extends Resource {
     return res.data;
   }
 }
+
+export * from './simulator.js';
+
