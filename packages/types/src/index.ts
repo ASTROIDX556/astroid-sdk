@@ -11,5 +11,6 @@ export * from './entities.js';
 export * from './dto.js';
 export * from './policy.js';
 export * from './analytics.js';
+export * from './budget.js';
 export * from './webhooks.js';
 export * from './ai.js';
