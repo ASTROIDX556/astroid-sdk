@@ -1,4 +1,4 @@
-﻿import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { simulatePolicyLocal } from '../src/simulator.js';
 import type { Policy } from '@astroid/types';
 

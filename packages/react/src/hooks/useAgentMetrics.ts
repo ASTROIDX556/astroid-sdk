@@ -1,6 +1,7 @@
-﻿import { useMemo } from 'react';
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAstroid } from '../index.js';
+import type { Agent, AnalyticsOverview, Budget, Paginated } from '@astroid/types';
 
 export interface UseAgentMetricsOptions {
   pollingInterval?: number;
@@ -28,6 +29,12 @@ export interface UseAgentMetricsResult {
   refetch: () => void;
 }
 
+interface AgentQueryPayload {
+  agent: Agent | null;
+  budgets: Budget[];
+  analytics: AnalyticsOverview | null;
+}
+
 /**
  * Hook to fetch and aggregate real-time metrics for an autonomous agent.
  *
@@ -41,14 +48,14 @@ export function useAgentMetrics(
   const astroid = useAstroid();
   const { pollingInterval, enabled = true } = options;
 
-  const agentQuery = useQuery({
+  const agentQuery = useQuery<AgentQueryPayload | null, Error>({
     queryKey: ['astroid', 'agents', agentId, 'metrics'],
-    queryFn: async () => {
+    queryFn: async (): Promise<AgentQueryPayload | null> => {
       if (!agentId) return null;
       const [agent, budgetsRes, analytics] = await Promise.all([
         astroid.agents.get(agentId).catch(() => null),
-        astroid.budgets.list({ agentId }).catch(() => ({ data: [] })),
-        astroid.analytics.overview().catch(() => null),
+        astroid.budgets.list({ agentId }).catch(() => ({ data: [] } as unknown as Paginated<Budget>)),
+        astroid.analytics.overview({ agentId }).catch(() => null),
       ]);
       return { agent, budgets: budgetsRes?.data ?? [], analytics };
     },
@@ -77,9 +84,9 @@ export function useAgentMetrics(
     const percentSpent = totalLimit > 0 ? Math.min(100, (totalSpent / totalLimit) * 100) : 0;
     const isOutOfBudget = totalLimit > 0 && totalSpent >= totalLimit;
 
-    const totalTx = analytics?.totalTransactions ?? 0;
-    const successfulTx = analytics?.successfulTransactions ?? 0;
-    const failedTx = analytics?.failedTransactions ?? 0;
+    const totalTx = analytics?.transactionCount ?? 0;
+    const failedTx = analytics?.policyViolations ?? 0;
+    const successfulTx = Math.max(0, totalTx - failedTx);
     const successRate = totalTx > 0 ? (successfulTx / totalTx) * 100 : 100;
 
     return {

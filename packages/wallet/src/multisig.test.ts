@@ -3,7 +3,7 @@ import {
   evaluateSignerThreshold,
   evaluateSignerThresholdWithDetails,
   buildSetOptionsThresholdOp,
-} from '../src/multisig.js';
+} from './multisig.js';
 
 describe('Multisig Threshold Evaluator & Builder (Issue #32)', () => {
   const signers = [

@@ -1,5 +1,5 @@
 ﻿import { describe, it, expect } from 'vitest';
-import { calculateRollingWindowBudget, getRollingWindowBounds } from '../src/calculator.js';
+import { calculateRollingWindowBudget, getRollingWindowBounds } from './calculator.js';
 import type { BudgetHistoryEntry } from '@astroid/types';
 
 describe('calculateRollingWindowBudget (Issue #34)', () => {
