@@ -12,6 +12,8 @@ import { Resource } from '@astroid/core';
 import type {
   Agent,
   AgentActivity,
+  AgentLifecycleEventRecord,
+  AgentEventSubscriptionOptions,
   AgentStatus,
   CreateAgentInput,
   Paginated,
@@ -87,5 +89,69 @@ export class AgentResource extends Resource {
       `/agents/${encodeURIComponent(agentId)}/activity`,
       { ...params },
     );
+  }
+
+  /**
+   * List the agent's lifecycle event stream (creation, suspension, resumption,
+   * budget exhaustion). Accepts an optional `event` filter and pagination.
+   */
+  async listEvents(
+    agentId: string,
+    params: PaginationParams & { event?: AgentLifecycleEventRecord['event'] } = {},
+  ): Promise<Paginated<AgentLifecycleEventRecord>> {
+    return this.listData<AgentLifecycleEventRecord>(
+      `/agents/${encodeURIComponent(agentId)}/events`,
+      { ...params },
+    );
+  }
+
+  /**
+   * Subscribe to an agent's lifecycle event stream via the SDK event bridge.
+   *
+   * Returns an unsubscribe function; call it (or abort via `options.signal`) to
+   * stop receiving events. The handler receives the typed payload.
+   *
+   * > **Stub:** wiring to the live event bridge / polling transport is not yet
+   * > implemented. This method validates its arguments and returns a working
+   * > teardown, so callers can adopt the typed surface now and receive events
+   * > once the transport lands. Backfill via `options.since` is forwarded to the
+   * > transport when available.
+   *
+   * @param agentId The agent to observe (must be a non-empty string).
+   * @param handler Called with each lifecycle event payload as it arrives.
+   * @param options {@link AgentEventSubscriptionOptions} for error handling,
+   *                abort support, and optional backfill (`since`).
+   * @returns       A function that tears the subscription down.
+   */
+  subscribe(
+    agentId: string,
+    handler: (payload: AgentLifecycleEventRecord['data']) => void,
+    options: AgentEventSubscriptionOptions = {},
+  ): () => void {
+    if (!agentId) {
+      throw new Error('AgentResource.subscribe requires a non-empty agentId.');
+    }
+
+    let active = true;
+    const abort = () => {
+      active = false;
+    };
+
+    if (options.signal) {
+      if (options.signal.aborted) {
+        active = false;
+      } else {
+        options.signal.addEventListener('abort', abort, { once: true });
+      }
+    }
+
+    void handler;
+    void options.since;
+    void options.replayLimit;
+
+    return () => {
+      active = false;
+      options.signal?.removeEventListener('abort', abort);
+    };
   }
 }
