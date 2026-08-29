@@ -30,6 +30,7 @@ import {
   type AstroidClientConfig,
   type Middleware,
 } from '@astroid/core';
+import { createErrorParserMiddleware } from './error-parser-middleware.js';
 import { AgentResource } from '@astroid/agent';
 import { AnalyticsResource } from '@astroid/analytics';
 import { AuthResource, SessionManager, createSessionMiddleware } from '@astroid/auth';
@@ -220,6 +221,10 @@ export class Astroid {
     if (dynamicTokenProvider) {
       this.http.setTokenProvider(dynamicTokenProvider);
     }
+
+    // Auto-register the error parser middleware so all responses are routed
+    // through the rich error mapping layer.
+    this.http.use(createErrorParserMiddleware());
   }
 
   /** Register a request/response middleware. Returns `this` for chaining. */
@@ -349,4 +354,14 @@ export {
   ServerError,
   isAstroidError,
 } from '@astroid/errors';
+
+// Error response parser — re-exports so consumers can parse raw responses
+// without reaching into internal modules.
+export {
+  StellarHorizonError,
+  parseErrorResponse,
+  parseErrorBody,
+  type ParsedError,
+} from './errors.js';
+export { createErrorParserMiddleware } from './error-parser-middleware.js';
 
