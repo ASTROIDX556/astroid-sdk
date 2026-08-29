@@ -12,12 +12,23 @@ import type { AuthTokens } from '@astroid/types';
 export interface AuthConfig {
   /** A secret API key (`sk_live_…` / `sk_test_…`). Sent as a Bearer token. */
   apiKey?: string;
-  /** A short-lived JWT access token (alternative to an API key). */
-  accessToken?: string;
+  /**
+   * A short-lived JWT access token (alternative to an API key), **or** an
+   * async function that returns one. When a function is provided it is
+   * evaluated before every outbound request so the client always uses a
+   * fresh token. Concurrent requests share a single in-flight promise to
+   * avoid redundant invocations.
+   */
+  accessToken?: string | (() => Promise<string>);
   /** A refresh token used to obtain a new access token pair. */
   refreshToken?: string;
   /** Callback invoked whenever tokens are refreshed or updated. */
   onTokenUpdate?: (tokens: AuthTokens) => void | Promise<void>;
+  /**
+   * Resolved dynamic token provider (set internally by `resolveConfig` when
+   * `accessToken` is a function). Consumers should not set this directly.
+   */
+  tokenProvider?: () => Promise<string>;
 }
 
 /** Retry/backoff behaviour for transient failures. */
@@ -102,9 +113,10 @@ export function resolveConfig(config: AstroidClientConfig): ResolvedConfig {
     headers: { ...(config.headers ?? {}) },
     auth: {
       apiKey: config.apiKey,
-      accessToken: config.accessToken,
+      accessToken: typeof config.accessToken === 'function' ? undefined : config.accessToken,
       refreshToken: config.refreshToken,
       onTokenUpdate: config.onTokenUpdate,
+      tokenProvider: typeof config.accessToken === 'function' ? config.accessToken : undefined,
     },
     fetch: fetchImpl,
     network: config.network,

@@ -168,8 +168,14 @@ export class Astroid {
     this.http = config instanceof HttpClient ? config : new HttpClient(config);
 
     const authConfig = this.http.config.auth;
+
+    // If accessToken is a dynamic function, extract it as a token provider.
+    const dynamicTokenProvider = !(config instanceof HttpClient) && typeof config.accessToken === 'function'
+      ? config.accessToken
+      : undefined;
+
     this.sessionManager = new SessionManager({
-      accessToken: authConfig.accessToken,
+      accessToken: typeof authConfig.accessToken === 'string' ? authConfig.accessToken : undefined,
       refreshToken: authConfig.refreshToken,
       onTokenUpdate: authConfig.onTokenUpdate,
     });
@@ -208,6 +214,12 @@ export class Astroid {
         return false;
       }
     });
+
+    // Wire up the dynamic token provider (called before every request;
+    // the HttpClient deduplicates concurrent calls automatically).
+    if (dynamicTokenProvider) {
+      this.http.setTokenProvider(dynamicTokenProvider);
+    }
   }
 
   /** Register a request/response middleware. Returns `this` for chaining. */

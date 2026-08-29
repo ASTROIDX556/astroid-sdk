@@ -35,9 +35,14 @@ export class HttpClient {
   readonly config: ResolvedConfig;
   readonly middleware = new MiddlewareStack();
   private on401Handler?: (req: PreparedRequest) => Promise<boolean>;
+  private tokenProvider?: () => Promise<string>;
+  private pendingTokenPromise?: Promise<string>;
 
   constructor(config: AstroidClientConfig) {
     this.config = resolveConfig(config);
+    if (this.config.auth.tokenProvider) {
+      this.tokenProvider = this.config.auth.tokenProvider;
+    }
   }
 
   /** Register a middleware. Returns `this` for chaining. */
@@ -54,6 +59,41 @@ export class HttpClient {
   /** Update auth credentials at runtime (e.g. after a token refresh). */
   setAccessToken(accessToken: string | undefined): void {
     this.config.auth.accessToken = accessToken;
+  }
+
+  /**
+   * Set a dynamic token provider function. When provided, it is evaluated
+   * before every outbound request. Concurrent requests share a single
+   * in-flight promise to avoid redundant invocations.
+   */
+  setTokenProvider(provider: (() => Promise<string>) | undefined): void {
+    this.tokenProvider = provider;
+  }
+
+  /**
+   * Resolve the current access token. If a dynamic token provider is
+   * registered, evaluates it and caches the in-flight promise so concurrent
+   * callers share a single refresh. Falls back to the static
+   * `accessToken` / `apiKey` string.
+   */
+  private async resolveToken(): Promise<string | undefined> {
+    if (this.tokenProvider) {
+      if (this.pendingTokenPromise) {
+        return this.pendingTokenPromise;
+      }
+      this.pendingTokenPromise = (async () => {
+        try {
+          const token = await this.tokenProvider!();
+          this.config.auth.accessToken = token;
+          return token;
+        } finally {
+          this.pendingTokenPromise = undefined;
+        }
+      })();
+      return this.pendingTokenPromise;
+    }
+    const token = this.config.auth.accessToken;
+    return typeof token === 'string' ? token : undefined;
   }
 
   /* ----------------------------- verb helpers ----------------------------- */
@@ -101,14 +141,31 @@ export class HttpClient {
         // Intercept 401 Unauthorized for automatic token refresh and request replay
         if (
           raw.status === 401 &&
-          this.on401Handler &&
           !prepared.options.context?._is401Retry &&
           !prepared.url.includes('/auth/refresh') &&
           !prepared.url.includes('/auth/login') &&
           !prepared.url.includes('/auth/register')
         ) {
           prepared.options.context = { ...prepared.options.context, _is401Retry: true };
-          const refreshed = await this.on401Handler(prepared);
+          let refreshed = false;
+
+          // Priority 1: re-evaluate the dynamic token provider.
+          if (this.tokenProvider) {
+            this.pendingTokenPromise = undefined;
+            try {
+              const newToken = await this.tokenProvider();
+              this.config.auth.accessToken = newToken;
+              refreshed = true;
+            } catch {
+              // Provider failed — fall through to the handler below.
+            }
+          }
+
+          // Priority 2: session-based / custom 401 handler.
+          if (!refreshed && this.on401Handler) {
+            refreshed = await this.on401Handler(prepared);
+          }
+
           if (refreshed) {
             if (this.config.auth.accessToken) {
               prepared.headers['authorization'] = `Bearer ${this.config.auth.accessToken}`;
@@ -174,8 +231,10 @@ export class HttpClient {
       ...(options.headers ?? {}),
     };
 
-    if (auth.accessToken) {
-      headers['authorization'] = `Bearer ${auth.accessToken}`;
+    // Resolve the access token (dynamic provider or static value).
+    const resolvedToken = await this.resolveToken();
+    if (resolvedToken) {
+      headers['authorization'] = `Bearer ${resolvedToken}`;
     } else if (auth.apiKey) {
       headers['authorization'] = `Bearer ${auth.apiKey}`;
     }
