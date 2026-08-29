@@ -295,6 +295,138 @@ describe('simulatePolicy — asset white/blacklists', () => {
   });
 });
 
+describe('simulatePolicy — minimum transfer limit', () => {
+  it('passes when the amount meets the minimum', () => {
+    const result = simulatePolicy(
+      [policy({ type: 'MIN_AMOUNT', configuration: { minAmount: 50 } })],
+      { ...baseTx, amount: '100' },
+    );
+
+    expect(result.passed).toBe(true);
+    expect(result.violations).toEqual([]);
+  });
+
+  it('fails when the amount is below the minimum', () => {
+    const result = simulatePolicy(
+      [
+        policy({
+          id: 'p-min',
+          name: 'Min 50 USDC',
+          type: 'MIN_AMOUNT',
+          configuration: { minAmount: 50 },
+        }),
+      ],
+      { ...baseTx, amount: '10' },
+    );
+
+    expect(result.passed).toBe(false);
+    expect(result.violations).toHaveLength(1);
+    expect(result.violations[0]).toMatchObject({
+      policyId: 'p-min',
+      policyType: 'MIN_AMOUNT',
+      limit: 50,
+      actual: 10,
+    });
+  });
+
+  it('passes when the amount exactly equals the minimum', () => {
+    const result = simulatePolicy(
+      [policy({ type: 'MIN_AMOUNT', configuration: { minAmount: 100 } })],
+      { ...baseTx, amount: '100' },
+    );
+
+    expect(result.passed).toBe(true);
+  });
+});
+
+describe('simulatePolicy — decimal precision', () => {
+  it('handles very small decimal amounts correctly', () => {
+    const result = simulatePolicy(
+      [policy({ type: 'MAX_AMOUNT', configuration: { maxAmount: 0.01 } })],
+      { ...baseTx, amount: '0.009' },
+    );
+    expect(result.passed).toBe(true);
+  });
+
+  it('detects small decimal overages', () => {
+    const result = simulatePolicy(
+      [policy({ type: 'MAX_AMOUNT', configuration: { maxAmount: 0.01 } })],
+      { ...baseTx, amount: '0.011' },
+    );
+    expect(result.passed).toBe(false);
+    expect(result.violations[0]?.actual).toBe(0.011);
+  });
+
+  it('handles large amounts with many decimals', () => {
+    const result = simulatePolicy(
+      [policy({ type: 'MAX_AMOUNT', configuration: { maxAmount: 999999.99 } })],
+      { ...baseTx, amount: '999999.99' },
+    );
+    expect(result.passed).toBe(true);
+  });
+
+  it('detects large amount overages with decimals', () => {
+    const result = simulatePolicy(
+      [policy({ type: 'MAX_AMOUNT', configuration: { maxAmount: 999999.99 } })],
+      { ...baseTx, amount: '1000000.00' },
+    );
+    expect(result.passed).toBe(false);
+  });
+});
+
+describe('simulatePolicy — zero and edge amounts', () => {
+  it('passes a zero amount through max-amount check', () => {
+    const result = simulatePolicy(
+      [policy({ type: 'MAX_AMOUNT', configuration: { maxAmount: 100 } })],
+      { ...baseTx, amount: '0' },
+    );
+    expect(result.passed).toBe(true);
+  });
+
+  it('fails a zero amount against min-amount check', () => {
+    const result = simulatePolicy(
+      [policy({ type: 'MIN_AMOUNT', configuration: { minAmount: 1 } })],
+      { ...baseTx, amount: '0' },
+    );
+    expect(result.passed).toBe(false);
+    expect(result.violations[0]?.actual).toBe(0);
+  });
+});
+
+describe('simulatePolicy — priority ordering', () => {
+  it('evaluates policies in array order (priority)', () => {
+    const result = simulatePolicy(
+      [
+        policy({ id: 'p-first', type: 'MAX_AMOUNT', configuration: { maxAmount: 50 } }),
+        policy({ id: 'p-second', type: 'MAX_AMOUNT', configuration: { maxAmount: 200 } }),
+      ],
+      { ...baseTx, amount: '100' },
+    );
+
+    expect(result.passed).toBe(false);
+    // Both should fire since 100 > 50 and 100 > 200 is false
+    // Only the first fires since 100 is NOT > 200
+    expect(result.violations).toHaveLength(1);
+    expect(result.violations[0]?.policyId).toBe('p-first');
+  });
+
+  it('reports all violations when multiple policies are breached', () => {
+    // 100 > 50 triggers MAX, 100 < 200 triggers MIN, DOGE not in allowed list triggers ALLOWED_ASSETS
+    const result = simulatePolicy(
+      [
+        policy({ id: 'p-max', type: 'MAX_AMOUNT', configuration: { maxAmount: 50 } }),
+        policy({ id: 'p-min', type: 'MIN_AMOUNT', configuration: { minAmount: 200 } }),
+        policy({ id: 'p-asset', type: 'ALLOWED_ASSETS', configuration: { allowedAssets: ['USDC'] } }),
+      ],
+      { ...baseTx, amount: '100', asset: 'DOGE' },
+    );
+
+    expect(result.passed).toBe(false);
+    expect(result.violations).toHaveLength(3);
+    expect(result.violations.map((v) => v.policyType)).toEqual(['MAX_AMOUNT', 'MIN_AMOUNT', 'ALLOWED_ASSETS']);
+  });
+});
+
 describe('simulatePolicy — general behavior', () => {
   it('passes a valid transaction through the engine', () => {
     const result = simulatePolicy(
@@ -361,5 +493,37 @@ describe('simulatePolicy — general behavior', () => {
     });
 
     expect(result.passed).toBe(true);
+  });
+
+  it('handles an empty policy array', () => {
+    const result = simulatePolicy([], { ...baseTx });
+    expect(result.passed).toBe(true);
+    expect(result.violations).toEqual([]);
+  });
+
+  it('skips policies with missing configuration keys', () => {
+    const result = simulatePolicy(
+      [policy({ type: 'MAX_AMOUNT', configuration: {} })],
+      { ...baseTx, amount: '999999' },
+    );
+    expect(result.passed).toBe(true);
+  });
+
+  it('returns violation messages that include policy name', () => {
+    const result = simulatePolicy(
+      [
+        policy({
+          id: 'p-1',
+          name: 'Daily Guard',
+          type: 'DAILY_BUDGET',
+          configuration: { dailyLimit: 100 },
+        }),
+      ],
+      { ...baseTx, amount: '50', spentInWindow: '80' },
+    );
+
+    expect(result.passed).toBe(false);
+    expect(result.violations[0]?.policyName).toBe('Daily Guard');
+    expect(result.violations[0]?.message).toContain('exceeding the daily limit');
   });
 });
