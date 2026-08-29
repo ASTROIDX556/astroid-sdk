@@ -72,6 +72,7 @@ import type {
   TransactionListParams,
   TransferInput,
   Wallet,
+  WalletBalance,
   WebhookEventEnvelope,
   WebhookEventName,
 } from '@astroid/types';
@@ -243,6 +244,43 @@ export function useWallet(
     queryKey: queryKeys.wallets.detail(id ?? ''),
     queryFn: () => astroid.wallets.get(id as string),
     enabled: Boolean(id) && options?.enabled !== false,
+    ...options,
+  });
+}
+
+/**
+ * Fetch the live on-chain balance of a single wallet, with a sensible
+ * stale-time default so balances stay fresh without hammering the API.
+ *
+ * The query is automatically **disabled** when `walletId` is `undefined` or
+ * empty. Balances are inherently volatile, so by default the result is marked
+ * stale after 15s; pass `options.staleTime` to tune, or set
+ * `refetchInterval` (e.g. `30_000`) to poll while mounted.
+ *
+ * @param walletId The wallet to read balances for. Pass `undefined` to skip.
+ * @param options  Extra TanStack Query options (`enabled`, `staleTime`,
+ *                 `refetchInterval`, etc.). The `queryKey`/`queryFn` are set
+ *                 internally and cannot be overridden.
+ * @returns       A TanStack Query result with `data` (a {@link WalletBalance}),
+ *                `isLoading`, `isError`, `error`, etc.
+ *
+ * @example
+ * ```tsx
+ * const { data: balance, isStale } = useWalletBalance(activeWalletId, {
+ *   refetchInterval: 30_000,
+ * });
+ * ```
+ */
+export function useWalletBalance(
+  walletId: string | undefined,
+  options?: ReadOptions<WalletBalance>,
+): UseQueryResult<WalletBalance, Error> {
+  const astroid = useAstroid();
+  return useQuery({
+    queryKey: queryKeys.wallets.balance(walletId ?? ''),
+    queryFn: () => astroid.wallets.balance(walletId as string),
+    enabled: Boolean(walletId) && options?.enabled !== false,
+    staleTime: 15_000, // balances go stale quickly; refresh on refocus/interval
     ...options,
   });
 }
