@@ -12,7 +12,8 @@ import {
 } from '@astroid/errors';
 import type { ApiError } from '@astroid/types';
 
-import { resolveConfig, type AstroidClientConfig, type ResolvedConfig } from './config.js';
+import { resolveConfig, type AstroidClientConfig, type ResolvedConfig, type RetryConfig } from './config.js';
+import type { RetryMiddlewareOptions } from './middleware.js';
 import {
   MiddlewareStack,
   type AstroidResponse,
@@ -33,7 +34,7 @@ export const SDK_VERSION = '0.1.0';
 export class HttpClient {
   readonly config: ResolvedConfig;
   readonly middleware = new MiddlewareStack();
-  private tokenPromise: Promise<string> | undefined;
+  private on401Handler?: (req: PreparedRequest) => Promise<boolean>;
 
   constructor(config: AstroidClientConfig) {
     this.config = resolveConfig(config);
@@ -43,6 +44,11 @@ export class HttpClient {
   use(middleware: Middleware): this {
     this.middleware.use(middleware);
     return this;
+  }
+
+  /** Register an automatic 401 retry handler. */
+  set401Handler(handler: (req: PreparedRequest) => Promise<boolean>): void {
+    this.on401Handler = handler;
   }
 
   /** Update auth credentials at runtime (e.g. after a token refresh). */
@@ -77,8 +83,10 @@ export class HttpClient {
 
   /** Issue a request with retries, returning the unwrapped, typed response. */
   async request<TData>(options: RequestOptions): Promise<AstroidResponse<TData>> {
-    let prepared = await this.prepare(options);
-    const retry = this.config.retry;
+    const prepared = await this.prepare(options);
+    const contextRetry = prepared.options.context?._retryConfig as RetryConfig | undefined;
+    const contextOptions = prepared.options.context?._retryOptions as RetryMiddlewareOptions | undefined;
+    const retry = contextRetry !== undefined ? contextRetry : this.config.retry;
     const maxAttempts = retry && prepared.retryable ? retry.maxRetries + 1 : 1;
 
     let lastError: unknown;
@@ -93,20 +101,42 @@ export class HttpClient {
           return this.unwrap<TData>(raw);
         }
 
-        // Handle 401 Unauthorized retry with dynamic token function
-        if (raw.status === 401 && !hasRetriedAuth && typeof this.config.auth.accessToken === 'function') {
-          hasRetriedAuth = true;
-          this.tokenPromise = undefined; // clear cache to force fresh token retrieval
-          prepared = await this.prepare(options);
-          attempt--; // don't count the auth retry against standard retry count
-          continue;
+        // Intercept 401 Unauthorized for automatic token refresh and request replay
+        if (
+          raw.status === 401 &&
+          this.on401Handler &&
+          !prepared.options.context?._is401Retry &&
+          !prepared.url.includes('/auth/refresh') &&
+          !prepared.url.includes('/auth/login') &&
+          !prepared.url.includes('/auth/register')
+        ) {
+          prepared.options.context = { ...prepared.options.context, _is401Retry: true };
+          const refreshed = await this.on401Handler(prepared);
+          if (refreshed) {
+            if (this.config.auth.accessToken) {
+              prepared.headers['authorization'] = `Bearer ${this.config.auth.accessToken}`;
+            }
+            const retriedRaw = await this.send(prepared);
+            await this.middleware.applyResponse(retriedRaw, prepared);
+            if (retriedRaw.status >= 200 && retriedRaw.status < 300) {
+              return this.unwrap<TData>(retriedRaw);
+            }
+            const retryError = this.toError(retriedRaw);
+            await this.middleware.applyError(retryError, prepared);
+            throw retryError;
+          }
         }
 
         // Non-2xx: decide whether to retry, otherwise throw a typed error.
         const error = this.toError(raw);
-        if (retry && prepared.retryable && attempt < maxAttempts && isRetryableStatus(raw.status)) {
+        const shouldRetryStatus = contextOptions?.shouldRetryStatus ?? isRetryableStatus;
+        if (retry && prepared.retryable && attempt < maxAttempts && shouldRetryStatus(raw.status)) {
           lastError = error;
-          await sleep(this.retryDelay(attempt, raw), prepared.signal);
+          const delay = this.retryDelay(attempt, raw, retry);
+          if (contextOptions?.onRetry) {
+            contextOptions.onRetry(attempt, error, delay, prepared);
+          }
+          await sleep(delay, prepared.signal);
           continue;
         }
         await this.middleware.applyError(error, prepared);
@@ -119,7 +149,11 @@ export class HttpClient {
         const networkError = toNetworkError(err);
         if (retry && prepared.retryable && attempt < maxAttempts) {
           lastError = networkError;
-          await sleep(backoffDelay(attempt, retry), prepared.signal);
+          const delay = backoffDelay(attempt, retry);
+          if (contextOptions?.onRetry) {
+            contextOptions.onRetry(attempt, networkError, delay, prepared);
+          }
+          await sleep(delay, prepared.signal);
           continue;
         }
         await this.middleware.applyError(networkError, prepared);
@@ -247,8 +281,8 @@ export class HttpClient {
     return fromStatus(raw.status, (raw.body as { message?: string })?.message ?? 'API Error', raw.requestId);
   }
 
-  private retryDelay(attempt: number, raw: RawResponse): number {
-    const retry = this.config.retry;
+  /** Honour `Retry-After` (seconds) on 429s, else exponential backoff. */
+  private retryDelay(attempt: number, raw: RawResponse, retry: RetryConfig | null = this.config.retry): number {
     if (!retry) return 0;
     const header = raw.headers.get('retry-after');
     if (header) {

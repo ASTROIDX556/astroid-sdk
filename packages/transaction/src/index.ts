@@ -25,6 +25,22 @@ import type {
 } from '@astroid/types';
 
 export * from './validation.js';
+export * from './simulation.js';
+export {
+  buildTransactionHistoryQuery,
+  fetchTransactionHistory,
+  HISTORY_DEFAULT_LIMIT,
+  HISTORY_MAX_LIMIT,
+  type TransactionHistoryFetcher,
+  type TransactionHistoryPage,
+  type TransactionHistoryParams,
+  type TransactionHistoryQuery,
+  type TransactionHistoryResult,
+  type TransactionHistoryStatusFilter,
+} from './history.js';
+
+import type { TransactionHistoryParams, TransactionHistoryResult } from './history.js';
+import { buildTransactionHistoryQuery } from './history.js';
 
 /** Filters accepted by {@link TransactionResource.listProposals}. */
 export interface ProposalListParams extends PaginationParams {
@@ -57,6 +73,32 @@ export class TransactionResource extends Resource {
   /** List transactions, with rich filters (status, asset, risk, …) and paging. */
   async list(params: TransactionListParams = {}): Promise<Paginated<Transaction>> {
     return this.listData<Transaction>('/transactions', { ...params });
+  }
+
+  /**
+   * Fetch a cursor-paginated page of transaction history, filterable by
+   * status and asset. Pass the returned `nextCursor` back in to fetch the
+   * following page.
+   */
+  async history(params: TransactionHistoryParams = {}): Promise<TransactionHistoryResult> {
+    const query = buildTransactionHistoryQuery(params);
+    const res = await this.client.get<Transaction[]>('/transactions/history', {
+      query: {
+        limit: query.limit,
+        ...(query.cursor !== undefined ? { cursor: query.cursor } : {}),
+        order: query.order,
+        ...(query.status.length > 0 ? { status: query.status.join(',') } : {}),
+        ...(query.asset !== undefined ? { asset: query.asset } : {}),
+        ...(query.recipientAddress !== undefined ? { recipientAddress: query.recipientAddress } : {}),
+        ...(query.senderAddress !== undefined ? { senderAddress: query.senderAddress } : {}),
+        ...(query.walletId !== undefined ? { walletId: query.walletId } : {}),
+      },
+    });
+    return {
+      items: res.data ?? [],
+      nextCursor: (res.meta?.nextCursor as string | undefined) ?? null,
+      hasMore: (res.meta?.hasNextPage as boolean | undefined) ?? false,
+    };
   }
 
   /** Iterate every transaction across all pages. */
@@ -121,3 +163,5 @@ export class TransactionResource extends Resource {
     return res.data ?? [];
   }
 }
+
+export * from './decoder';

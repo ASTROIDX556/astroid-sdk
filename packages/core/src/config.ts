@@ -2,7 +2,19 @@
  * Configuration parsing and normalization for the Astroid HTTP client.
  */
 
-import type { HttpMethod } from './http-types.js';
+import type { AuthTokens } from '@astroid/types';
+
+/** How the SDK authenticates each request. */
+export interface AuthConfig {
+  /** A secret API key (`sk_live_…` / `sk_test_…`). Sent as a Bearer token. */
+  apiKey?: string;
+  /** A short-lived JWT access token (alternative to an API key). */
+  accessToken?: string;
+  /** A refresh token used to obtain a new access token pair. */
+  refreshToken?: string;
+  /** Callback invoked whenever tokens are refreshed or updated. */
+  onTokenUpdate?: (tokens: AuthTokens) => void | Promise<void>;
+}
 
 export interface RetryConfig {
   maxRetries: number;
@@ -71,6 +83,15 @@ export function resolveConfig(config: AstroidClientConfig): ResolvedConfig {
     headers: config.headers ?? {},
     timeoutMs: config.timeoutMs ?? 30000,
     retry,
-    fetch: config.fetch ?? globalThis.fetch,
+    headers: { ...(config.headers ?? {}) },
+    auth: {
+      apiKey: config.apiKey,
+      accessToken: config.accessToken,
+      refreshToken: config.refreshToken,
+      onTokenUpdate: config.onTokenUpdate,
+    },
+    fetch: fetchImpl,
+    network: config.network,
+    enableOfflineQueue: config.enableOfflineQueue ?? false,
   };
 }
