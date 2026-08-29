@@ -107,7 +107,22 @@ export function AstroidProvider(props: AstroidProviderProps): ReactNode {
   return createElement(AstroidContext.Provider, { value: client }, children);
 }
 
-/** Access the {@link Astroid} client from context. Throws if no provider is present. */
+/**
+ * Access the {@link Astroid} client from the nearest {@link AstroidProvider}.
+ *
+ * @returns The shared {@link Astroid} client instance.
+ *
+ * @throws {Error} If no {@link AstroidProvider} is found in the component tree.
+ *
+ * @example
+ * ```tsx
+ * function MyComponent() {
+ *   const astroid = useAstroid();
+ *   const wallets = await astroid.wallets.list();
+ *   // …
+ * }
+ * ```
+ */
 export function useAstroid(): Astroid {
   const client = useContext(AstroidContext);
   if (!client) {
@@ -163,7 +178,11 @@ export const queryKeys = {
   },
 } as const;
 
-/** Extra query options a caller may pass through (everything but key/fn). */
+/**
+ * Extra options forwarded to TanStack Query's `useQuery` for read hooks.
+ * Includes `enabled`, `refetchInterval`, `staleTime`, `gcTime`, etc.
+ * The `queryKey` and `queryFn` are set internally and cannot be overridden.
+ */
 type ReadOptions<TData> = Omit<
   UseQueryOptions<TData, Error, TData>,
   'queryKey' | 'queryFn'
@@ -173,7 +192,19 @@ type ReadOptions<TData> = Omit<
 /*                                 read hooks                                 */
 /* -------------------------------------------------------------------------- */
 
-/** List wallets. */
+/**
+ * Fetch a paginated list of wallets belonging to the current organization.
+ *
+ * @param params  Optional filters: `page`, `pageSize`, `walletType`, etc.
+ * @param options Extra TanStack Query options (`enabled`, `staleTime`, etc.).
+ * @returns       A TanStack Query result with `data` (a {@link Paginated} of
+ *                {@link Wallet}), `isLoading`, `isError`, `error`, etc.
+ *
+ * @example
+ * ```tsx
+ * const { data, isLoading } = useWallets({ page: 1, pageSize: 10 });
+ * ```
+ */
 export function useWallets(
   params?: WalletListParams,
   options?: ReadOptions<Paginated<Wallet>>,
@@ -186,7 +217,23 @@ export function useWallets(
   });
 }
 
-/** Fetch a single wallet. Disabled until `id` is truthy. */
+/**
+ * Fetch a single wallet by its ID.
+ *
+ * The query is automatically **disabled** when `id` is `undefined` or empty,
+ * so it is safe to pass a conditional value without guarding the render.
+ *
+ * @param id      The wallet ID to fetch. Pass `undefined` to skip the request.
+ * @param options Extra TanStack Query options.
+ * @returns       A TanStack Query result with `data` (a {@link Wallet}),
+ *                `isLoading`, `isError`, `error`, etc.
+ *
+ * @example
+ * ```tsx
+ * const { data: wallet } = useWallet(selectedWalletId);
+ * if (wallet) console.log(wallet.name);
+ * ```
+ */
 export function useWallet(
   id: string | undefined,
   options?: ReadOptions<Wallet>,
@@ -200,7 +247,19 @@ export function useWallet(
   });
 }
 
-/** List agents. */
+/**
+ * Fetch a paginated list of AI agents.
+ *
+ * @param params  Optional filters: `page`, `pageSize`, `walletId`, etc.
+ * @param options Extra TanStack Query options.
+ * @returns       A TanStack Query result with `data` (a {@link Paginated} of
+ *                {@link Agent}), `isLoading`, `isError`, `error`, etc.
+ *
+ * @example
+ * ```tsx
+ * const { data } = useAgents({ walletId: 'wal_123' });
+ * ```
+ */
 export function useAgents(
   params?: AgentListParams,
   options?: ReadOptions<Paginated<Agent>>,
@@ -213,7 +272,21 @@ export function useAgents(
   });
 }
 
-/** Fetch a single agent. Disabled until `id` is truthy. */
+/**
+ * Fetch a single AI agent by its ID.
+ *
+ * The query is automatically **disabled** when `id` is `undefined` or empty.
+ *
+ * @param id      The agent ID to fetch. Pass `undefined` to skip the request.
+ * @param options Extra TanStack Query options.
+ * @returns       A TanStack Query result with `data` (an {@link Agent}),
+ *                `isLoading`, `isError`, `error`, etc.
+ *
+ * @example
+ * ```tsx
+ * const { data: agent } = useAgent(agentId);
+ * ```
+ */
 export function useAgent(
   id: string | undefined,
   options?: ReadOptions<Agent>,
@@ -227,7 +300,20 @@ export function useAgent(
   });
 }
 
-/** List policies. */
+/**
+ * Fetch a paginated list of spending policies.
+ *
+ * @param params  Optional filters: `page`, `pageSize`, `type`, `enabled`,
+ *                `agentId`, `walletId`, etc.
+ * @param options Extra TanStack Query options.
+ * @returns       A TanStack Query result with `data` (a {@link Paginated} of
+ *                {@link Policy}), `isLoading`, `isError`, `error`, etc.
+ *
+ * @example
+ * ```tsx
+ * const { data } = usePolicies({ type: 'MAX_AMOUNT', enabled: true });
+ * ```
+ */
 export function usePolicies(
   params?: PolicyListParams,
   options?: ReadOptions<Paginated<Policy>>,
@@ -240,7 +326,19 @@ export function usePolicies(
   });
 }
 
-/** List budgets. */
+/**
+ * Fetch a paginated list of budgets.
+ *
+ * @param params  Optional filters: `page`, `pageSize`, `walletId`, etc.
+ * @param options Extra TanStack Query options.
+ * @returns       A TanStack Query result with `data` (a {@link Paginated} of
+ *                {@link Budget}), `isLoading`, `isError`, `error`, etc.
+ *
+ * @example
+ * ```tsx
+ * const { data } = useBudgets({ walletId: 'wal_123' });
+ * ```
+ */
 export function useBudgets(
   params?: BudgetListParams,
   options?: ReadOptions<Paginated<Budget>>,
@@ -253,7 +351,20 @@ export function useBudgets(
   });
 }
 
-/** List transactions. */
+/**
+ * Fetch a paginated list of transactions.
+ *
+ * @param params  Optional filters: `page`, `pageSize`, `walletId`,
+ *                `status`, etc.
+ * @param options Extra TanStack Query options.
+ * @returns       A TanStack Query result with `data` (a {@link Paginated} of
+ *                {@link Transaction}), `isLoading`, `isError`, `error`, etc.
+ *
+ * @example
+ * ```tsx
+ * const { data } = useTransactions({ walletId: 'wal_123', pageSize: 20 });
+ * ```
+ */
 export function useTransactions(
   params?: TransactionListParams,
   options?: ReadOptions<Paginated<Transaction>>,
@@ -266,7 +377,19 @@ export function useTransactions(
   });
 }
 
-/** List notifications. */
+/**
+ * Fetch a paginated list of notifications.
+ *
+ * @param params  Optional filters: `page`, `pageSize`, `read`, etc.
+ * @param options Extra TanStack Query options.
+ * @returns       A TanStack Query result with `data` (a {@link Paginated} of
+ *                {@link Notification}), `isLoading`, `isError`, `error`, etc.
+ *
+ * @example
+ * ```tsx
+ * const { data } = useNotifications({ read: false });
+ * ```
+ */
 export function useNotifications(
   params?: NotificationListParams,
   options?: ReadOptions<Paginated<Notification>>,
@@ -279,7 +402,21 @@ export function useNotifications(
   });
 }
 
-/** The count of unread notifications. */
+/**
+ * Fetch the count of unread notifications for the current user.
+ *
+ * Useful for rendering badge indicators (e.g. notification bell count).
+ *
+ * @param options Extra TanStack Query options.
+ * @returns       A TanStack Query result with `data` (a `number`),
+ *                `isLoading`, `isError`, `error`, etc.
+ *
+ * @example
+ * ```tsx
+ * const { data: count } = useUnreadCount();
+ * return <Badge>{count ?? 0}</Badge>;
+ * ```
+ */
 export function useUnreadCount(
   options?: ReadOptions<number>,
 ): UseQueryResult<number, Error> {
@@ -291,7 +428,25 @@ export function useUnreadCount(
   });
 }
 
-/** Headline analytics for the dashboard. */
+/**
+ * Fetch headline analytics (total volume, transaction count, etc.) for a
+ * dashboard or reporting view.
+ *
+ * @param query   Optional filters: date range, wallet ID, agent ID, etc.
+ *                See {@link AnalyticsQuery} for the full shape.
+ * @param options Extra TanStack Query options.
+ * @returns       A TanStack Query result with `data` (an
+ *                {@link AnalyticsOverview}), `isLoading`, `isError`, `error`,
+ *                etc.
+ *
+ * @example
+ * ```tsx
+ * const { data } = useAnalyticsOverview({
+ *   startDate: '2026-01-01',
+ *   endDate: '2026-01-31',
+ * });
+ * ```
+ */
 export function useAnalyticsOverview(
   query?: AnalyticsQuery,
   options?: ReadOptions<AnalyticsOverview>,
@@ -308,13 +463,36 @@ export function useAnalyticsOverview(
 /*                               mutation hooks                               */
 /* -------------------------------------------------------------------------- */
 
-/** Options a caller may pass to a mutation hook (everything but `mutationFn`). */
+/**
+ * Extra options forwarded to TanStack Query's `useMutation` for write hooks.
+ * Includes `onSuccess`, `onError`, `onSettled`, `retry`, etc. The
+ * `mutationFn` is set internally and cannot be overridden.
+ */
 type WriteOptions<TData, TVars> = Omit<
   UseMutationOptions<TData, Error, TVars>,
   'mutationFn'
 >;
 
-/** Create a wallet; invalidates the wallet lists on success. */
+/**
+ * Create a new wallet.
+ *
+ * Automatically **invalidates all wallet queries** on success so lists and
+ * detail views refresh without manual bookkeeping.
+ *
+ * @param options Extra TanStack Query mutation options (`onSuccess`,
+ *                `onError`, `retry`, etc.).
+ * @returns       A TanStack Query mutation result with `mutate`,
+ *                `mutateAsync`, `isPending`, `isSuccess`, `error`, etc.
+ *
+ * @example
+ * ```tsx
+ * const { mutate, isPending } = useCreateWallet();
+ *
+ * function handleCreate() {
+ *   mutate({ name: 'Ops Wallet', walletType: 'CUSTODIAL' });
+ * }
+ * ```
+ */
 export function useCreateWallet(
   options?: WriteOptions<Wallet, CreateWalletInput>,
 ): UseMutationResult<Wallet, Error, CreateWalletInput> {
@@ -330,7 +508,30 @@ export function useCreateWallet(
   });
 }
 
-/** Transfer from a wallet; invalidates wallets and transactions on success. */
+/**
+ * Execute a transfer from a specific wallet.
+ *
+ * Automatically **invalidates all wallet and transaction queries** on success
+ * so balances and transaction lists refresh immediately.
+ *
+ * @param walletId The ID of the wallet to transfer from.
+ * @param options  Extra TanStack Query mutation options.
+ * @returns        A TanStack Query mutation result with `mutate`,
+ *                 `mutateAsync`, `isPending`, `isSuccess`, `error`, etc.
+ *
+ * @example
+ * ```tsx
+ * const { mutate } = useTransfer('wal_abc123');
+ *
+ * function handleSend() {
+ *   mutate({
+ *     destinationAddress: 'GABC...XYZ',
+ *     asset: 'USDC',
+ *     amount: '25.00',
+ *   });
+ * }
+ * ```
+ */
 export function useTransfer(
   walletId: string,
   options?: WriteOptions<Transaction, TransferInput>,
@@ -348,7 +549,25 @@ export function useTransfer(
   });
 }
 
-/** Create an agent; invalidates the agent lists on success. */
+/**
+ * Create a new AI agent.
+ *
+ * Automatically **invalidates all agent queries** on success so lists and
+ * detail views refresh.
+ *
+ * @param options Extra TanStack Query mutation options.
+ * @returns       A TanStack Query mutation result with `mutate`,
+ *                `mutateAsync`, `isPending`, `isSuccess`, `error`, etc.
+ *
+ * @example
+ * ```tsx
+ * const { mutate } = useCreateAgent();
+ *
+ * function handleCreate() {
+ *   mutate({ name: 'Payment Bot', walletId: 'wal_abc123' });
+ * }
+ * ```
+ */
 export function useCreateAgent(
   options?: WriteOptions<Agent, CreateAgentInput>,
 ): UseMutationResult<Agent, Error, CreateAgentInput> {
@@ -365,8 +584,36 @@ export function useCreateAgent(
 }
 
 /**
- * The AI-native mutation: submit a financial intent. On an executed or pending
- * outcome it invalidates transactions and wallets so balances reflect the draw.
+ * The AI-native mutation: submit a high-level financial intent (e.g.
+ * "Pay 150 USDC for OpenAI credits"). The backend orchestrates the full
+ * workflow — proposal, policy evaluation, risk scoring, transaction — and
+ * returns a {@link PaymentIntentResult} whose `outcome` says what happened
+ * (`executed`, `pending_approval`, `simulated`, or `rejected`).
+ *
+ * On an `executed` or `pending_approval` outcome, **transaction and wallet
+ * queries are automatically invalidated** so balances reflect the draw.
+ *
+ * @param options Extra TanStack Query mutation options.
+ * @returns       A TanStack Query mutation result with `mutate`,
+ *                `mutateAsync`, `isPending`, `isSuccess`, `error`, etc.
+ *
+ * @example
+ * ```tsx
+ * const { mutate, data } = useRequestPayment();
+ *
+ * function handlePay() {
+ *   mutate({
+ *     intent: 'Purchase OpenAI credits',
+ *     amount: 150,
+ *     asset: 'USDC',
+ *   });
+ * }
+ *
+ * // After mutation completes:
+ * if (data?.outcome === 'executed') {
+ *   toast.success(data.explanation);
+ * }
+ * ```
  */
 export function useRequestPayment(
   options?: WriteOptions<PaymentIntentResult, PaymentIntent>,
@@ -391,11 +638,25 @@ export function useRequestPayment(
 /* -------------------------------------------------------------------------- */
 
 /**
- * Subscribe a component to a client event for its lifetime. The handler is kept
- * in a ref, so passing a fresh closure each render does not re-subscribe.
+ * Subscribe a component to an Astroid SDK event for its lifetime. The
+ * subscription is automatically cleaned up when the component unmounts.
  *
+ * The handler is stored in a ref, so passing a fresh closure each render does
+ * **not** cause a re-subscription — the latest handler is always called.
+ *
+ * @param event   The webhook event name to listen for (e.g.
+ *                `'transaction.completed'`, `'wallet.frozen'`).
+ * @param handler Called with the typed event data and the full event envelope
+ *                every time the event fires.
+ *
+ * @example
  * ```tsx
- * useAstroidEvent('transaction.completed', (tx) => toast(`Sent ${tx.id}`));
+ * function TxNotifier() {
+ *   useAstroidEvent('transaction.completed', (tx) => {
+ *     toast.success(`Transaction ${tx.id} confirmed!`);
+ *   });
+ *   return null;
+ * }
  * ```
  */
 export function useAstroidEvent<K extends WebhookEventName>(
