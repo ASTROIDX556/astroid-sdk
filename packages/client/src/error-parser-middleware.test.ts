@@ -32,12 +32,8 @@ function errorResponse(
   message: string,
   details?: Record<string, unknown>,
 ): Response {
-  return jsonResponse(
-    { error: { code, message, details } },
-    status,
-  );
+  return jsonResponse({ error: { code, message, details } }, status);
 }
-
 
 /* -------------------------------------------------------------------------- */
 /* parseErrorBody — direct unit tests                                          */
@@ -118,7 +114,7 @@ describe('parseErrorBody', () => {
     const error = parseErrorBody(400, body);
     expect(error).toBeInstanceOf(StellarHorizonError);
     if (error instanceof StellarHorizonError) {
-      expect(error.stellarCode).toBe('op_underfunded');
+      expect(error.code).toBe('op_underfunded');
       expect(error.operationCode).toBe('op_underfunded');
     }
   });
@@ -164,9 +160,7 @@ describe('parseErrorBody', () => {
 
   it('extracts field-level validation errors from validationErrors array', () => {
     const body = {
-      validationErrors: [
-        { field: 'name', message: 'Too short' },
-      ],
+      validationErrors: [{ field: 'name', message: 'Too short' }],
     };
     const error = parseErrorBody(422, body);
     expect(error).toBeInstanceOf(ValidationError);
@@ -181,9 +175,7 @@ describe('parseErrorBody', () => {
         code: 'VALIDATION_ERROR',
         message: 'Invalid',
         details: {
-          validationErrors: [
-            { field: 'wallet_id', message: 'Required' },
-          ],
+          validationErrors: [{ field: 'wallet_id', message: 'Required' }],
         },
       },
     };
@@ -305,9 +297,7 @@ describe('createErrorParserMiddleware', () => {
       fetch: mockFetch,
     });
 
-    await expect(
-      astroid.wallets.list(),
-    ).rejects.toThrow();
+    await expect(astroid.wallets.list()).rejects.toThrow();
 
     try {
       await astroid.wallets.list();

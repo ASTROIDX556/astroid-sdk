@@ -7,23 +7,19 @@ import { createElement, type ReactNode } from 'react';
 import { act } from 'react-dom/test-utils';
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Astroid, type AstroidClientConfig } from '@astroid/client';
+import { Astroid } from '@astroid/client';
 import {
   AstroidProvider,
   useAgent,
   useAgents,
   useWallets,
   queryKeys,
+  type AstroidProviderProps,
 } from '../index.js';
 
 /* -------------------------------------------------------------------------- */
 /* Test helpers                                                                */
 /* -------------------------------------------------------------------------- */
-
-const CONFIG: AstroidClientConfig = {
-  apiKey: 'sk_test_hooks',
-  baseUrl: 'https://api.test',
-};
 
 function renderInProviders(
   children: ReactNode,
@@ -34,14 +30,17 @@ function renderInProviders(
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
-  const client = options.client ?? new Astroid(CONFIG);
+  const client = options.client ?? new Astroid({
+    apiKey: 'sk_test_hooks',
+    baseUrl: 'https://api.test',
+  });
 
   act(() => {
     root.render(
       createElement(
         QueryClientProvider,
         { client: new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } }) },
-        createElement(AstroidProvider, { client, children }),
+        createElement(AstroidProvider, { client, children } as AstroidProviderProps),
       ),
     );
   });
@@ -92,7 +91,6 @@ describe('useAgent', () => {
     }
 
     const { unmount } = renderInProviders(createElement(TestComponent));
-    // Query starts in loading state (disabled by default since no mock)
     expect(typeof isLoading).toBe('boolean');
     unmount();
   });

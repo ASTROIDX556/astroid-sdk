@@ -41,7 +41,10 @@ export abstract class Resource {
     query?: Record<string, QueryValue>,
     extras?: RequestOptionsExtras,
   ): Promise<Paginated<TItem>> {
-    const res: AstroidResponse<TItem[]> = await this.client.get<TItem[]>(path, { ...(extras ?? {}), ...(query ? { query } : {}) });
+    const res: AstroidResponse<TItem[]> = await this.client.get<TItem[]>(
+      path,
+      { ...(extras ?? {}), ...(query ? { query } : {}) },
+    );
     return { data: res.data ?? [], meta: normalizeMeta(res) };
   }
 

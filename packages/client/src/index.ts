@@ -24,12 +24,7 @@
  * @packageDocumentation
  */
 
-import {
-  HttpClient,
-  SDK_VERSION,
-  type AstroidClientConfig,
-  type Middleware,
-} from '@astroid/core';
+import { HttpClient, SDK_VERSION, type AstroidClientConfig, type Middleware } from '@astroid/core';
 import { createCorrelationMiddleware } from './middleware/correlation.js';
 import { createErrorParserMiddleware } from './error-parser-middleware.js';
 import { AgentResource } from '@astroid/agent';
@@ -173,9 +168,10 @@ export class Astroid {
     const authConfig = this.http.config.auth;
 
     // If accessToken is a dynamic function, extract it as a token provider.
-    const dynamicTokenProvider = !(config instanceof HttpClient) && typeof config.accessToken === 'function'
-      ? config.accessToken
-      : undefined;
+    const dynamicTokenProvider =
+      !(config instanceof HttpClient) && typeof config.accessToken === 'function'
+        ? config.accessToken
+        : undefined;
 
     this.sessionManager = new SessionManager({
       accessToken: typeof authConfig.accessToken === 'string' ? authConfig.accessToken : undefined,
@@ -204,7 +200,7 @@ export class Astroid {
         const res = await this.http.post<AuthTokens>('/auth/refresh', { refreshToken });
         this.setAccessToken(res.data.accessToken);
         return res.data;
-      })
+      }),
     );
 
     this.http.set401Handler(async () => {
@@ -326,10 +322,7 @@ export { WalletResource, type WalletListParams } from '@astroid/wallet';
 export { AgentResource, type AgentListParams } from '@astroid/agent';
 export { PolicyResource, type PolicyListParams } from '@astroid/policy';
 export { BudgetResource, type BudgetListParams } from '@astroid/budget';
-export {
-  TransactionResource,
-  type ProposalListParams,
-} from '@astroid/transaction';
+export { TransactionResource, type ProposalListParams } from '@astroid/transaction';
 export { NotificationResource } from '@astroid/notification';
 export { AnalyticsResource } from '@astroid/analytics';
 export {
@@ -376,7 +369,6 @@ export {
   errorTranslatorMiddleware,
   errorMiddleware,
   translateErrorBody,
-  detectStellarCode,
 } from './middleware/error.js';
 export {
   createCorrelationMiddleware,
@@ -401,4 +393,3 @@ export {
   type ParsedError,
 } from './errors.js';
 export { createErrorParserMiddleware } from './error-parser-middleware.js';
-

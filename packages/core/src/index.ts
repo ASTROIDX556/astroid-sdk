@@ -9,6 +9,7 @@
  */
 
 export { HttpClient, SDK_VERSION } from './http-client.js';
+export { AstroidTimeoutError } from './timeout-error.js';
 export {
   resolveConfig,
   DEFAULT_BASE_URL,
@@ -52,4 +53,3 @@ export {
   type LogSink,
   type RetryMiddlewareOptions,
 } from './middleware.js';
-

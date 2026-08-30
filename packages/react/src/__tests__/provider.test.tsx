@@ -6,37 +6,27 @@ import { describe, expect, it, vi, afterEach } from 'vitest';
 import { createElement, type ReactNode } from 'react';
 import { act } from 'react-dom/test-utils';
 import { createRoot } from 'react-dom/client';
-import { Astroid, type AstroidClientConfig } from '@astroid/client';
-import { AstroidProvider, useAstroid } from '../index.js';
+import { Astroid } from '@astroid/client';
+import { AstroidProvider, useAstroid, type AstroidProviderProps } from '../index.js';
 
 /* -------------------------------------------------------------------------- */
 /* Test helpers                                                                */
 /* -------------------------------------------------------------------------- */
 
-const CONFIG: AstroidClientConfig = {
-  apiKey: 'sk_test_provider',
-  baseUrl: 'https://api.test',
-};
-
 function renderWithProviders(
   children: ReactNode,
   options: {
-    client?: Astroid;
-    config?: AstroidClientConfig;
-  } = {},
+    client: Astroid;
+  },
 ): { unmount: () => void } {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
-  const providerProps: { children: ReactNode } & (
-    | { client: Astroid }
-    | { config: AstroidClientConfig }
-  ) = options.client
-    ? { client: options.client, children }
-    : { config: options.config ?? CONFIG, children };
 
   act(() => {
-    root.render(createElement(AstroidProvider, providerProps));
+    root.render(
+      createElement(AstroidProvider, { client: options.client, children } as AstroidProviderProps),
+    );
   });
 
   return {
@@ -58,6 +48,11 @@ describe('AstroidProvider', () => {
     vi.restoreAllMocks();
   });
 
+  const client = new Astroid({
+    apiKey: 'sk_test_provider',
+    baseUrl: 'https://api.test',
+  });
+
   it('provides the client to useAstroid', () => {
     let receivedVersion: string | undefined;
 
@@ -67,17 +62,12 @@ describe('AstroidProvider', () => {
       return null;
     }
 
-    const { unmount } = renderWithProviders(createElement(Consumer));
+    const { unmount } = renderWithProviders(createElement(Consumer), { client });
     expect(receivedVersion).toBe('0.1.0');
     unmount();
   });
 
-  it('accepts a pre-built client instance', () => {
-    const client = new Astroid({
-      apiKey: 'sk_test_prebuilt',
-      baseUrl: 'https://api.test',
-    });
-
+  it('returns the same client instance that was passed', () => {
     let receivedClient: Astroid | undefined;
 
     function Consumer() {
@@ -89,36 +79,5 @@ describe('AstroidProvider', () => {
     const { unmount } = renderWithProviders(createElement(Consumer), { client });
     expect(receivedClient).toBe(client);
     unmount();
-  });
-
-  it('does not recreate the client on re-render when config is stable', () => {
-    const clients: Astroid[] = [];
-
-    function Consumer() {
-      const astroid = useAstroid();
-      clients.push(astroid);
-      return null;
-    }
-
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    const root = createRoot(container);
-
-    act(() => {
-      root.render(
-        createElement(AstroidProvider, { config: CONFIG, children: createElement(Consumer) }),
-      );
-    });
-    act(() => {
-      root.render(
-        createElement(AstroidProvider, { config: CONFIG, children: createElement(Consumer) }),
-      );
-    });
-
-    expect(clients[0]).toBe(clients[1]);
-    act(() => {
-      root.unmount();
-    });
-    document.body.removeChild(container);
   });
 });
