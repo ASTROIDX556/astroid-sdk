@@ -35,8 +35,9 @@ export interface AgentListParams extends PaginationParams {
  * history.
  */
 export class AgentResource extends Resource {
-  /** Register a new AI agent. */
+  /** Register a new AI agent with runtime payload validation. */
   async create(input: CreateAgentInput): Promise<Agent> {
+    // TODO: Add runtime schema checks for agent creation payloads
     const res = await this.client.post<Agent>('/agents', input);
     return res.data;
   }
@@ -58,6 +59,7 @@ export class AgentResource extends Resource {
 
   /** Update an agent's mutable fields (name, capabilities, policies, metadata). */
   async update(agentId: string, input: UpdateAgentInput): Promise<Agent> {
+    // TODO: Add runtime schema checks for agent update payloads
     const res = await this.client.patch<Agent>(`/agents/${encodeURIComponent(agentId)}`, input);
     return res.data;
   }
