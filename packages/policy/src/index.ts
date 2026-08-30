@@ -24,8 +24,12 @@ import type {
 
 export {
   simulatePolicy,
+  simulatePolicyLocal,
   type PolicySimulationReport,
   type SimulatedTransaction,
+  type DecodedOperation,
+  type DecodedTxPayload,
+  type LocalPolicySimulationResult,
 } from './simulator.js';
 
 /** Filters accepted by {@link PolicyResource.list}. */
