@@ -60,14 +60,15 @@ export class AstroidError extends Error {
 
   /** A plain, serialisable representation (safe to log — no secrets). */
   toJSON(): Record<string, unknown> {
-    return {
-      name: this.name,
-      message: this.message,
-      code: this.code,
-      status: this.status,
-      requestId: this.requestId,
-      details: this.details,
-    };
+  return {
+    name: this.name,
+    message: this.message,
+    code: this.code,
+    status: this.status,
+    requestId: this.requestId,
+    details: this.details,
+    stack: this.stack,
+  };
   }
 }
 
@@ -157,11 +158,13 @@ export function errorClassForCode(code: string): typeof AstroidError {
     case ApiErrorCode.CONFLICT:
       return ConflictError;
     case ApiErrorCode.POLICY_VIOLATION:
+    case ApiErrorCode.POLICY_REJECTED:
     case ApiErrorCode.RISK_THRESHOLD_EXCEEDED:
       return PolicyViolationError;
     case ApiErrorCode.BUDGET_EXCEEDED:
       return BudgetExceededError;
     case ApiErrorCode.INSUFFICIENT_FUNDS:
+    case ApiErrorCode.INSUFFICIENT_BALANCE:
     case ApiErrorCode.WALLET_FROZEN:
       return InsufficientFundsError;
     case ApiErrorCode.APPROVAL_REQUIRED:
@@ -209,6 +212,15 @@ export interface NormalizeErrorContext {
 /**
  * Builds the correct typed error from an API error object (the `error` field of
  * a failed response envelope).
+ *
+ * @example
+ * ```ts
+ * const err = fromApiError(
+ *   { code: 'POLICY_VIOLATION', message: 'Exceeds daily limit' },
+ *   { status: 422, requestId: 'req_123' },
+ * );
+ * err instanceof PolicyViolationError; // true
+ * ```
  */
 export function fromApiError(apiError: ApiError, context: NormalizeErrorContext = {}): AstroidError {
   const ErrorClass = errorClassForCode(apiError.code);
@@ -248,6 +260,49 @@ export function toNetworkError(cause: unknown, message = 'Network request failed
     code: ApiErrorCode.NETWORK_ERROR,
     cause,
   });
+}
+
+/**
+ * Parse an HTTP `Response` and throw the corresponding typed error.
+ *
+ * Reads the response body once, parses the JSON envelope, and builds a
+ * typed `AstroidError` via {@link fromApiError} or {@link fromStatus}.
+ * Useful as a one-liner in fetch-based code:
+ *
+ * @example
+ * ```ts
+ * const res = await fetch('/api/wallets');
+ * if (!res.ok) await fromErrorResponse(res);
+ * ```
+ *
+ * @throws {AstroidError} always — the function never returns.
+ */
+export async function fromErrorResponse(response: Response): Promise<never> {
+  const status = response.status;
+  const requestId = response.headers.get('x-request-id') ?? undefined;
+
+  let body: unknown;
+  try {
+    const text = await response.text();
+    body = text ? JSON.parse(text) : undefined;
+  } catch {
+    body = undefined;
+  }
+
+  const envelope = body as
+    | { error?: { code?: string; message?: string; details?: Record<string, unknown> } }
+    | undefined;
+
+  if (envelope?.error) {
+    const apiError = {
+      code: envelope.error.code ?? codeForStatus(status),
+      message: envelope.error.message ?? `Request failed with status ${status}`,
+      details: envelope.error.details,
+    };
+    throw fromApiError(apiError, { status, requestId });
+  }
+
+  throw fromStatus(status, `Request failed with status ${status}`, { requestId });
 }
 
 /** Type guard: is this value an Astroid SDK error? */
