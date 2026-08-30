@@ -63,6 +63,8 @@ import type {
   PaymentIntent,
   PaymentIntentResult,
   Policy,
+  PolicySimulationResult,
+  SimulatePolicyInput,
   Transaction,
   TransactionListParams,
   TransferInput,
@@ -517,6 +519,44 @@ export function useCreateAgent(
       void qc.invalidateQueries({ queryKey: queryKeys.agents.all });
       options?.onSuccess?.(data, vars, ctx);
     },
+  });
+}
+
+/**
+ * Pre-flight a hypothetical transaction against the applicable policies
+ * without creating anything. Equivalent to {@link PolicyResource.simulate}.
+ *
+ * The backend policy engine evaluates the proposed payload and returns
+ * violations, required approvals, risk and budget impact, plus a
+ * human-readable explanation. No transaction is created or submitted.
+ *
+ * @param options Extra TanStack Query mutation options.
+ * @returns       A TanStack Query mutation result with `mutate`,
+ *                `mutateAsync`, `isPending`, `isSuccess`, `error`, and a
+ *                `data` of {@link PolicySimulationResult} on success.
+ *
+ * @example
+ * ```tsx
+ * const { mutateAsync, data, isPending } = useSimulatePolicy();
+ *
+ * async function handleCheck() {
+ *   const result = await mutateAsync({
+ *     walletId: 'wal_123',
+ *     asset: 'USDC',
+ *     amount: '150',
+ *     recipientAddress: 'GA…XYZ',
+ *   });
+ *   if (!result.allowed) console.log(result.explanation);
+ * }
+ * ```
+ */
+export function useSimulatePolicy(
+  options?: WriteOptions<PolicySimulationResult, SimulatePolicyInput>,
+): UseMutationResult<PolicySimulationResult, Error, SimulatePolicyInput> {
+  const astroid = useAstroid();
+  return useMutation({
+    mutationFn: (input: SimulatePolicyInput) => astroid.policies.simulate(input),
+    ...options,
   });
 }
 

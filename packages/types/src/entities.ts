@@ -180,6 +180,27 @@ export interface BudgetHistoryEntry {
   createdAt: IsoDateTime;
 }
 
+/** Aggregated summary metrics for a budget, returned by `budgets.metrics`. */
+export interface BudgetMetrics {
+  budgetId: string;
+  /** Utilization as a fraction `0–1` (e.g. `0.8` = 80%). */
+  utilization: number;
+  /** Utilization as a percentage. */
+  percent: number;
+  /** Amount spent in the active window. */
+  spent: DecimalString;
+  /** Amount remaining in the active window. */
+  remaining: DecimalString;
+  /** The window limit. */
+  limit: DecimalString;
+  /** Alert level: `ok`, `warn`, `critical`, or `exceeded`. */
+  alertLevel: 'ok' | 'warn' | 'critical' | 'exceeded';
+  /** Whether any configured threshold was crossed. */
+  thresholdExceeded: boolean;
+  /** Number of window periods remaining before exhaustion (null when no burn). */
+  periodsUntilExhaustion: number | null;
+}
+
 /** 7. Transaction — a financial movement and its governance metadata. */
 export interface Transaction {
   id: string;

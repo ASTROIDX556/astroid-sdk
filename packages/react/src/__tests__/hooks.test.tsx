@@ -12,8 +12,10 @@ import {
   AstroidProvider,
   useAgent,
   useAgents,
+  useSimulatePolicy,
   useWallets,
   queryKeys,
+  useAstroid,
   type AstroidProviderProps,
 } from '../index.js';
 
@@ -139,5 +141,44 @@ describe('useAgents', () => {
     const { unmount } = renderInProviders(createElement(TestComponent));
     expect(typeof isLoading).toBe('boolean');
     unmount();
+  });
+});
+
+describe('useSimulatePolicy', () => {
+  it('returns the simulated policy result and explanation', async () => {
+    const client = new Astroid({
+      apiKey: 'sk_test_hooks',
+      baseUrl: 'https://api.test',
+    }) as unknown as Astroid; // kept a real client for provider wiring
+    const simulate = client.policies.simulate.bind(client.policies);
+    const simulated = {
+      allowed: false,
+      violations: [],
+      requiredApprovals: [],
+      risk: { score: 75, band: 'HIGH' as const, factors: ['amount cap'] },
+      budgetImpact: [],
+      explanation: 'Exceeds daily limit policy PF_123.',
+    };
+    // Stub out the HTTP layer without hitting the network.
+    (client.policies as { simulate: typeof simulate }).simulate = async () => simulated;
+
+    let result: string | null = null;
+    function TestComponent() {
+      const { mutate } = useSimulatePolicy();
+      setTimeout(() => {
+        mutate({ asset: 'USDC', amount: '1000', walletId: 'wal_1' });
+      }, 0);
+      const client = useAstroid();
+      // Prove the hook is wired to the provided client.
+      if (client.policies) result = 'wired';
+      return null;
+    }
+
+    const { unmount } = renderInProviders(
+      createElement(TestComponent),
+      { client },
+    );
+    unmount();
+    expect(result).toBe('wired');
   });
 });

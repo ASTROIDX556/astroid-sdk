@@ -28,6 +28,7 @@ export * from './validation.js';
 export * from './simulation.js';
 export * from './builder.js';
 export * from './submit.js';
+export * from './fee-estimation.js';
 export {
   buildTransactionHistoryQuery,
   fetchTransactionHistory,
