@@ -367,7 +367,7 @@ export function simulatePolicyLocal(
       const opDest = op.destination || op.recipient || '';
 
       // 1. Asset Allowlist rule
-      const allowedAssets = config.allowedAssets || (policy.type === 'asset_allowlist' && Array.isArray(config.assets) ? config.assets : undefined);
+      const allowedAssets = config.allowedAssets || (policy.type === 'ALLOWED_ASSETS' && Array.isArray(config.assets) ? config.assets : undefined);
       if (Array.isArray(allowedAssets) && allowedAssets.length > 0) {
         if (opAsset && !allowedAssets.includes(opAsset)) {
           violations.push({
@@ -408,7 +408,7 @@ export function simulatePolicyLocal(
       }
 
       // 4. Destination Denylist rule
-      const blockedRecipients = config.blockedRecipients || config.destinationDenylist || (policy.type === 'destination_denylist' && Array.isArray(config.recipients) ? config.recipients : undefined);
+      const blockedRecipients = config.blockedRecipients || config.destinationDenylist || (policy.type === 'BLOCKED_RECIPIENTS' && Array.isArray(config.recipients) ? config.recipients : undefined);
       if (Array.isArray(blockedRecipients) && blockedRecipients.length > 0) {
         if (opDest && blockedRecipients.includes(opDest)) {
           violations.push({
