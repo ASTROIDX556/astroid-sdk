@@ -6,7 +6,7 @@
 
 import { AuthenticationError } from '@astroid/errors';
 import type { AuthTokens } from '@astroid/types';
-import type { Middleware, PreparedRequest } from '@astroid/core';
+import type { HttpClient, Middleware, PreparedRequest } from '@astroid/core';
 
 /** Custom storage interface for persisting session tokens (e.g., localStorage). */
 export interface TokenStorage {
@@ -230,6 +230,36 @@ export class SessionManager {
 
     return this.activeRefreshPromise;
   }
+}
+
+/**
+ * Wire a {@link SessionManager} to an {@link HttpClient} so that 401
+ * responses trigger automatic token refresh and the failed request is
+ * retried with the new credentials.
+ *
+ * ```ts
+ * import { SessionManager, wireSessionToHttpClient } from '@astroid/auth';
+ *
+ * const session = new SessionManager({ storage: localStorage });
+ * const client = new Astroid({ baseUrl, apiKey });
+ * wireSessionToHttpClient(client, session, refreshFn);
+ * ```
+ */
+export function wireSessionToHttpClient(
+  client: HttpClient,
+  sessionManager: SessionManager,
+  refreshFn: (refreshToken: string) => Promise<AuthTokens>,
+): void {
+  client.set401Handler(async () => {
+    try {
+      await sessionManager.refreshSession(refreshFn);
+      const token = sessionManager.getAccessToken();
+      if (token) client.setAccessToken(token);
+      return true;
+    } catch {
+      return false;
+    }
+  });
 }
 
 /**
