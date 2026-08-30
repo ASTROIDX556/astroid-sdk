@@ -92,6 +92,43 @@ export interface Paginated<TItem> {
   meta: PaginationMeta;
 }
 
+/**
+ * Cursor-based pagination metadata embedded in a paginated response.
+ */
+export interface CursorPaginationMeta {
+  /** Total number of items across all pages. */
+  total: number;
+  /** Whether more pages are available after this one. */
+  hasMore: boolean;
+  /** Opaque cursor for the next page, or `null` when there are no more pages. */
+  nextCursor: string | null;
+  /** Maximum number of items returned per page. */
+  limit: number;
+}
+
+/**
+ * A paginated API response envelope. Wraps the standard success/error
+ * response structure with a list-oriented `data` array and cursor-based
+ * pagination metadata.
+ *
+ * @example
+ * ```ts
+ * const res: PaginatedResponse<Wallet> = await fetch('/wallets');
+ * for (const wallet of res.data) { ... }
+ * if (res.pagination?.hasMore) { ... }
+ * ```
+ */
+export interface PaginatedResponse<TItem> {
+  /** Whether the request succeeded. */
+  success: boolean;
+  /** The list of items returned for this page. */
+  data: TItem[];
+  /** Cursor-based pagination metadata, or `undefined` for non-paginated endpoints. */
+  pagination?: CursorPaginationMeta;
+  /** The API request ID for tracing. */
+  requestId: string;
+}
+
 /** Query parameters supported by every list endpoint. */
 export interface PaginationParams {
   page?: number;

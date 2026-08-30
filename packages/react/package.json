@@ -14,9 +14,13 @@
       "require": "./dist/index.cjs"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "sideEffects": false,
-  "publishConfig": { "access": "public" },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
@@ -33,6 +37,8 @@
   "devDependencies": {
     "@tanstack/react-query": "5.62.11",
     "@types/react": "18.3.18",
+    "@types/react-dom": "^19.2.5",
+    "jsdom": "^30.0.1",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "@testing-library/react": "^16.1.0",

@@ -17,6 +17,9 @@ export {
   type ResolvedConfig,
   type AuthConfig,
   type RetryConfig,
+  type TelemetryHooks,
+  type TelemetryRequestInfo,
+  type TelemetryResponseInfo,
 } from './config.js';
 export {
   MiddlewareStack,
@@ -29,7 +32,7 @@ export {
   type ErrorPayload,
   type Middleware,
 } from './http-types.js';
-export { Resource, type ListRequestOptions } from './resource.js';
+export { Resource, type ListRequestOptions, type RequestOptionsExtras } from './resource.js';
 export { buildUrl, buildQueryString } from './url.js';
 export { backoffDelay, isRetryableStatus, sleep } from './backoff.js';
 export { paginate, collect, type PageFetcher } from './pagination.js';

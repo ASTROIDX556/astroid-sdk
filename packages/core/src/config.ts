@@ -41,6 +41,42 @@ export interface RetryConfig {
   maxDelayMs: number;
 }
 
+/** Context passed to the {@link TelemetryHooks.onRequest} callback. */
+export interface TelemetryRequestInfo {
+  /** HTTP method (GET, POST, …). */
+  method: string;
+  /** Full request URL. */
+  url: string;
+  /** The generated or caller-supplied correlation / request ID. */
+  correlationId: string;
+  /** Per-request headers (may include auth). */
+  headers: Record<string, string>;
+}
+
+/** Context passed to the {@link TelemetryHooks.onResponse} callback. */
+export interface TelemetryResponseInfo {
+  /** HTTP method (GET, POST, …). */
+  method: string;
+  /** Full request URL. */
+  url: string;
+  /** The correlation / request ID that was sent with the request. */
+  correlationId: string;
+  /** HTTP response status code. */
+  status: number;
+  /** Round-trip duration in milliseconds. */
+  durationMs: number;
+  /** Whether the request succeeded (2xx). */
+  success: boolean;
+}
+
+/** Lifecycle callbacks for request/response telemetry and monitoring. */
+export interface TelemetryHooks {
+  /** Called immediately before each outbound request is sent. */
+  onRequest?: (info: TelemetryRequestInfo) => void | Promise<void>;
+  /** Called after each response is received (success or failure). */
+  onResponse?: (info: TelemetryResponseInfo) => void | Promise<void>;
+}
+
 /** User-facing configuration passed to `new Astroid({ ... })`. */
 export interface AstroidClientConfig extends AuthConfig {
   /** API base URL. Defaults to the public API. */
@@ -59,6 +95,8 @@ export interface AstroidClientConfig extends AuthConfig {
   network?: string;
   /** Opt into the offline queue for mutating requests. Default false. */
   enableOfflineQueue?: boolean;
+  /** Request/response telemetry hooks for logging and monitoring. */
+  telemetry?: TelemetryHooks;
 }
 
 /** Fully-resolved configuration with all defaults applied. */
