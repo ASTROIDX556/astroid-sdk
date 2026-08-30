@@ -376,6 +376,9 @@ export {
   InsufficientFundsError,
   AstroidPolicyViolationError,
   AstroidInsufficientFundsError,
+  AstroidApiError,
+  AstroidValidationError,
+  AstroidNetworkError,
 } from '@astroid/errors';
 export {
   createErrorTranslatorMiddleware,

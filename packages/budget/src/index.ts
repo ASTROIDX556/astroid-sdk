@@ -13,11 +13,22 @@ export {
   type BudgetValidationResult,
   type SpendRequest,
 } from './validation.js';
+export {
+  calculateUtilization,
+  isThresholdExceeded,
+  estimateBurnRate,
+  type BudgetAlertLevel,
+  type BudgetAlertThresholds,
+  type BudgetBurnStats,
+  type BudgetUtilization,
+  type ThresholdResult,
+} from './metrics.js';
 
 import { Resource } from '@astroid/core';
 import type {
   Budget,
   BudgetHistoryEntry,
+  BudgetMetrics,
   BudgetPeriod,
   ConsumeBudgetInput,
   CreateBudgetInput,
@@ -103,6 +114,18 @@ export class BudgetResource extends Resource {
       `/budgets/${encodeURIComponent(budgetId)}/history`,
       { ...params },
     );
+  }
+
+  /**
+   * Fetch aggregated summary metrics for a budget: utilization, remaining
+   * balance, alert level, and projected exhaustion. Useful for dashboard
+   * widgets and autonomous agent monitoring without recomputing locally.
+   */
+  async metrics(budgetId: string): Promise<BudgetMetrics> {
+    const res = await this.client.get<BudgetMetrics>(
+      `/budgets/${encodeURIComponent(budgetId)}/metrics`,
+    );
+    return res.data;
   }
 }
 
