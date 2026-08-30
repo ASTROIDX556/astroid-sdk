@@ -613,5 +613,19 @@ export function useAstroidEvent<K extends WebhookEventName>(
 }
 
 export { Astroid } from '@astroid/client';
-export * from './hooks/useAgentMetrics.js';
 
+/* -------------------------------------------------------------------------- */
+/*                          realtime-polling hooks                             */
+/* -------------------------------------------------------------------------- */
+
+export {
+  useAgentLogs,
+  agentLogKeys,
+  type UseAgentLogsOptions,
+} from './hooks/useAgentLogs.js';
+
+export {
+  useAgentStatus,
+  agentStatusKeys,
+  type UseAgentStatusOptions,
+} from './hooks/useAgentStatus.js';

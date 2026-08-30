@@ -12,7 +12,9 @@ import { Resource } from '@astroid/core';
 import type {
   Agent,
   AgentActivity,
+  AgentLog,
   AgentStatus,
+  AgentStatusMetrics,
   CreateAgentInput,
   Paginated,
   PaginationParams,
@@ -87,5 +89,24 @@ export class AgentResource extends Resource {
       `/agents/${encodeURIComponent(agentId)}/activity`,
       { ...params },
     );
+  }
+
+  /** Paginated execution logs for the agent. */
+  async logs(
+    agentId: string,
+    params: PaginationParams = {},
+  ): Promise<Paginated<AgentLog>> {
+    return this.listData<AgentLog>(
+      `/agents/${encodeURIComponent(agentId)}/logs`,
+      { ...params },
+    );
+  }
+
+  /** Real-time operational status metrics for the agent. */
+  async status(agentId: string): Promise<AgentStatusMetrics> {
+    const res = await this.client.get<AgentStatusMetrics>(
+      `/agents/${encodeURIComponent(agentId)}/status`,
+    );
+    return res.data;
   }
 }
