@@ -18,6 +18,25 @@ import type {
   RiskReport,
 } from '@astroid/types';
 
+export {
+  aggregateTransactionMetrics,
+  type AggregateOptions,
+  type AggregateGranularity,
+  type AggregatedMetrics,
+  type TransactionMetricBucket,
+} from './metrics.js';
+
+export {
+  exportToCSV,
+  exportToJSON,
+  formatTransactionForExport,
+  flattenRecordForExport,
+  escapeCsvValue,
+  type CsvColumn,
+  type CsvExportOptions,
+  type JsonExportOptions,
+} from './exporter.js';
+
 /**
  * The `analytics` namespace on the Astroid client.
  *

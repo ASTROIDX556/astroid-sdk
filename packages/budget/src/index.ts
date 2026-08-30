@@ -8,6 +8,12 @@
  * @packageDocumentation
  */
 
+export {
+  checkBudgetLimit,
+  type BudgetValidationResult,
+  type SpendRequest,
+} from './validation.js';
+
 import { Resource } from '@astroid/core';
 import type {
   Budget,

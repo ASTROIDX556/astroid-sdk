@@ -23,6 +23,9 @@ import type {
   RegisterInput,
   Session,
 } from '@astroid/types';
+import type { SessionManager } from './session.js';
+
+export * from './session.js';
 
 /** The full result of a login/register: tokens plus the resolved session. */
 export interface AuthResult extends AuthTokens {
@@ -39,36 +42,42 @@ export interface AuthResult extends AuthTokens {
  */
 export class AuthResource {
   private readonly client: HttpClient;
+  readonly sessionManager?: SessionManager;
 
-  constructor(client: HttpClient) {
+  constructor(client: HttpClient, sessionManager?: SessionManager) {
     this.client = client;
+    this.sessionManager = sessionManager;
   }
 
   /** Create a new organization and its first owner, returning auth tokens. */
   async register(input: RegisterInput): Promise<AuthResult> {
     const res = await this.client.post<AuthResult>('/auth/register', input);
-    this.adoptToken(res.data);
+    await this.adoptToken(res.data);
     return res.data;
   }
 
   /** Log in with email + password. Sets the access token on the client. */
   async login(input: LoginInput): Promise<AuthResult> {
     const res = await this.client.post<AuthResult>('/auth/login', input);
-    this.adoptToken(res.data);
+    await this.adoptToken(res.data);
     return res.data;
   }
 
   /** Exchange a refresh token for a fresh access token. */
   async refresh(input: RefreshInput): Promise<AuthTokens> {
     const res = await this.client.post<AuthTokens>('/auth/refresh', input);
-    this.adoptToken(res.data);
+    await this.adoptToken(res.data);
     return res.data;
   }
 
   /** Revoke the current session server-side and clear the local token. */
   async logout(): Promise<void> {
-    await this.client.post<void>('/auth/logout');
-    this.client.setAccessToken(undefined);
+    try {
+      await this.client.post<void>('/auth/logout');
+    } finally {
+      this.client.setAccessToken(undefined);
+      await this.sessionManager?.clearTokens();
+    }
   }
 
   /** The currently authenticated user, organization, and session. */
@@ -91,7 +100,7 @@ export class AuthResource {
   /** Complete passkey authentication; sets the access token on success. */
   async passkeyVerify(input: PasskeyVerifyInput): Promise<AuthResult> {
     const res = await this.client.post<AuthResult>('/auth/passkey/verify', input);
-    this.adoptToken(res.data);
+    await this.adoptToken(res.data);
     return res.data;
   }
 
@@ -136,9 +145,15 @@ export class AuthResource {
   }
 
   /** Push a freshly-issued access token onto the shared client, if present. */
-  private adoptToken(tokens: Partial<AuthTokens> | undefined): void {
+  private async adoptToken(tokens: Partial<AuthTokens> | undefined): Promise<void> {
     if (tokens?.accessToken) {
       this.client.setAccessToken(tokens.accessToken);
+      if (this.sessionManager) {
+        await this.sessionManager.setTokens({
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+        });
+      }
     }
   }
 }
