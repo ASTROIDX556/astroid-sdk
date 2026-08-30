@@ -27,6 +27,14 @@ export {
 } from './metrics.js';
 
 export {
+  aggregateTransactionMetrics as aggregateTransactionTelemetry,
+  type AggregateGranularity as TelemetryGranularity,
+  type AggregateTelemetryOptions,
+  type AggregatedTelemetry,
+  type TransactionTelemetryBucket,
+} from './aggregations.js';
+
+export {
   exportToCSV,
   exportToJSON,
   formatTransactionForExport,
