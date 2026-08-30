@@ -350,7 +350,7 @@ describe('createErrorParserMiddleware', () => {
       expect.fail('Should have thrown');
     } catch (err) {
       const error = err as Record<string, unknown>;
-      expect(error.stellarCode).toBe('op_underfunded');
+      expect(error.code).toBe('op_underfunded');
     }
   });
 });

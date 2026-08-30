@@ -30,6 +30,7 @@ import {
   type AstroidClientConfig,
   type Middleware,
 } from '@astroid/core';
+import { createCorrelationMiddleware } from './middleware/correlation.js';
 import { createErrorParserMiddleware } from './error-parser-middleware.js';
 import { AgentResource } from '@astroid/agent';
 import { AnalyticsResource } from '@astroid/analytics';
@@ -228,6 +229,11 @@ export class Astroid {
       this.http.setTokenProvider(dynamicTokenProvider);
     }
 
+    // Correlation ID + telemetry: every outbound request carries a
+    // X-Astroid-Correlation-ID header and fires onRequest/onResponse hooks.
+    const clientConfig = config instanceof HttpClient ? undefined : config;
+    this.http.use(createCorrelationMiddleware(clientConfig?.telemetry));
+
     // Auto-register the error parser middleware so all responses are routed
     // through the rich error mapping layer.
     this.http.use(createErrorParserMiddleware());
@@ -372,6 +378,19 @@ export {
   translateErrorBody,
   detectStellarCode,
 } from './middleware/error.js';
+export {
+  createCorrelationMiddleware,
+  correlationMiddleware,
+  CORRELATION_ID_HEADER,
+  REQUEST_ID_HEADER,
+} from './middleware/correlation.js';
+
+// Re-export telemetry types for consumers
+export {
+  type TelemetryHooks,
+  type TelemetryRequestInfo,
+  type TelemetryResponseInfo,
+} from '@astroid/core';
 
 // Error response parser — re-exports so consumers can parse raw responses
 // without reaching into internal modules.
