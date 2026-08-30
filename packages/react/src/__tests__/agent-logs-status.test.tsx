@@ -14,6 +14,7 @@ import {
   useAgentStatus,
   agentLogKeys,
   agentStatusKeys,
+  type AstroidProviderProps,
 } from '../index.js';
 // Types are imported via @astroid/react re-exports for useAgentLogs/useAgentStatus
 
@@ -46,7 +47,7 @@ function renderInProviders(
             },
           }),
         },
-        createElement(AstroidProvider, { client, children } as any),
+        createElement(AstroidProvider, { client, children } as AstroidProviderProps),
       ),
     );
   });
