@@ -17,6 +17,7 @@ export {
   type ResolvedConfig,
   type AuthConfig,
   type RetryConfig,
+  type RateLimitConfig,
   type TelemetryHooks,
   type TelemetryRequestInfo,
   type TelemetryResponseInfo,
