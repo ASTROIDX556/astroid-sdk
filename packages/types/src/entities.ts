@@ -352,3 +352,48 @@ export interface AgentActivity {
   metadata: Record<string, unknown>;
   createdAt: IsoDateTime;
 }
+
+/** A single log entry from an agent's execution history. */
+export interface AgentLog {
+  id: string;
+  agentId: string;
+  level: AgentLogLevel;
+  message: string;
+  source?: string | null;
+  transactionId?: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: IsoDateTime;
+}
+
+/** Log level for agent execution logs. */
+export const AgentLogLevel = {
+  DEBUG: 'DEBUG',
+  INFO: 'INFO',
+  WARN: 'WARN',
+  ERROR: 'ERROR',
+} as const;
+export type AgentLogLevel = (typeof AgentLogLevel)[keyof typeof AgentLogLevel];
+
+/** Real-time operational status metrics for an agent. */
+export interface AgentStatusMetrics {
+  agentId: string;
+  status: AgentStatus;
+  /** Whether the agent is currently executing a task. */
+  isActive: boolean;
+  /** Total tasks completed since the agent was last resumed. */
+  tasksCompleted: number;
+  /** Tasks currently in progress. */
+  tasksInProgress: number;
+  /** Total spending in the current period, as a decimal string. */
+  currentSpend: DecimalString;
+  /** Budget limit remaining, as a decimal string. */
+  budgetRemaining: DecimalString;
+  /** ISO-8601 timestamp of the agent's last activity. */
+  lastActivityAt: IsoDateTime;
+  /** Uptime in seconds since the agent was last started. */
+  uptimeSeconds: number;
+  /** Error count in the current period. */
+  errorCount: number;
+  metadata: Record<string, unknown>;
+  updatedAt: IsoDateTime;
+}
