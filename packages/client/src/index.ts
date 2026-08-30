@@ -26,6 +26,7 @@
 
 import { HttpClient, SDK_VERSION, type AstroidClientConfig, type Middleware } from '@astroid/core';
 import { createCorrelationMiddleware } from './middleware/correlation.js';
+import { createRateLimiterMiddleware } from './middleware/rate-limiter.js';
 import { createErrorParserMiddleware } from './error-parser-middleware.js';
 import { AgentResource } from '@astroid/agent';
 import { AnalyticsResource } from '@astroid/analytics';
@@ -225,9 +226,15 @@ export class Astroid {
       this.http.setTokenProvider(dynamicTokenProvider);
     }
 
+    // Token-bucket rate limiting: throttle and queue outbound requests when
+    // configured so agents never trip API gateway rate limits mid-workflow.
+    const clientConfig = config instanceof HttpClient ? undefined : config;
+    if (clientConfig?.rateLimit) {
+      this.http.use(createRateLimiterMiddleware(clientConfig.rateLimit));
+    }
+
     // Correlation ID + telemetry: every outbound request carries a
     // X-Astroid-Correlation-ID header and fires onRequest/onResponse hooks.
-    const clientConfig = config instanceof HttpClient ? undefined : config;
     this.http.use(createCorrelationMiddleware(clientConfig?.telemetry));
 
     // Auto-register the error parser middleware so all responses are routed
@@ -340,9 +347,15 @@ export {
   isRetryableStatus,
   type AstroidClientConfig,
   type Middleware,
+  type RateLimitConfig,
   type RetryConfig,
   type RetryMiddlewareOptions,
 } from '@astroid/core';
+export {
+  createRateLimiterMiddleware,
+  rateLimiterMiddleware,
+  type RateLimitMiddlewareOptions,
+} from './middleware/rate-limiter.js';
 export * from '@astroid/types';
 export {
   AstroidError,

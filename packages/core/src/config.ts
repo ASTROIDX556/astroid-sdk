@@ -41,6 +41,26 @@ export interface RetryConfig {
   maxDelayMs: number;
 }
 
+/**
+ * Token-bucket rate limiting used by the client-rate-limiter middleware.
+ *
+ * Every field is optional; the middleware applies sensible defaults for any
+ * omitted value. `maxRequestsPerSecond` is the sustained rate, `burstCapacity`
+ * the number of requests allowed to fire back-to-back, `maxQueueLength` the
+ * number of excess requests buffered before new ones are rejected, and
+ * `queueTimeoutMs` how long a buffered request may wait before failing.
+ */
+export interface RateLimitConfig {
+  /** Sustained request rate (tokens refilled per second). Default 10. */
+  maxRequestsPerSecond?: number;
+  /** Token bucket capacity — requests allowed to fire immediately. Default 10. */
+  burstCapacity?: number;
+  /** Max queued requests before new ones are rejected. Default 100. */
+  maxQueueLength?: number;
+  /** Max ms a queued request waits for a token before failing. Default 30_000. */
+  queueTimeoutMs?: number;
+}
+
 /** Context passed to the {@link TelemetryHooks.onRequest} callback. */
 export interface TelemetryRequestInfo {
   /** HTTP method (GET, POST, …). */
@@ -95,6 +115,13 @@ export interface AstroidClientConfig extends AuthConfig {
   network?: string;
   /** Opt into the offline queue for mutating requests. Default false. */
   enableOfflineQueue?: boolean;
+  /**
+   * Token-bucket per-client rate limiting. When provided, outbound requests are
+   * throttled to a sustained rate while allowing bursts, excess requests are
+   * queued up to `maxQueueLength`, and `Retry-After` from 429 responses is
+   * honoured. Default: no client-side rate limiting.
+   */
+  rateLimit?: RateLimitConfig;
   /** Request/response telemetry hooks for logging and monitoring. */
   telemetry?: TelemetryHooks;
 }
@@ -110,6 +137,8 @@ export interface ResolvedConfig {
   fetch: typeof fetch;
   network: string | undefined;
   enableOfflineQueue: boolean;
+  /** Token-bucket rate limiting options, when configured. See {@link RateLimitConfig}. */
+  rateLimit?: RateLimitConfig;
 }
 
 /** The default public API base URL. */
@@ -156,5 +185,6 @@ export function resolveConfig(config: AstroidClientConfig): ResolvedConfig {
     fetch: fetchImpl,
     network: config.network,
     enableOfflineQueue: config.enableOfflineQueue ?? false,
+    rateLimit: config.rateLimit,
   };
 }
