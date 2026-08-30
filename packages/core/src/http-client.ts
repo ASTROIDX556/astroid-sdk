@@ -153,16 +153,7 @@ export class HttpClient {
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         const raw = await this.send(prepared);
-        try {
-          await this.middleware.applyResponse(raw, prepared);
-        } catch (middlewareError) {
-          try {
-            await this.middleware.applyError(middlewareError, prepared);
-          } catch (enrichedError) {
-            throw enrichedError;
-          }
-          throw middlewareError;
-        }
+        await this.middleware.applyResponse(raw, prepared);
 
         if (raw.status >= 200 && raw.status < 300) {
           return this.unwrap<TData>(raw);
@@ -213,11 +204,7 @@ export class HttpClient {
 
         // Non-2xx: decide whether to retry, otherwise throw a typed error.
         const error = this.toError(raw);
-        try {
-          await this.middleware.applyError(error, prepared);
-        } catch (enrichedError) {
-          throw enrichedError;
-        }
+        await this.middleware.applyError(error, prepared);
         const shouldRetryStatus = contextOptions?.shouldRetryStatus ?? isRetryableStatus;
         if (retry && prepared.retryable && attempt < maxAttempts && shouldRetryStatus(raw.status)) {
           lastError = error;

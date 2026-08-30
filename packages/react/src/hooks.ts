@@ -1,5 +1,5 @@
 import { useContext } from 'react';
-import { Astroid } from '@astroid/client';
+import type { Astroid } from '@astroid/client';
 import { AstroidClientContext } from './provider.js';
 
 /** Return the active Astroid client from the nearest provider. */

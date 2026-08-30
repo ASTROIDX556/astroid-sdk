@@ -1,5 +1,5 @@
 import { createContext, createElement, type ReactNode } from 'react';
-import { Astroid } from '@astroid/client';
+import type { Astroid } from '@astroid/client';
 
 /** The context value shared by Astroid React consumers. */
 export const AstroidClientContext = createContext<Astroid | null>(null);
