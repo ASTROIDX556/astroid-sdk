@@ -30,15 +30,11 @@
  * @packageDocumentation
  */
 
-import {
-  createContext,
-  createElement,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  type ReactNode,
-} from 'react';
+import { useEffect, useRef } from 'react';
+import { useAstroid } from './hooks.js';
+export { AstroidProvider, type AstroidProviderProps } from './provider.js';
+export { useAstroidClient } from './hooks.js';
+export { useAstroid } from './hooks.js';
 import {
   useMutation,
   useQuery,
@@ -49,7 +45,6 @@ import {
   type UseQueryResult,
 } from '@tanstack/react-query';
 import {
-  Astroid,
   type AgentListParams,
   type BudgetListParams,
   type PolicyListParams,
@@ -79,57 +74,6 @@ import type {
 /* -------------------------------------------------------------------------- */
 /*                                  provider                                  */
 /* -------------------------------------------------------------------------- */
-
-const AstroidContext = createContext<Astroid | null>(null);
-
-/** Props for {@link AstroidProvider}: supply a ready client or a config to build one. */
-export type AstroidProviderProps = {
-  children: ReactNode;
-} & (
-  | { client: Astroid; config?: never }
-  | { config: ConstructorParameters<typeof Astroid>[0]; client?: never }
-);
-
-/**
- * Provides an {@link Astroid} client to the tree. Pass either an existing
- * `client` (recommended if you construct it elsewhere) or a `config` object
- * from which one is memoized. Assumes a TanStack Query `QueryClientProvider`
- * is present higher in the tree.
- */
-export function AstroidProvider(props: AstroidProviderProps): ReactNode {
-  const { children } = props;
-  const client = useMemo(
-    () => ('client' in props && props.client ? props.client : new Astroid(props.config)),
-    // Rebuild only when the identity of the passed client/config changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    ['client' in props ? props.client : props.config],
-  );
-  return createElement(AstroidContext.Provider, { value: client }, children);
-}
-
-/**
- * Access the {@link Astroid} client from the nearest {@link AstroidProvider}.
- *
- * @returns The shared {@link Astroid} client instance.
- *
- * @throws {Error} If no {@link AstroidProvider} is found in the component tree.
- *
- * @example
- * ```tsx
- * function MyComponent() {
- *   const astroid = useAstroid();
- *   const wallets = await astroid.wallets.list();
- *   // …
- * }
- * ```
- */
-export function useAstroid(): Astroid {
-  const client = useContext(AstroidContext);
-  if (!client) {
-    throw new Error('useAstroid must be used within an <AstroidProvider>.');
-  }
-  return client;
-}
 
 /* -------------------------------------------------------------------------- */
 /*                               query key factory                            */
@@ -174,7 +118,8 @@ export const queryKeys = {
     unreadCount: ['astroid', 'notifications', 'unread-count'] as const,
   },
   analytics: {
-    overview: (query?: AnalyticsQuery) => ['astroid', 'analytics', 'overview', query ?? {}] as const,
+    overview: (query?: AnalyticsQuery) =>
+      ['astroid', 'analytics', 'overview', query ?? {}] as const,
   },
 } as const;
 
@@ -183,10 +128,7 @@ export const queryKeys = {
  * Includes `enabled`, `refetchInterval`, `staleTime`, `gcTime`, etc.
  * The `queryKey` and `queryFn` are set internally and cannot be overridden.
  */
-type ReadOptions<TData> = Omit<
-  UseQueryOptions<TData, Error, TData>,
-  'queryKey' | 'queryFn'
->;
+type ReadOptions<TData> = Omit<UseQueryOptions<TData, Error, TData>, 'queryKey' | 'queryFn'>;
 
 /* -------------------------------------------------------------------------- */
 /*                                 read hooks                                 */
@@ -417,9 +359,7 @@ export function useNotifications(
  * return <Badge>{count ?? 0}</Badge>;
  * ```
  */
-export function useUnreadCount(
-  options?: ReadOptions<number>,
-): UseQueryResult<number, Error> {
+export function useUnreadCount(options?: ReadOptions<number>): UseQueryResult<number, Error> {
   const astroid = useAstroid();
   return useQuery({
     queryKey: queryKeys.notifications.unreadCount,
@@ -468,10 +408,7 @@ export function useAnalyticsOverview(
  * Includes `onSuccess`, `onError`, `onSettled`, `retry`, etc. The
  * `mutationFn` is set internally and cannot be overridden.
  */
-type WriteOptions<TData, TVars> = Omit<
-  UseMutationOptions<TData, Error, TVars>,
-  'mutationFn'
->;
+type WriteOptions<TData, TVars> = Omit<UseMutationOptions<TData, Error, TVars>, 'mutationFn'>;
 
 /**
  * Create a new wallet.

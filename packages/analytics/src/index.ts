@@ -19,6 +19,14 @@ import type {
 } from '@astroid/types';
 
 export {
+  aggregateTransactionMetrics,
+  type AggregateOptions,
+  type AggregateGranularity,
+  type AggregatedMetrics,
+  type TransactionMetricBucket,
+} from './metrics.js';
+
+export {
   exportToCSV,
   exportToJSON,
   formatTransactionForExport,

@@ -1,103 +1,181 @@
-/**
- * Transaction fee simulation helper.
- *
- * Estimates the fee required to submit a Stellar transaction based on its
- * declared fee and an optional congestion buffer — without touching the
- * network. Agents use this to dry-run transaction costs before submission.
- *
- * Parsing failures never crash the caller: they are returned inside a
- * structured `error` container on the result.
- *
- * @module
- */
-
 import { TransactionBuilder, Networks } from '@stellar/stellar-base';
 import type { FeeBumpTransaction, Transaction } from '@stellar/stellar-base';
 
-/* -------------------------------------------------------------------------- */
-/* Public types                                                                */
-/* -------------------------------------------------------------------------- */
+/** Options for a Stellar transaction simulation request. */
+export interface TransactionSimulationOptions {
+  /** Simulation endpoint URL. */
+  endpoint: string;
+  /** Optional fetch implementation for tests and non-browser runtimes. */
+  fetch?: typeof fetch;
+  /** Optional request abort signal. */
+  signal?: AbortSignal;
+  /** Optional request timeout in milliseconds. */
+  timeoutMs?: number;
+  /** Optional headers sent to the simulation endpoint. */
+  headers?: Record<string, string>;
+}
+
+/** Resource consumption reported by a simulation endpoint. */
+export interface SimulationResources {
+  cpuInstructions?: string;
+  memoryBytes?: string;
+  footprint?: unknown;
+  [key: string]: unknown;
+}
+
+/** Parsed transaction simulation result. */
+export interface TransactionSimulationResult {
+  success: boolean;
+  resources: SimulationResources;
+  estimatedFee: string;
+  authorizationRequirements: unknown[];
+  raw: unknown;
+}
+
+/** Error thrown when a simulation endpoint rejects or cannot parse a transaction. */
+export class TransactionSimulationException extends Error {
+  readonly code: string;
+  readonly details?: unknown;
+
+  constructor(message: string, code = 'SIMULATION_FAILED', details?: unknown) {
+    super(message);
+    this.name = 'TransactionSimulationException';
+    this.code = code;
+    this.details = details;
+  }
+}
+
+/** Simulate a transaction XDR and parse resources, fees, and authorization requirements. */
+export async function simulateTransaction(
+  transactionXdr: string,
+  options: TransactionSimulationOptions,
+): Promise<TransactionSimulationResult> {
+  const fetchImpl = options.fetch ?? globalThis.fetch;
+  if (typeof fetchImpl !== 'function')
+    throw new TransactionSimulationException('No fetch implementation is available.', 'NO_FETCH');
+  if (!transactionXdr)
+    throw new TransactionSimulationException('Transaction XDR is required.', 'INVALID_XDR');
+
+  let response: Response;
+  try {
+    response = await fetchImpl(options.endpoint, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json',
+        ...options.headers,
+      },
+      body: JSON.stringify({ transaction: transactionXdr }),
+      signal: options.signal,
+    });
+  } catch (error) {
+    throw new TransactionSimulationException(
+      'Unable to reach the transaction simulation endpoint.',
+      'NETWORK_ERROR',
+      error,
+    );
+  }
+
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    body = undefined;
+  }
+  if (!response.ok) {
+    const message =
+      getMessage(body) ?? `Transaction simulation failed with status ${response.status}.`;
+    throw new TransactionSimulationException(message, getCode(body) ?? 'SIMULATION_FAILED', body);
+  }
+  if (!body || typeof body !== 'object')
+    throw new TransactionSimulationException(
+      'Simulation endpoint returned an invalid response.',
+      'INVALID_RESPONSE',
+      body,
+    );
+
+  const value = body as Record<string, unknown>;
+  const resources = (value.resources ??
+    value.resourceUsage ??
+    value.result ??
+    {}) as SimulationResources;
+  const fee =
+    value.estimatedFee ??
+    value.minResourceFee ??
+    value.fee ??
+    (value.result as Record<string, unknown> | undefined)?.estimatedFee ??
+    '0';
+  const auth =
+    value.authorizationRequirements ??
+    value.auth ??
+    (value.result as Record<string, unknown> | undefined)?.auth ??
+    [];
+  return {
+    success: value.success !== false,
+    resources,
+    estimatedFee: String(fee),
+    authorizationRequirements: Array.isArray(auth) ? auth : [auth],
+    raw: body,
+  };
+}
+
+function getMessage(body: unknown): string | undefined {
+  if (!body || typeof body !== 'object') return undefined;
+  const value = body as Record<string, unknown>;
+  if (typeof value.message === 'string') return value.message;
+  if (typeof value.error === 'string') return value.error;
+  if (
+    value.error &&
+    typeof value.error === 'object' &&
+    typeof (value.error as Record<string, unknown>).message === 'string'
+  )
+    return (value.error as Record<string, unknown>).message as string;
+  return undefined;
+}
+function getCode(body: unknown): string | undefined {
+  if (!body || typeof body !== 'object') return undefined;
+  const value = body as Record<string, unknown>;
+  if (typeof value.code === 'string') return value.code;
+  if (
+    value.error &&
+    typeof value.error === 'object' &&
+    typeof (value.error as Record<string, unknown>).code === 'string'
+  )
+    return (value.error as Record<string, unknown>).code as string;
+  return undefined;
+}
 
 /** Options for {@link simulateTransactionFee}. */
 export interface TransactionFeeSimulationOptions {
-  /**
-   * Network passphrase used to parse XDR input. Defaults to the Public
-   * network passphrase.
-   */
   networkPassphrase?: string;
-  /**
-   * Extra percentage added to the base fee as a congestion buffer.
-   * Defaults to 15 (i.e. a 1.15 multiplier).
-   */
   feeBufferPercentage?: number;
 }
-
-/** A structured, machine-readable simulation error (never thrown). */
+/** A structured, machine-readable simulation error. */
 export interface TransactionSimulationError {
-  /** Stable error code, e.g. `'INVALID_XDR'`. */
   code: string;
-  /** Human-readable description of the failure. */
   message: string;
 }
-
 /** The result of a transaction fee simulation. */
 export interface TransactionFeeEstimate {
-  /** The fee declared on the transaction, in stroops (1 XLM = 10,000,000). */
   baseFee: number;
-  /** `baseFee` multiplied by `(1 + feeBufferPercentage / 100)`, rounded. */
   estimatedFee: number;
-  /** The buffer percentage applied to produce `estimatedFee`. */
   feeBufferPercentage: number;
-  /** Whether the transaction is likely to be accepted given its fee. */
   isViable: boolean;
-  /** Present when the transaction could not be parsed or estimated. */
   error?: TransactionSimulationError;
 }
-
-/* -------------------------------------------------------------------------- */
-/* Implementation                                                              */
-/* -------------------------------------------------------------------------- */
-
-/** Default congestion buffer percentage. */
 const DEFAULT_FEE_BUFFER_PERCENTAGE = 15;
-
-/**
- * Estimate the submission fee for a Stellar transaction.
- *
- * Accepts either a base64-encoded transaction envelope XDR string or an
- * already-constructed `Transaction` / `FeeBumpTransaction` instance. The base
- * fee is read from the transaction itself; a buffer percentage (default 15%)
- * is applied to produce the recommended fee under congestion.
- *
- * If the input cannot be parsed, the function does **not** throw — it returns
- * a result with `isViable: false` and an `error` container describing the
- * problem.
- *
- * @param transaction Base64 XDR string or Stellar transaction instance.
- * @param options     Optional network passphrase and fee buffer percentage.
- * @returns           The fee estimate with viability flag and optional error.
- *
- * @example
- * ```ts
- * const { estimatedFee, isViable } = simulateTransactionFee(xdr, {
- *   feeBufferPercentage: 25,
- * });
- * ```
- */
+/** Estimate a transaction's Stellar fee without network access. */
 export function simulateTransactionFee(
   transaction: string | Transaction | FeeBumpTransaction,
   options: TransactionFeeSimulationOptions = {},
 ): TransactionFeeEstimate {
   const feeBufferPercentage = options.feeBufferPercentage ?? DEFAULT_FEE_BUFFER_PERCENTAGE;
-  const networkPassphrase = options.networkPassphrase ?? Networks.PUBLIC;
-
   let tx: Transaction | FeeBumpTransaction;
   try {
-    if (typeof transaction === 'string') {
-      tx = TransactionBuilder.fromXDR(transaction, networkPassphrase);
-    } else {
-      tx = transaction;
-    }
+    tx =
+      typeof transaction === 'string'
+        ? TransactionBuilder.fromXDR(transaction, options.networkPassphrase ?? Networks.PUBLIC)
+        : transaction;
   } catch {
     return {
       baseFee: 0,
@@ -110,22 +188,12 @@ export function simulateTransactionFee(
       },
     };
   }
-
-  // The fee (in stroops) is the total fee charged for the transaction,
-  // including any fee-bump surcharge. stellar-base exposes it as a string.
   const baseFee = Number(tx.fee);
-
   const estimatedFee = Math.round(baseFee * (1 + feeBufferPercentage / 100));
-
-  // A transaction is viable when it declares a positive fee and the
-  // buffered estimate is at least the declared fee. A zero-fee envelope is
-  // never accepted by the network.
-  const isViable = Number.isFinite(baseFee) && baseFee > 0 && estimatedFee >= baseFee;
-
   return {
     baseFee,
     estimatedFee,
     feeBufferPercentage,
-    isViable,
+    isViable: Number.isFinite(baseFee) && baseFee > 0 && estimatedFee >= baseFee,
   };
 }
