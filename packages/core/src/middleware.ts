@@ -44,11 +44,22 @@ export function loggingMiddleware(sink: LogSink = defaultSink): Middleware {
   return {
     name: 'logging',
     onRequest(req: PreparedRequest) {
-      sink({ phase: 'request', method: req.method, url: req.url, headers: redactHeaders(req.headers) });
+      sink({
+        phase: 'request',
+        method: req.method,
+        url: req.url,
+        headers: redactHeaders(req.headers),
+      });
       return req;
     },
     onResponse(res: RawResponse, req: PreparedRequest) {
-      sink({ phase: 'response', method: req.method, url: req.url, status: res.status, requestId: res.requestId });
+      sink({
+        phase: 'response',
+        method: req.method,
+        url: req.url,
+        status: res.status,
+        requestId: res.requestId,
+      });
     },
     onError(error: unknown, req: PreparedRequest) {
       sink({
@@ -103,9 +114,7 @@ export function createRetryMiddleware(options: RetryMiddlewareOptions = {}): Mid
         _retryConfig: retryConfig,
         _retryOptions: options,
       };
-      const retryable = options.retryAllMethods
-        ? (req.options.retryable ?? true)
-        : req.retryable;
+      const retryable = options.retryAllMethods ? (req.options.retryable ?? true) : req.retryable;
 
       return {
         ...req,
@@ -120,4 +129,3 @@ export function createRetryMiddleware(options: RetryMiddlewareOptions = {}): Mid
 }
 
 export const retryMiddleware = createRetryMiddleware;
-

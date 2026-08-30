@@ -12,11 +12,7 @@ import {
   ServerError,
   AstroidError,
 } from '@astroid/errors';
-import {
-  StellarHorizonError,
-  parseErrorResponse,
-  parseErrorBody,
-} from './errors.js';
+import { StellarHorizonError, parseErrorResponse, parseErrorBody } from './errors.js';
 
 /* -------------------------------------------------------------------------- */
 /* Test helpers                                                                */
@@ -62,7 +58,9 @@ describe('parseErrorResponse', () => {
 
   it('parses an error envelope with nested details', async () => {
     const response = makeResponse(
-      { error: { code: 'VALIDATION_ERROR', message: 'Invalid input', details: { field: 'email' } } },
+      {
+        error: { code: 'VALIDATION_ERROR', message: 'Invalid input', details: { field: 'email' } },
+      },
       422,
     );
 
@@ -86,10 +84,7 @@ describe('parseErrorResponse', () => {
   });
 
   it('maps FORBIDDEN to AuthorizationError', async () => {
-    const response = makeResponse(
-      { error: { code: 'FORBIDDEN', message: 'Not allowed' } },
-      403,
-    );
+    const response = makeResponse({ error: { code: 'FORBIDDEN', message: 'Not allowed' } }, 403);
 
     const { error } = await parseErrorResponse(response);
     expect(error).toBeInstanceOf(AuthorizationError);
@@ -187,9 +182,7 @@ describe('parseErrorResponse', () => {
   it('parses validationErrors array into field-level errors', async () => {
     const response = makeResponse(
       {
-        validationErrors: [
-          { path: 'recipientAddress', message: 'Invalid Stellar address' },
-        ],
+        validationErrors: [{ path: 'recipientAddress', message: 'Invalid Stellar address' }],
       },
       400,
     );
@@ -209,9 +202,7 @@ describe('parseErrorResponse', () => {
           code: 'VALIDATION_ERROR',
           message: 'Validation failed',
           details: {
-            validationErrors: [
-              { field: 'name', message: 'Required' },
-            ],
+            validationErrors: [{ field: 'name', message: 'Required' }],
           },
         },
       },
@@ -302,10 +293,7 @@ describe('parseErrorResponse', () => {
   });
 
   it('parses a Horizon error with result_code flat shape', async () => {
-    const response = makeResponse(
-      { result_code: 'tx_bad_auth' },
-      400,
-    );
+    const response = makeResponse({ result_code: 'tx_bad_auth' }, 400);
 
     const { error, parsed } = await parseErrorResponse(response);
 
@@ -316,10 +304,7 @@ describe('parseErrorResponse', () => {
   });
 
   it('parses a Horizon error with stellarCode flat shape', async () => {
-    const response = makeResponse(
-      { stellarCode: 'op_no_destination' },
-      400,
-    );
+    const response = makeResponse({ stellarCode: 'op_no_destination' }, 400);
 
     const { error, parsed } = await parseErrorResponse(response);
 
@@ -330,10 +315,7 @@ describe('parseErrorResponse', () => {
   });
 
   it('falls back to original status for unknown Stellar codes', async () => {
-    const response = makeResponse(
-      { extras: { result_codes: { transaction: 'op_unknown' } } },
-      400,
-    );
+    const response = makeResponse({ extras: { result_codes: { transaction: 'op_unknown' } } }, 400);
 
     const { error } = await parseErrorResponse(response);
     expect(error).toBeInstanceOf(StellarHorizonError);
@@ -374,10 +356,7 @@ describe('parseErrorResponse', () => {
   });
 
   it('handles application/hal+json content type', async () => {
-    const response = makeResponse(
-      { error: { code: 'NOT_FOUND', message: 'Gone' } },
-      404,
-    );
+    const response = makeResponse({ error: { code: 'NOT_FOUND', message: 'Gone' } }, 404);
     // Override content-type
     const halResponse = new Response(response.body, {
       status: 404,
@@ -419,11 +398,9 @@ describe('parseErrorResponse', () => {
   /* ---- Request ID extraction ---- */
 
   it('reads x-request-id from response headers', async () => {
-    const response = makeResponse(
-      { error: { code: 'NOT_FOUND', message: 'Nope' } },
-      404,
-      { 'x-request-id': 'req_xyz_123' },
-    );
+    const response = makeResponse({ error: { code: 'NOT_FOUND', message: 'Nope' } }, 404, {
+      'x-request-id': 'req_xyz_123',
+    });
 
     const { error } = await parseErrorResponse(response);
     expect(error.requestId).toBe('req_xyz_123');
@@ -432,10 +409,7 @@ describe('parseErrorResponse', () => {
   /* ---- Pre-read body ---- */
 
   it('accepts a pre-read body text', async () => {
-    const response = makeResponse(
-      { error: { code: 'CONFLICT', message: 'Already exists' } },
-      409,
-    );
+    const response = makeResponse({ error: { code: 'CONFLICT', message: 'Already exists' } }, 409);
     // Pre-read the body
     const bodyText = await response.text();
 
@@ -475,9 +449,7 @@ describe('parseErrorBody', () => {
 
   it('parses validation errors from a pre-parsed body', () => {
     const body = {
-      errors: [
-        { field: 'email', message: 'Invalid' },
-      ],
+      errors: [{ field: 'email', message: 'Invalid' }],
     };
     const error = parseErrorBody(422, body);
 

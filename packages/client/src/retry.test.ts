@@ -8,7 +8,6 @@ import {
   isRetryableStatus,
 } from './index.js';
 
-
 describe('Exponential Backoff & Retry Logic in Client Middleware', () => {
   it('backoffDelay calculates exponential backoff with full jitter', () => {
     const config = { maxRetries: 3, baseDelayMs: 100, maxDelayMs: 1000 };
@@ -47,13 +46,13 @@ describe('Exponential Backoff & Retry Logic in Client Middleware', () => {
       if (callCount === 1) {
         return new Response(
           JSON.stringify({ error: { message: 'Service Unavailable', code: 'SERVER_ERROR' } }),
-          { status: 503, headers: { 'content-type': 'application/json' } }
+          { status: 503, headers: { 'content-type': 'application/json' } },
         );
       }
-      return new Response(
-        JSON.stringify({ data: { id: 'w_123', name: 'Retry Wallet' } }),
-        { status: 200, headers: { 'content-type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ data: { id: 'w_123', name: 'Retry Wallet' } }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
     });
 
     const client = new Astroid({
@@ -76,10 +75,10 @@ describe('Exponential Backoff & Retry Logic in Client Middleware', () => {
       if (callCount === 1) {
         throw new TypeError('Failed to fetch (network error)');
       }
-      return new Response(
-        JSON.stringify({ data: { id: 'w_network', name: 'Network Recovery' } }),
-        { status: 200, headers: { 'content-type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ data: { id: 'w_network', name: 'Network Recovery' } }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
     });
 
     const client = new Astroid({
@@ -104,13 +103,13 @@ describe('Exponential Backoff & Retry Logic in Client Middleware', () => {
       if (callCount <= 2) {
         return new Response(
           JSON.stringify({ error: { message: 'Service Unavailable', code: 'SERVER_ERROR' } }),
-          { status: 503, headers: { 'content-type': 'application/json' } }
+          { status: 503, headers: { 'content-type': 'application/json' } },
         );
       }
-      return new Response(
-        JSON.stringify({ data: { id: 'w_mw', name: 'Middleware Retry' } }),
-        { status: 200, headers: { 'content-type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ data: { id: 'w_mw', name: 'Middleware Retry' } }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
     });
 
     const client = new Astroid({
@@ -127,7 +126,7 @@ describe('Exponential Backoff & Retry Logic in Client Middleware', () => {
         onRetry: (attempt, _err, delayMs) => {
           retryCalls.push({ attempt, delayMs });
         },
-      })
+      }),
     );
 
     const wallet = await client.wallets.get('w_mw');
@@ -145,7 +144,7 @@ describe('Exponential Backoff & Retry Logic in Client Middleware', () => {
       callCount++;
       return new Response(
         JSON.stringify({ error: { message: 'Service Unavailable', code: 'SERVICE_UNAVAILABLE' } }),
-        { status: 503, headers: { 'content-type': 'application/json' } }
+        { status: 503, headers: { 'content-type': 'application/json' } },
       );
     });
 
@@ -159,7 +158,6 @@ describe('Exponential Backoff & Retry Logic in Client Middleware', () => {
     await expect(client.wallets.get('w_exhausted')).rejects.toThrow(ServerError);
     expect(callCount).toBe(3); // Initial attempt + 2 retries
   });
-
 
   it('retryMiddleware alias is export equivalent to createRetryMiddleware', () => {
     expect(retryMiddleware).toBe(createRetryMiddleware);

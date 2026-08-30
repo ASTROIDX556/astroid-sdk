@@ -152,12 +152,16 @@ function extractDetails(body: unknown): Record<string, unknown> | undefined {
     const details = (errorField as Record<string, unknown>).details;
     if (typeof details === 'object' && details !== null) return details as Record<string, unknown>;
   }
-  if (typeof obj.extras === 'object' && obj.extras !== null) return obj.extras as Record<string, unknown>;
-  if (typeof obj.details === 'object' && obj.details !== null) return obj.details as Record<string, unknown>;
+  if (typeof obj.extras === 'object' && obj.extras !== null)
+    return obj.extras as Record<string, unknown>;
+  if (typeof obj.details === 'object' && obj.details !== null)
+    return obj.details as Record<string, unknown>;
   return undefined;
 }
 
-function extractApiError(body: unknown): { code: string; message: string; details?: Record<string, unknown> } | undefined {
+function extractApiError(
+  body: unknown,
+): { code: string; message: string; details?: Record<string, unknown> } | undefined {
   if (typeof body !== 'object' || body === null) return undefined;
   const obj = body as Record<string, unknown>;
   const errorField = obj.error;
@@ -167,7 +171,10 @@ function extractApiError(body: unknown): { code: string; message: string; detail
   return {
     code: err.code,
     message: err.message,
-    details: typeof err.details === 'object' && err.details !== null ? (err.details as Record<string, unknown>) : undefined,
+    details:
+      typeof err.details === 'object' && err.details !== null
+        ? (err.details as Record<string, unknown>)
+        : undefined,
   };
 }
 
@@ -183,7 +190,8 @@ export function detectStellarCode(
   if (extras) {
     const resultCodes = extras.result_codes as Record<string, unknown> | undefined;
     if (resultCodes) {
-      const transactionCode = typeof resultCodes.transaction === 'string' ? resultCodes.transaction : undefined;
+      const transactionCode =
+        typeof resultCodes.transaction === 'string' ? resultCodes.transaction : undefined;
       const operationCodes = resultCodes.operations as string[] | undefined;
       const opCode = operationCodes?.[0];
       const code = opCode ?? transactionCode;

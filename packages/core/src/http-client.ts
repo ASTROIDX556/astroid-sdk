@@ -4,15 +4,15 @@
  * built on this class; it holds no domain knowledge itself.
  */
 
-import {
-  fromApiError,
-  fromStatus,
-  toNetworkError,
-  type AstroidError,
-} from '@astroid/errors';
+import { fromApiError, fromStatus, toNetworkError, type AstroidError } from '@astroid/errors';
 import type { ApiError } from '@astroid/types';
 
-import { resolveConfig, type AstroidClientConfig, type ResolvedConfig, type RetryConfig } from './config.js';
+import {
+  resolveConfig,
+  type AstroidClientConfig,
+  type ResolvedConfig,
+  type RetryConfig,
+} from './config.js';
 import type { RetryMiddlewareOptions } from './middleware.js';
 import {
   MiddlewareStack,
@@ -24,6 +24,7 @@ import {
 } from './http-types.js';
 import { buildUrl } from './url.js';
 import { backoffDelay, isRetryableStatus, sleep } from './backoff.js';
+import { AstroidTimeoutError } from './timeout-error.js';
 
 /** Methods considered safe to retry by default (idempotent verbs). */
 const IDEMPOTENT_METHODS = new Set(['GET', 'PUT', 'DELETE']);
@@ -98,23 +99,41 @@ export class HttpClient {
 
   /* ----------------------------- verb helpers ----------------------------- */
 
-  get<TData>(path: string, options: Omit<RequestOptions, 'method' | 'path'> = {}): Promise<AstroidResponse<TData>> {
+  get<TData>(
+    path: string,
+    options: Omit<RequestOptions, 'method' | 'path'> = {},
+  ): Promise<AstroidResponse<TData>> {
     return this.request<TData>({ ...options, method: 'GET', path });
   }
 
-  post<TData>(path: string, body?: unknown, options: Omit<RequestOptions, 'method' | 'path' | 'body'> = {}): Promise<AstroidResponse<TData>> {
+  post<TData>(
+    path: string,
+    body?: unknown,
+    options: Omit<RequestOptions, 'method' | 'path' | 'body'> = {},
+  ): Promise<AstroidResponse<TData>> {
     return this.request<TData>({ ...options, method: 'POST', path, body });
   }
 
-  patch<TData>(path: string, body?: unknown, options: Omit<RequestOptions, 'method' | 'path' | 'body'> = {}): Promise<AstroidResponse<TData>> {
+  patch<TData>(
+    path: string,
+    body?: unknown,
+    options: Omit<RequestOptions, 'method' | 'path' | 'body'> = {},
+  ): Promise<AstroidResponse<TData>> {
     return this.request<TData>({ ...options, method: 'PATCH', path, body });
   }
 
-  put<TData>(path: string, body?: unknown, options: Omit<RequestOptions, 'method' | 'path' | 'body'> = {}): Promise<AstroidResponse<TData>> {
+  put<TData>(
+    path: string,
+    body?: unknown,
+    options: Omit<RequestOptions, 'method' | 'path' | 'body'> = {},
+  ): Promise<AstroidResponse<TData>> {
     return this.request<TData>({ ...options, method: 'PUT', path, body });
   }
 
-  delete<TData>(path: string, options: Omit<RequestOptions, 'method' | 'path'> = {}): Promise<AstroidResponse<TData>> {
+  delete<TData>(
+    path: string,
+    options: Omit<RequestOptions, 'method' | 'path'> = {},
+  ): Promise<AstroidResponse<TData>> {
     return this.request<TData>({ ...options, method: 'DELETE', path });
   }
 
@@ -124,7 +143,9 @@ export class HttpClient {
   async request<TData>(options: RequestOptions): Promise<AstroidResponse<TData>> {
     const prepared = await this.prepare(options);
     const contextRetry = prepared.options.context?._retryConfig as RetryConfig | undefined;
-    const contextOptions = prepared.options.context?._retryOptions as RetryMiddlewareOptions | undefined;
+    const contextOptions = prepared.options.context?._retryOptions as
+      | RetryMiddlewareOptions
+      | undefined;
     const retry = contextRetry !== undefined ? contextRetry : this.config.retry;
     const maxAttempts = retry && prepared.retryable ? retry.maxRetries + 1 : 1;
 
@@ -183,6 +204,7 @@ export class HttpClient {
 
         // Non-2xx: decide whether to retry, otherwise throw a typed error.
         const error = this.toError(raw);
+        await this.middleware.applyError(error, prepared);
         const shouldRetryStatus = contextOptions?.shouldRetryStatus ?? isRetryableStatus;
         if (retry && prepared.retryable && attempt < maxAttempts && shouldRetryStatus(raw.status)) {
           lastError = error;
@@ -193,7 +215,6 @@ export class HttpClient {
           await sleep(delay, prepared.signal);
           continue;
         }
-        await this.middleware.applyError(error, prepared);
         throw error;
       } catch (err) {
         if (isAbortError(err)) throw err;
@@ -248,7 +269,9 @@ export class HttpClient {
       headers['content-type'] = 'application/json';
     }
 
-    const retryable = options.retryable ?? (IDEMPOTENT_METHODS.has(options.method) || Boolean(options.idempotencyKey));
+    const retryable =
+      options.retryable ??
+      (IDEMPOTENT_METHODS.has(options.method) || Boolean(options.idempotencyKey));
 
     const prepared: PreparedRequest = {
       method: options.method,
@@ -266,7 +289,11 @@ export class HttpClient {
   /** Perform one transport round-trip with a timeout. */
   private async send(req: PreparedRequest): Promise<RawResponse> {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), req.timeoutMs);
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, req.timeoutMs);
     const onExternalAbort = (): void => controller.abort();
     req.signal?.addEventListener('abort', onExternalAbort, { once: true });
 
@@ -280,6 +307,9 @@ export class HttpClient {
       const requestId = response.headers.get('x-request-id') ?? undefined;
       const parsed = await this.parseBody(response);
       return { status: response.status, headers: response.headers, body: parsed, requestId };
+    } catch (error) {
+      if (timedOut) throw new AstroidTimeoutError(req.timeoutMs);
+      throw error;
     } finally {
       clearTimeout(timer);
       req.signal?.removeEventListener('abort', onExternalAbort);
@@ -301,7 +331,12 @@ export class HttpClient {
   /** Unwrap a success envelope `{ success, data, meta, requestId }`. */
   private unwrap<TData>(raw: RawResponse): AstroidResponse<TData> {
     const envelope = raw.body as
-      | { success?: boolean; data?: TData; meta?: AstroidResponse<TData>['meta']; requestId?: string }
+      | {
+          success?: boolean;
+          data?: TData;
+          meta?: AstroidResponse<TData>['meta'];
+          requestId?: string;
+        }
       | undefined;
     const requestId = envelope?.requestId ?? raw.requestId;
     // Support both enveloped and bare payloads for resilience.
@@ -326,7 +361,11 @@ export class HttpClient {
   }
 
   /** Honour `Retry-After` (seconds) on 429s, else exponential backoff. */
-  private retryDelay(attempt: number, raw: RawResponse, retry: RetryConfig | null = this.config.retry): number {
+  private retryDelay(
+    attempt: number,
+    raw: RawResponse,
+    retry: RetryConfig | null = this.config.retry,
+  ): number {
     if (!retry) return 0;
     if (raw.status === 429) {
       const header = raw.headers.get('retry-after');

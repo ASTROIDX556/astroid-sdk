@@ -89,7 +89,9 @@ export class TransactionResource extends Resource {
         order: query.order,
         ...(query.status.length > 0 ? { status: query.status.join(',') } : {}),
         ...(query.asset !== undefined ? { asset: query.asset } : {}),
-        ...(query.recipientAddress !== undefined ? { recipientAddress: query.recipientAddress } : {}),
+        ...(query.recipientAddress !== undefined
+          ? { recipientAddress: query.recipientAddress }
+          : {}),
         ...(query.senderAddress !== undefined ? { senderAddress: query.senderAddress } : {}),
         ...(query.walletId !== undefined ? { walletId: query.walletId } : {}),
       },

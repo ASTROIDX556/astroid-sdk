@@ -136,7 +136,9 @@ function safeJsonParse(text: string): unknown | undefined {
  * Detect Stellar Horizon result codes from various payload shapes the Horizon
  * server may return. Returns `{ stellarCode, operationCode? }` or `undefined`.
  */
-function detectStellarCode(body: unknown): { stellarCode: string; operationCode?: string } | undefined {
+function detectStellarCode(
+  body: unknown,
+): { stellarCode: string; operationCode?: string } | undefined {
   if (typeof body !== 'object' || body === null) return undefined;
   const obj = body as Record<string, unknown>;
 
@@ -145,7 +147,8 @@ function detectStellarCode(body: unknown): { stellarCode: string; operationCode?
   if (extras) {
     const resultCodes = extras.result_codes as Record<string, unknown> | undefined;
     if (resultCodes) {
-      const transactionCode = typeof resultCodes.transaction === 'string' ? resultCodes.transaction : undefined;
+      const transactionCode =
+        typeof resultCodes.transaction === 'string' ? resultCodes.transaction : undefined;
       const operationCodes = resultCodes.operations as string[] | undefined;
       const opCode = operationCodes?.[0];
       const code = opCode ?? transactionCode;
@@ -190,7 +193,8 @@ function extractFieldErrors(body: unknown): Record<string, string[]> | undefined
     for (const entry of errors) {
       if (typeof entry === 'object' && entry !== null) {
         const e = entry as Record<string, unknown>;
-        const field = typeof e.field === 'string' ? e.field : typeof e.path === 'string' ? e.path : undefined;
+        const field =
+          typeof e.field === 'string' ? e.field : typeof e.path === 'string' ? e.path : undefined;
         const message = typeof e.message === 'string' ? e.message : String(e);
         if (field) {
           (fields[field] ??= []).push(message);
@@ -207,7 +211,8 @@ function extractFieldErrors(body: unknown): Record<string, string[]> | undefined
     for (const entry of validationErrors) {
       if (typeof entry === 'object' && entry !== null) {
         const e = entry as Record<string, unknown>;
-        const field = typeof e.field === 'string' ? e.field : typeof e.path === 'string' ? e.path : undefined;
+        const field =
+          typeof e.field === 'string' ? e.field : typeof e.path === 'string' ? e.path : undefined;
         const message = typeof e.message === 'string' ? e.message : String(e);
         if (field) {
           (fields[field] ??= []).push(message);
@@ -218,24 +223,31 @@ function extractFieldErrors(body: unknown): Record<string, string[]> | undefined
   }
 
   // 3. Pre-mapped `error.details.fields`
-  const errorEnvelope = typeof obj.error === 'object' && obj.error !== null ? (obj.error as Record<string, unknown>) : undefined;
-  if (errorEnvelope) {
-    const details = typeof errorEnvelope.details === 'object' && errorEnvelope.details !== null
-      ? (errorEnvelope.details as Record<string, unknown>)
+  const errorEnvelope =
+    typeof obj.error === 'object' && obj.error !== null
+      ? (obj.error as Record<string, unknown>)
       : undefined;
+  if (errorEnvelope) {
+    const details =
+      typeof errorEnvelope.details === 'object' && errorEnvelope.details !== null
+        ? (errorEnvelope.details as Record<string, unknown>)
+        : undefined;
 
     if (details?.fields && typeof details.fields === 'object') {
       return details.fields as Record<string, string[]>;
     }
 
     // Nested validationErrors in error.details
-    const nestedValidation = Array.isArray(details?.validationErrors) ? details!.validationErrors : undefined;
+    const nestedValidation = Array.isArray(details?.validationErrors)
+      ? details!.validationErrors
+      : undefined;
     if (nestedValidation && nestedValidation.length > 0) {
       const fields: Record<string, string[]> = {};
       for (const entry of nestedValidation) {
         if (typeof entry === 'object' && entry !== null) {
           const e = entry as Record<string, unknown>;
-          const field = typeof e.field === 'string' ? e.field : typeof e.path === 'string' ? e.path : undefined;
+          const field =
+            typeof e.field === 'string' ? e.field : typeof e.path === 'string' ? e.path : undefined;
           const message = typeof e.message === 'string' ? e.message : String(e);
           if (field) {
             (fields[field] ??= []).push(message);
@@ -323,9 +335,7 @@ export async function parseErrorResponse(
   const apiError = extractApiError(body);
   if (apiError) {
     const fieldErrors = extractFieldErrors(body);
-    const details = fieldErrors
-      ? { fields: fieldErrors }
-      : apiError.details;
+    const details = fieldErrors ? { fields: fieldErrors } : apiError.details;
     const error = buildTypedError(apiError.code, apiError.message, {
       status,
       requestId,
@@ -365,11 +375,7 @@ export async function parseErrorResponse(
  * Synchronous variant for cases where the body has already been read and parsed.
  * Useful inside the `HttpClient` where `send()` already consumed the response.
  */
-export function parseErrorBody(
-  status: number,
-  body: unknown,
-  requestId?: string,
-): AstroidError {
+export function parseErrorBody(status: number, body: unknown, requestId?: string): AstroidError {
   // 1. Stellar Horizon
   const stellar = detectStellarCode(body);
   if (stellar) {
@@ -389,9 +395,7 @@ export function parseErrorBody(
   const apiError = extractApiError(body);
   if (apiError) {
     const fieldErrors = extractFieldErrors(body);
-    const details = fieldErrors
-      ? { fields: fieldErrors }
-      : apiError.details;
+    const details = fieldErrors ? { fields: fieldErrors } : apiError.details;
     return buildTypedError(apiError.code, apiError.message, {
       status,
       requestId,
@@ -430,9 +434,10 @@ function extractApiError(body: unknown): ApiError | undefined {
   return {
     code: err.code,
     message: err.message,
-    details: typeof err.details === 'object' && err.details !== null
-      ? (err.details as Record<string, unknown>)
-      : undefined,
+    details:
+      typeof err.details === 'object' && err.details !== null
+        ? (err.details as Record<string, unknown>)
+        : undefined,
   };
 }
 

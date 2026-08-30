@@ -33,7 +33,10 @@ export abstract class Resource {
     path: string,
     query?: Record<string, QueryValue>,
   ): Promise<Paginated<TItem>> {
-    const res: AstroidResponse<TItem[]> = await this.client.get<TItem[]>(path, query ? { query } : {});
+    const res: AstroidResponse<TItem[]> = await this.client.get<TItem[]>(
+      path,
+      query ? { query } : {},
+    );
     return { data: res.data ?? [], meta: normalizeMeta(res) };
   }
 
