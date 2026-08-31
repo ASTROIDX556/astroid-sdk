@@ -15,7 +15,7 @@ function jsonResponse(data: unknown, status = 200): Response {
 }
 
 /** Build a `PolicyResource` backed by the given fetch mock. */
-function clientWith(
+function client(
   fetchImpl: typeof fetch,
 ): { resource: PolicyResource; fetch: ReturnType<typeof vi.fn> } {
   const fetchMock = vi.fn(fetchImpl);
@@ -59,7 +59,7 @@ const SIM_RESULT: PolicySimulationResult = {
 
 describe('PolicyResource — CRUD with mocked API responses', () => {
   it('create POSTs the input to /policies and returns the policy', async () => {
-    const { resource, fetch } = clientWith(async () => jsonResponse({ data: POLICY }));
+    const { resource, fetch } = client(async () => jsonResponse({ data: POLICY }));
 
     const created = await resource.create(CREATE_INPUT);
 
@@ -71,7 +71,7 @@ describe('PolicyResource — CRUD with mocked API responses', () => {
   });
 
   it('get fetches a single policy by id', async () => {
-    const { resource, fetch } = clientWith(async () => jsonResponse({ data: POLICY }));
+    const { resource, fetch } = client(async () => jsonResponse({ data: POLICY }));
 
     const policy = await resource.get('pol_1');
 
@@ -80,7 +80,7 @@ describe('PolicyResource — CRUD with mocked API responses', () => {
   });
 
   it('list returns a paginated set of policies', async () => {
-    const { resource } = clientWith(async () =>
+    const { resource } = client(async () =>
       jsonResponse({
         data: [POLICY],
         meta: { page: 1, limit: 1, total: 1, totalPages: 1 },
@@ -94,7 +94,7 @@ describe('PolicyResource — CRUD with mocked API responses', () => {
   });
 
   it('update PATCHes the policy and returns the updated record', async () => {
-    const { resource, fetch } = clientWith(async () =>
+    const { resource, fetch } = client(async () =>
       jsonResponse({ data: { ...POLICY, enabled: false } }),
     );
 
@@ -107,7 +107,7 @@ describe('PolicyResource — CRUD with mocked API responses', () => {
   });
 
   it('delete issues a DELETE and resolves to void', async () => {
-    const { resource, fetch } = clientWith(async () => new Response(null, { status: 204 }));
+    const { resource, fetch } = client(async () => new Response(null, { status: 204 }));
 
     await expect(resource.delete('pol_1')).resolves.toBeUndefined();
     const [url, init] = fetch.mock.calls[0]!;
@@ -118,7 +118,7 @@ describe('PolicyResource — CRUD with mocked API responses', () => {
 
 describe('PolicyResource — pre-flight simulation', () => {
   it('simulate POSTs the request payload and returns the result', async () => {
-    const { resource, fetch } = clientWith(async () => jsonResponse({ data: SIM_RESULT }));
+    const { resource, fetch } = client(async () => jsonResponse({ data: SIM_RESULT }));
 
     const input = {
       walletId: 'w_1',
@@ -136,8 +136,25 @@ describe('PolicyResource — pre-flight simulation', () => {
     expect(JSON.parse(String((init as RequestInit).body))).toEqual(input);
   });
 
+  it('simulatePolicy POSTs the request payload to specific policy endpoint and returns the result', async () => {
+    const { resource, fetch } = client(async () => jsonResponse({ data: SIM_RESULT }));
+
+    const input = {
+      asset: 'USDC',
+      amount: '50',
+    };
+
+    const result = await resource.simulatePolicy('pol_1', input);
+
+    expect(result).toEqual(SIM_RESULT);
+    const [url, init] = fetch.mock.calls[0]!;
+    expect(String(url)).toContain('/policies/pol_1/simulate');
+    expect((init as RequestInit).method).toBe('POST');
+    expect(JSON.parse(String((init as RequestInit).body))).toEqual(input);
+  });
+
   it('propagates network failures as a structured NetworkError', async () => {
-    const { resource } = clientWith(async () => {
+    const { resource } = client(async () => {
       throw new TypeError('Failed to fetch');
     });
 
