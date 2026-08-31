@@ -13,7 +13,7 @@ export class AstroidTransactionError extends AstroidError {
   readonly transactionXdr?: string;
 
   constructor(message: string, options?: AstroidErrorOptions & { transactionXdr?: string }) {
-    super(message, options);
+    super(message, options ?? { code: 'TRANSACTION_ERROR' });
     this.transactionXdr = options?.transactionXdr;
   }
 }
@@ -87,7 +87,7 @@ export function normalizeTransactionError(
   let operationCode: string | undefined;
   let operationResultCodes: string[] | undefined;
   let status = 400;
-  let details: unknown;
+  let details: Record<string, unknown> | undefined;
 
   if (err instanceof Error) {
     message = err.message || defaultMessage;
@@ -104,7 +104,8 @@ export function normalizeTransactionError(
       operationResultCodes = (err as Record<string, unknown>).operationResultCodes as string[];
     }
     if ('details' in err) {
-      details = (err as Record<string, unknown>).details;
+      const d = (err as Record<string, unknown>).details;
+      if (d && typeof d === 'object') details = d as Record<string, unknown>;
     }
   } else if (typeof err === 'string') {
     message = err;

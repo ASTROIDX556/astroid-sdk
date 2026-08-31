@@ -18,7 +18,7 @@ export interface SubmitTransactionResult {
  */
 export async function submitTransaction(
   transactionOrXdr: string | Transaction,
-  options?: SubmitTransactionOptions,
+  _options?: SubmitTransactionOptions,
 ):
   Promise<SubmitTransactionResult> {
   const xdr = typeof transactionOrXdr === 'string' ? transactionOrXdr : transactionOrXdr.toXDR();
