@@ -88,12 +88,72 @@ describe('BudgetClient', () => {
     expect(http.get).toHaveBeenCalledWith('/v1/budgets/bud%2F1', {});
   });
 
+  it('getBudget() aliases get()', async () => {
+    const budget = makeBudget();
+    http.get.mockResolvedValue(budget);
+    const result = await client.getBudget('bud_1');
+    expect(http.get).toHaveBeenCalledWith('/v1/budgets/bud_1', {});
+    expect(result).toBe(budget);
+  });
+
   it('list() forwards filters as a query', async () => {
     http.get.mockResolvedValue({ data: [makeBudget()] });
     await client.list({ agentId: 'agt_1', enabled: true, limit: 50, cursor: undefined });
     expect(http.get).toHaveBeenCalledWith('/v1/budgets', {
       query: { agentId: 'agt_1', enabled: true, limit: 50 },
     });
+  });
+
+  it('listBudgets() aliases list() with filters', async () => {
+    http.get.mockResolvedValue({ data: [makeBudget()] });
+    await client.listBudgets({ agentId: 'agt_1', limit: 25 });
+    expect(http.get).toHaveBeenCalledWith('/v1/budgets', {
+      query: { agentId: 'agt_1', limit: 25 },
+    });
+  });
+
+  it('simulateBudgetCheck() POSTs the spend to the simulate endpoint and reports allowed spends', async () => {
+    const result = {
+      budgetId: 'bud_1',
+      allowed: true,
+      wouldExceed: false,
+      afterRemaining: '750',
+      utilizationAfter: 0.25,
+      state: 'healthy',
+      violations: [],
+      explanation: 'Spend is within the budget limit.',
+    };
+    http.post.mockResolvedValue(result);
+    const res = await client.simulateBudgetCheck('bud_1', { asset: 'USDC', amount: '250' });
+    expect(http.post).toHaveBeenCalledWith('/v1/budgets/bud_1/simulate', {
+      asset: 'USDC',
+      amount: '250',
+    });
+    expect(res).toBe(result);
+    expect(res.allowed).toBe(true);
+  });
+
+  it('simulateBudgetCheck() reports a limit breach', async () => {
+    const result = {
+      budgetId: 'bud_1',
+      allowed: false,
+      wouldExceed: true,
+      afterRemaining: '0',
+      utilizationAfter: 1,
+      state: 'exhausted',
+      violations: ['Spend would exceed the monthly budget limit of 1000.'],
+      explanation: 'Spend would exceed the monthly budget limit of 1000.',
+    };
+    http.post.mockResolvedValue(result);
+    const res = await client.simulateBudgetCheck('bud_1', { asset: 'USDC', amount: '9999' });
+    expect(http.post).toHaveBeenCalledWith('/v1/budgets/bud_1/simulate', {
+      asset: 'USDC',
+      amount: '9999',
+    });
+    expect(res.allowed).toBe(false);
+    expect(res.wouldExceed).toBe(true);
+    expect(res.state).toBe('exhausted');
+    expect(res.violations.length).toBeGreaterThan(0);
   });
 
   it('update() PATCHes the budget', async () => {

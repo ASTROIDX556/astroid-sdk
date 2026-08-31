@@ -48,6 +48,41 @@ export interface BudgetAllocationThresholds {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Simulation                                                                  */
+/* -------------------------------------------------------------------------- */
+
+/** A prospective spend to simulate against a budget. */
+export interface BudgetSimulationRequest {
+  /** Asset identifier (e.g. `"USDC"`, `"XLM"`). */
+  asset: string;
+  /** Amount to spend (decimal string or number). */
+  amount: DecimalString | number;
+  /** Optional agent the spend is attributed to. */
+  agentId?: string;
+  /** Optional originating transaction. */
+  transactionId?: string;
+}
+
+/** The outcome of simulating a spend against a budget. */
+export interface BudgetSimulationResult {
+  budgetId: string;
+  /** Whether the spend is allowed under the budget's limits. */
+  allowed: boolean;
+  /** Whether the spend would push the budget past its limit. */
+  wouldExceed: boolean;
+  /** Remaining headroom after the simulated spend. */
+  afterRemaining: DecimalString;
+  /** Utilization fraction after the simulated spend, `0`–`1`. */
+  utilizationAfter: number;
+  /** Bucketed health after the simulated spend. */
+  state: BudgetAllocationState;
+  /** Violated rules (empty when `allowed` is true). */
+  violations: string[];
+  /** Human-readable explanation of the outcome. */
+  explanation: string;
+}
+
+/* -------------------------------------------------------------------------- */
 /* Threshold alerts                                                            */
 /* -------------------------------------------------------------------------- */
 
