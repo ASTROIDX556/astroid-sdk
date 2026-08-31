@@ -240,7 +240,7 @@ export default createRetryMiddleware;
  * Compute the retry delay in milliseconds for a given attempt and config,
  * honouring a server-supplied `Retry-After` header on 429 responses.
  *
- * - For 429 responses: reads `retryAfterSeconds`, capped at `config.maxDelayMs`.
+ * - For retryable responses: reads `retryAfterSeconds`, capped at `config.maxDelayMs`.
  * - For all others: exponential backoff with full jitter via {@link backoffDelay}.
  *
  * @param attempt            The 1-based retry attempt number.
@@ -257,7 +257,11 @@ export function computeRetryDelay(
   random: () => number = Math.random,
 ): number {
   // Honour Retry-After on rate-limited responses.
-  if (status === 429 && retryAfterSeconds !== undefined && Number.isFinite(retryAfterSeconds)) {
+  if (
+    isRetryableStatus(status) &&
+    retryAfterSeconds !== undefined &&
+    Number.isFinite(retryAfterSeconds)
+  ) {
     return Math.min(Math.max(0, retryAfterSeconds * 1000), config.maxDelayMs);
   }
   return backoffDelay(attempt, config, random);

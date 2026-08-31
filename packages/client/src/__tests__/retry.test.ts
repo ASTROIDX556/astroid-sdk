@@ -186,6 +186,7 @@ describe('computeRetryDelay', () => {
     expect(computeRetryDelay(1, config, 429, 2)).toBe(2000);
     // 1 second → 1000ms
     expect(computeRetryDelay(1, config, 429, 1)).toBe(1000);
+    expect(computeRetryDelay(1, config, 503, 1)).toBe(1000);
   });
 
   it('caps Retry-After at maxDelayMs', () => {
@@ -373,6 +374,57 @@ describe('Astroid client — retry on 429', () => {
     expect(elapsed).toBeGreaterThanOrEqual(40); // allow 10ms tolerance
   });
 
+  it('honours an HTTP-date Retry-After header on 429 responses', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-26T12:00:00.000Z'));
+    const mockFetch = fetchQueue(
+      new Response(JSON.stringify({ error: { code: 'RATE_LIMITED', message: 'Too Many Requests' } }), {
+        status: 429,
+        headers: {
+          'content-type': 'application/json',
+          'retry-after': 'Sat, 26 Sep 2026 12:00:02 GMT',
+        },
+      }),
+      okResponse({ id: 'w_retry_after_date' }),
+    );
+    const client = new Astroid({
+      ...BASE_CONFIG,
+      fetch: mockFetch as unknown as typeof fetch,
+    });
+    client.use(createRetryMiddleware({ maxRetries: 1, baseDelayMs: 1, maxDelayMs: 5000 }));
+
+    const result = client.wallets.get('w_retry_after_date');
+    await vi.advanceTimersByTimeAsync(2000);
+    await expect(result).resolves.toMatchObject({ id: 'w_retry_after_date' });
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
+  });
+
+  it('honours a numeric Retry-After header on 503 responses', async () => {
+    let callCount = 0;
+    const timestamps: number[] = [];
+    const mockFetch = vi.fn().mockImplementation(async () => {
+      callCount++;
+      timestamps.push(Date.now());
+      if (callCount === 1) {
+        return errorResponseWithRetryAfter(503, 'UNAVAILABLE', 'Unavailable', '0.05');
+      }
+      return okResponse({ id: 'w_retry_after_503' });
+    });
+    const client = new Astroid({
+      ...BASE_CONFIG,
+      fetch: mockFetch as unknown as typeof fetch,
+    });
+    client.use(createRetryMiddleware({ maxRetries: 1, baseDelayMs: 1, maxDelayMs: 500 }));
+
+    await expect(client.wallets.get('w_retry_after_503')).resolves.toMatchObject({
+      id: 'w_retry_after_503',
+    });
+
+    expect(callCount).toBe(2);
+    expect(timestamps[1]! - timestamps[0]!).toBeGreaterThanOrEqual(40);
+  });
+
   it('throws RateLimitError after exhausting retries on persistent 429', async () => {
     const mockFetch = vi.fn().mockImplementation(async () =>
       errorResponse(429, 'RATE_LIMITED', 'Too Many Requests'),
@@ -407,6 +459,21 @@ describe('Astroid client — non-retryable errors', () => {
 
     await expect(client.wallets.get('w_400')).rejects.toBeDefined();
     expect(mockFetch).toHaveBeenCalledTimes(1); // no retries
+  });
+
+  it('does not retry on 401 (Unauthorized)', async () => {
+    const mockFetch = vi.fn().mockImplementation(async () =>
+      errorResponse(401, 'UNAUTHORIZED', 'Unauthorized'),
+    );
+
+    const client = new Astroid({
+      ...BASE_CONFIG,
+      fetch: mockFetch as unknown as typeof fetch,
+    });
+    client.use(createRetryMiddleware({ maxRetries: 3, baseDelayMs: 5, maxDelayMs: 50 }));
+
+    await expect(client.wallets.get('w_401')).rejects.toBeDefined();
+    expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 
   it('does not retry on 404 (Not Found)', async () => {
@@ -462,6 +529,64 @@ describe('Astroid client — network-error retries', () => {
     const wallet = await client.wallets.get('w_network');
     expect(wallet).toMatchObject({ id: 'w_network', name: 'Network Recovery' });
     expect(callCount).toBe(2);
+  });
+
+  it('retries when a request times out and succeeds on recovery', async () => {
+    let callCount = 0;
+    const mockFetch = vi.fn().mockImplementation((_url: string, init: RequestInit) => {
+      callCount++;
+      if (callCount === 1) {
+        return new Promise<Response>((_resolve, reject) => {
+          init.signal?.addEventListener(
+            'abort',
+            () => reject(new DOMException('Aborted', 'AbortError')),
+            { once: true },
+          );
+        });
+      }
+      return Promise.resolve(okResponse({ id: 'w_timeout_recovery' }));
+    });
+
+    const client = new Astroid({
+      ...BASE_CONFIG,
+      timeoutMs: 50,
+      retry: { maxRetries: 1, baseDelayMs: 1, maxDelayMs: 5 },
+      fetch: mockFetch as unknown as typeof fetch,
+    });
+
+    await expect(client.wallets.get('w_timeout')).resolves.toMatchObject({
+      id: 'w_timeout_recovery',
+    });
+    expect(callCount).toBe(2);
+  });
+});
+
+describe('Astroid client — safe POST retries', () => {
+  it('retries POST only when the request is explicitly marked retryable', async () => {
+    const safePostFetch = fetchQueue(
+      errorResponse(503, 'SERVER_ERROR', 'Unavailable'),
+      okResponse({ id: 'safe_post_recovered' }),
+    );
+    const safePostClient = new Astroid({
+      ...BASE_CONFIG,
+      retry: { maxRetries: 1, baseDelayMs: 1, maxDelayMs: 5 },
+      fetch: safePostFetch as unknown as typeof fetch,
+    });
+
+    await expect(
+      safePostClient.http.post('/safe-operation', {}, { retryable: true }),
+    ).resolves.toMatchObject({ data: { id: 'safe_post_recovered' } });
+    expect(safePostFetch).toHaveBeenCalledTimes(2);
+
+    const unsafePostFetch = vi.fn().mockResolvedValue(errorResponse(503, 'SERVER_ERROR', 'Unavailable'));
+    const unsafePostClient = new Astroid({
+      ...BASE_CONFIG,
+      retry: { maxRetries: 1, baseDelayMs: 1, maxDelayMs: 5 },
+      fetch: unsafePostFetch as unknown as typeof fetch,
+    });
+
+    await expect(unsafePostClient.http.post('/operation', {})).rejects.toBeDefined();
+    expect(unsafePostFetch).toHaveBeenCalledTimes(1);
   });
 });
 

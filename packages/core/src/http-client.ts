@@ -219,9 +219,9 @@ export class HttpClient {
       } catch (err) {
         if (isAbortError(err)) throw err;
         // Transport-level failure (DNS, reset, timeout): retry if allowed.
-        const isTyped = isAstroidErrorLike(err);
+        const isTyped = isAstroidErrorLike(err) && !(err instanceof AstroidTimeoutError);
         if (isTyped) throw err; // already thrown above, propagate
-        const networkError = toNetworkError(err);
+        const networkError = err instanceof AstroidTimeoutError ? err : toNetworkError(err);
         if (retry && prepared.retryable && attempt < maxAttempts) {
           lastError = networkError;
           const delay = backoffDelay(attempt, retry);
@@ -364,18 +364,21 @@ export class HttpClient {
     return fromStatus(raw.status, `Request failed with status ${raw.status}`, { requestId });
   }
 
-  /** Honour `Retry-After` (seconds) on 429s, else exponential backoff. */
+  /** Honour `Retry-After` on retryable responses, else use exponential backoff. */
   private retryDelay(
     attempt: number,
     raw: RawResponse,
     retry: RetryConfig | null = this.config.retry,
   ): number {
     if (!retry) return 0;
-    if (raw.status === 429) {
-      const header = raw.headers.get('retry-after');
-      const seconds = header ? Number(header) : NaN;
-      if (Number.isFinite(seconds) && seconds >= 0) {
-        return Math.min(seconds * 1000, retry.maxDelayMs);
+    const header = raw.headers.get('retry-after');
+    if (header) {
+      const seconds = Number(header);
+      const retryAfterMs = Number.isFinite(seconds) && seconds >= 0
+        ? seconds * 1000
+        : Date.parse(header) - Date.now();
+      if (Number.isFinite(retryAfterMs)) {
+        return Math.min(Math.max(retryAfterMs, 0), retry.maxDelayMs);
       }
     }
     return backoffDelay(attempt, retry);
