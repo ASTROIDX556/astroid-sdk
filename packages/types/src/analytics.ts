@@ -1,6 +1,8 @@
+import type { PaginationParams } from './common.js';
+
 export type Timeframe = 'hour' | 'day' | 'week' | 'month' | 'year' | string;
 
-export interface AnalyticsQueryParams {
+export interface AnalyticsQueryParams extends PaginationParams {
   startDate?: string;
   endDate?: string;
   timeframe?: Timeframe;
