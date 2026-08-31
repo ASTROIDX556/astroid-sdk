@@ -1,51 +1,64 @@
-import { HttpClient, type HttpClientOptions, type HttpRequestOptions } from '@astroid/core';
+export * from './error-parser-middleware.js';
+export * from './errors.js';
+export * from './middleware/correlation.js';
+export * from './middleware/error.js';
+export * from './middleware/rate-limiter.js';
+export * from './query.js';
 
-export interface AstroidClientOptions extends HttpClientOptions {
-  apiKey?: string;
-  retry?: boolean | { maxAttempts?: number; baseDelayMs?: number };
-  rateLimit?: {
-    maxRequestsPerSecond?: number;
-    burstCapacity?: number;
-    maxQueueLength?: number;
-    queueTimeoutMs?: number;
-  };
+import { HttpClient } from '@astroid/core';
+import type { ClientConfig } from '@astroid/core';
+import { serializeQuery, type QueryParams } from './query.js';
+
+export interface RequestOptions {
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  path?: string;
+  headers?: Record<string, string>;
+  query?: QueryParams;
+  correlationId?: string;
+  timeoutMs?: number;
+  retryable?: boolean;
+  signal?: AbortSignal;
+  context?: Record<string, unknown>;
 }
 
-export class Astroid {
-  private httpClient: HttpClient;
+export class Astroid extends HttpClient {
+  constructor(config: ClientConfig) {
+    super(config);
+  }
 
-  constructor(options: AstroidClientOptions = {}) {
-    const headers: Record<string, string> = {
-      ...(options.headers || {}),
-    };
-    if (options.apiKey) {
-      headers['Authorization'] = `Bearer ${options.apiKey}`;
-    }
-    this.httpClient = new HttpClient({
+  public async request<T = unknown>(options: RequestOptions): Promise<T> {
+    const queryString = serializeQuery(options.query);
+    const pathWithQuery = `${options.path ?? ''}${queryString}`;
+    return super.request<T>({
       ...options,
-      headers,
+      path: pathWithQuery,
     });
   }
 
-  public use(_middleware: any): this {
-    return this;
-  }
-
-  public wallets = {
-    get: async (id: string, options?: Omit<HttpRequestOptions, 'method' | 'path'>) => {
-      const res = await this.httpClient.get<{ data: any }>(`/wallets/${id}`, options);
-      return res.body.data ?? res.body;
+  public readonly wallets = {
+    get: async (id: string, options?: { query?: QueryParams }) => {
+      return this.request<{ data: any }>({ method: 'GET', path: `/wallets/${id}`, query: options?.query });
+    },
+    list: async (options?: { query?: QueryParams }) => {
+      return this.request<{ data: any[] }>({ method: 'GET', path: '/wallets', query: options?.query });
     },
   };
 
-  public agents = {
-    get: async (id: string, options?: Omit<HttpRequestOptions, 'method' | 'path'>) => {
-      const res = await this.httpClient.get<{ data: any }>(`/agents/${id}`, options);
-      return res.body.data ?? res.body;
+  public readonly agents = {
+    get: async (id: string, options?: { query?: QueryParams }) => {
+      return this.request<{ data: any }>({ method: 'GET', path: `/agents/${id}`, query: options?.query });
+    },
+    list: async (options?: { query?: QueryParams }) => {
+      return this.request<{ data: any[] }>({ method: 'GET', path: '/agents', query: options?.query });
+    },
+  };
+
+  public readonly transactions = {
+    get: async (id: string, options?: { query?: QueryParams }) => {
+      return this.request<{ data: any }>({ method: 'GET', path: `/transactions/${id}`, query: options?.query });
+    },
+    list: async (options?: { query?: QueryParams }) => {
+      return this.request<{ data: any[] }>({ method: 'GET', path: '/transactions', query: options?.query });
     },
   };
 }
-
-export { createRateLimiterMiddleware } from './middleware/rate-limiter.js';
-export { createCorrelationMiddleware } from './middleware/correlation.js';
-export { createErrorTranslatorMiddleware } from './middleware/error.js';
