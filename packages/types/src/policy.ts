@@ -1,4 +1,4 @@
-export type PolicyType =
+export type PolicyType = 
   | 'MAX_AMOUNT'
   | 'DAILY_BUDGET'
   | 'WEEKLY_BUDGET'
@@ -8,50 +8,59 @@ export type PolicyType =
   | 'BLOCKED_ASSETS'
   | 'ALLOWED_ASSETS';
 
-export interface PolicyConfiguration {
-  maxAmount?: number;
-  dailyLimit?: number;
-  weeklyLimit?: number;
-  monthlyLimit?: number;
-  blockedRecipients?: string[];
-  allowedRecipients?: string[];
-  blockedAssets?: string[];
-  allowedAssets?: string[];
-  [key: string]: unknown;
-}
-
 export interface Policy {
   id: string;
   organizationId: string;
   name: string;
   type: PolicyType;
-  configuration: PolicyConfiguration;
+  configuration: Record<string, unknown>;
   priority: number;
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
 }
 
-export interface PolicyRisk {
-  score: number;
-  band: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
-  factors: string[];
+export interface PolicySimulationRequest {
+  walletId?: string;
+  agentId?: string;
+  asset: string;
+  amount: string | number;
+  recipientAddress?: string;
+  metadata?: Record<string, unknown>;
 }
 
-export interface PolicyViolation {
+export interface PolicyViolationDetail {
   policyId: string;
   policyType: PolicyType;
   message: string;
-  limit?: number;
-  actual?: number;
+  limit?: number | string;
+  actual?: number | string;
+}
+
+export interface PolicyRiskFactor {
+  factor: string;
+  score: number;
+  description: string;
+}
+
+export interface PolicyRiskAssessment {
+  score: number;
+  band: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  factors: PolicyRiskFactor[];
+}
+
+export interface PolicyBudgetImpact {
+  budgetId: string;
+  beforeRemaining: string;
+  afterRemaining: string;
 }
 
 export interface PolicySimulationResult {
   allowed: boolean;
-  violations: PolicyViolation[];
+  violations: PolicyViolationDetail[];
   requiredApprovals: string[];
-  risk: PolicyRisk;
-  budgetImpact: Array<{ budgetId: string; delta: string; remainingAfter: string }>;
+  risk: PolicyRiskAssessment;
+  budgetImpact: PolicyBudgetImpact[];
   explanation: string;
 }
 

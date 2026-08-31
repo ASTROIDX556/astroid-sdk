@@ -1,77 +1,59 @@
 import { Resource } from '@astroid/core';
-import type { Policy, PolicySimulationResult, SimulatePolicyRequest } from '@astroid/types';
-
-export * from './simulator.js';
-
-export interface CreatePolicyInput {
-  name: string;
-  type: Policy['type'];
-  configuration: Policy['configuration'];
-  priority?: number;
-  enabled?: boolean;
-}
-
-export interface UpdatePolicyInput {
-  name?: string;
-  type?: Policy['type'];
-  configuration?: Policy['configuration'];
-  priority?: number;
-  enabled?: boolean;
-}
-
-export interface ListPoliciesParams {
-  enabled?: boolean;
-  limit?: number;
-  page?: number;
-}
+import type {
+  Policy,
+  PolicySimulationRequest,
+  PolicySimulationResult,
+} from '@astroid/types';
 
 export class PolicyResource extends Resource {
   /**
-   * Create a new policy.
+   * Create a new spending policy.
    */
-  public async create(input: CreatePolicyInput): Promise<Policy> {
+  async create(input: Omit<Policy, 'id' | 'organizationId' | 'createdAt' | 'updatedAt'>): Promise<Policy> {
     return this.http.post<Policy>('/policies', input);
   }
 
   /**
-   * Get a policy by its ID.
+   * Retrieve a policy by ID.
    */
-  public async get(policyId: string): Promise<Policy> {
-    return this.http.get<Policy>(`/policies/${policyId}`);
+  async get(id: string): Promise<Policy> {
+    return this.http.get<Policy>(`/policies/${encodeURIComponent(id)}`);
   }
 
   /**
    * List policies with optional filtering.
    */
-  public async list(params?: ListPoliciesParams): Promise<{ data: Policy[]; meta?: any }> {
-    return this.http.get<{ data: Policy[]; meta?: any }>('/policies', { query: params });
+  async list(params?: { enabled?: boolean; type?: string }): Promise<{ data: Policy[]; meta?: { page: number; limit: number; total: number; totalPages: number } }> {
+    return this.http.get('/policies', { params });
   }
 
   /**
    * Update an existing policy.
    */
-  public async update(policyId: string, input: UpdatePolicyInput): Promise<Policy> {
-    return this.http.patch<Policy>(`/policies/${policyId}`, input);
+  async update(id: string, input: Partial<Omit<Policy, 'id' | 'organizationId' | 'createdAt' | 'updatedAt'>>): Promise<Policy> {
+    return this.http.patch<Policy>(`/policies/${encodeURIComponent(id)}`, input);
   }
 
   /**
-   * Delete a policy by ID.
+   * Delete a policy.
    */
-  public async delete(policyId: string): Promise<void> {
-    return this.http.delete<void>(`/policies/${policyId}`);
+  async delete(id: string): Promise<void> {
+    return this.http.delete<void>(`/policies/${encodeURIComponent(id)}`);
   }
 
   /**
-   * Simulate a transaction payload or request against policies.
+   * Perform a pre-flight server-side policy simulation.
    */
-  public async simulate(payload: SimulatePolicyRequest): Promise<PolicySimulationResult> {
-    return this.http.post<PolicySimulationResult>('/policies/simulate', payload);
+  async simulate(input: PolicySimulationRequest): Promise<PolicySimulationResult> {
+    return this.http.post<PolicySimulationResult>('/policies/simulate', input);
   }
 
   /**
-   * Simulate transactions or requests against a specific policy by ID.
+   * Perform a policy simulation dry-run check against active spending policies.
    */
-  public async simulatePolicy(policyId: string, payload: SimulatePolicyRequest): Promise<PolicySimulationResult> {
-    return this.http.post<PolicySimulationResult>(`/policies/${policyId}/simulate`, payload);
+  async simulatePolicy(input: PolicySimulationRequest): Promise<PolicySimulationResult> {
+    return this.simulate(input);
   }
 }
+
+export * from './simulator.js';
