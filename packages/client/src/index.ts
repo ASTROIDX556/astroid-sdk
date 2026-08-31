@@ -27,6 +27,7 @@
 import { HttpClient, SDK_VERSION, type AstroidClientConfig, type Middleware } from '@astroid/core';
 import { createCorrelationMiddleware } from './middleware/correlation.js';
 import { createRateLimiterMiddleware } from './middleware/rate-limiter.js';
+import { createRetryMiddleware as createRetryMw } from './middleware/retry.js';
 import { createErrorParserMiddleware } from './error-parser-middleware.js';
 import { AgentResource } from '@astroid/agent';
 import { AnalyticsResource } from '@astroid/analytics';
@@ -226,9 +227,19 @@ export class Astroid {
       this.http.setTokenProvider(dynamicTokenProvider);
     }
 
+    const clientConfig = config instanceof HttpClient ? undefined : config;
+
+    // Retry middleware: override or augment the HttpClient's built-in retry
+    // loop with a client-level middleware so consumers can pass onRetry
+    // callbacks, custom shouldRetryStatus predicates, or retryAllMethods.
+    // Only installed when retry is not explicitly disabled.
+    if (clientConfig?.retry !== false) {
+      const retryOpts = typeof clientConfig?.retry === 'object' ? clientConfig.retry : {};
+      this.http.use(createRetryMw(retryOpts));
+    }
+
     // Token-bucket rate limiting: throttle and queue outbound requests when
     // configured so agents never trip API gateway rate limits mid-workflow.
-    const clientConfig = config instanceof HttpClient ? undefined : config;
     if (clientConfig?.rateLimit) {
       this.http.use(createRateLimiterMiddleware(clientConfig.rateLimit));
     }
@@ -341,8 +352,6 @@ export {
 
 // Convenience re-exports of the most-used types and errors.
 export {
-  createRetryMiddleware,
-  retryMiddleware,
   backoffDelay,
   isRetryableStatus,
   type AstroidClientConfig,
@@ -356,6 +365,12 @@ export {
   rateLimiterMiddleware,
   type RateLimitMiddlewareOptions,
 } from './middleware/rate-limiter.js';
+export {
+  createRetryMiddleware,
+  retryMiddleware,
+  computeRetryDelay,
+  type RetryMiddlewareConfig,
+} from './middleware/retry.js';
 export * from '@astroid/types';
 export {
   AstroidError,
