@@ -1,86 +1,104 @@
-import { useContext, useCallback } from 'react';
-import { useQueryClient, type QueryKey } from '@tanstack/react-query';
+import { useContext } from 'react';
+import { useQuery, type UseQueryResult } from '@tanstack/react-query';
+import { AstroidContext } from './provider.js';
 import type { Astroid } from '@astroid/client';
-import { AstroidClientContext } from './provider.js';
+import type { Agent, Paginated, PaginationParams, PolicySimulationRequest, PolicySimulationResult, Wallet } from '@astroid/types';
 
-// ─── Client hook ───────────────────────────────────────────────────────────
+export { useCreateAgent, useUpdateAgent, useDeleteAgent } from './hooks/useAgents.js';
 
-/** Return the active Astroid client from the nearest provider. */
-export function useAstroidClient(): Astroid {
-  const client = useContext(AstroidClientContext);
+/**
+ * Retrieve the active {@link Astroid} client instance from the React context.
+ *
+ * @throws Error if called outside an {@link AstroidProvider}.
+ */
+export function useAstroid(): Astroid {
+  const client = useContext(AstroidContext);
   if (!client) {
-    throw new Error(
-      'useAstroidClient must be used within an <AstroidProvider>. Wrap your component tree with <AstroidProvider client={client}>.',
-    );
+    throw new Error('useAstroid must be used within an AstroidProvider.');
   }
   return client;
 }
 
-/** Backwards-compatible alias for the client hook. */
-export const useAstroid = useAstroidClient;
+/**
+ * Alias for {@link useAstroid} to match naming conventions.
+ */
+export function useAstroidClient(): Astroid {
+  return useAstroid();
+}
 
-// ─── Query-key factories ───────────────────────────────────────────────────
-
-/** Stable query-key helpers so consumers never hard-code arrays. */
+/**
+ * Query key factory for TanStack Query caching and invalidation.
+ */
 export const queryKeys = {
-  agents: {
-    all: ['agents'] as const,
-    detail: (id: string) => ['agents', id] as const,
-  },
   wallets: {
-    all: ['wallets'] as const,
-    detail: (id: string) => ['wallets', id] as const,
+    all: ['astroid', 'wallets'] as const,
+    list: (params?: PaginationParams) => ['astroid', 'wallets', 'list', params ?? {}] as const,
+    detail: (id: string) => ['astroid', 'wallets', 'detail', id] as const,
+  },
+  agents: {
+    all: ['astroid', 'agents'] as const,
+    list: (params?: PaginationParams) => ['astroid', 'agents', 'list', params ?? {}] as const,
+    detail: (id: string) => ['astroid', 'agents', 'detail', id] as const,
   },
   policies: {
-    all: ['policies'] as const,
-    detail: (id: string) => ['policies', id] as const,
-  },
-  budgets: {
-    all: ['budgets'] as const,
-    detail: (agentId: string) => ['budgets', agentId] as const,
+    all: ['astroid', 'policies'] as const,
   },
 } as const;
 
-// ─── Invalidation hooks ────────────────────────────────────────────────────
+/**
+ * Fetch a paginated list of wallets.
+ */
+export function useWallets(params?: PaginationParams): UseQueryResult<Paginated<Wallet>, Error> {
+  const astroid = useAstroidClient();
+  return useQuery({
+    queryKey: queryKeys.wallets.list(params),
+    queryFn: () => astroid.wallets.list(params),
+  });
+}
 
 /**
- * Return a stable `invalidate` callback that refetches the given query keys.
- * Designed to be called in mutation `onSuccess` handlers.
- *
- * ```ts
- * const invalidateAgents = useInvalidateAgents();
- * // …on success:
- * invalidateAgents();
- * ```
+ * Fetch a single wallet by ID.
  */
-function useInvalidateQueries(keys: QueryKey) {
-  const queryClient = useQueryClient();
-  return useCallback(() => queryClient.invalidateQueries({ queryKey: keys }), [queryClient, keys]);
+export function useWallet(id: string | undefined): UseQueryResult<Wallet, Error> {
+  const astroid = useAstroidClient();
+  return useQuery({
+    queryKey: queryKeys.wallets.detail(id ?? ''),
+    queryFn: () => astroid.wallets.get(id!),
+    enabled: Boolean(id),
+  });
 }
 
-/** Invalidate all agent-related queries. */
-export function useInvalidateAgents() {
-  return useInvalidateQueries(queryKeys.agents.all);
+/**
+ * Fetch a paginated list of agents.
+ */
+export function useAgents(params?: PaginationParams): UseQueryResult<Paginated<Agent>, Error> {
+  const astroid = useAstroidClient();
+  return useQuery({
+    queryKey: queryKeys.agents.list(params),
+    queryFn: () => astroid.agents.list(params),
+  });
 }
 
-/** Invalidate all wallet-related queries. */
-export function useInvalidateWallets() {
-  return useInvalidateQueries(queryKeys.wallets.all);
+/**
+ * Fetch a single agent by ID.
+ */
+export function useAgent(id: string | undefined): UseQueryResult<Agent, Error> {
+  const astroid = useAstroidClient();
+  return useQuery({
+    queryKey: queryKeys.agents.detail(id ?? ''),
+    queryFn: () => astroid.agents.get(id!),
+    enabled: Boolean(id),
+  });
 }
 
-/** Invalidate all policy-related queries. */
-export function useInvalidatePolicies() {
-  return useInvalidateQueries(queryKeys.policies.all);
-}
-
-/** Invalidate budget queries for a specific agent. */
-export function useInvalidateBudgets(agentId?: string) {
-  const queryClient = useQueryClient();
-  return useCallback(() => {
-    if (agentId) {
-      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.detail(agentId) });
-    } else {
-      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.all });
-    }
-  }, [queryClient, agentId]);
+/**
+ * Mutation hook to simulate a policy against a proposed transaction.
+ */
+export function useSimulatePolicy() {
+  const astroid = useAstroidClient();
+  return useQuery({ queryKey: ['astroid', 'policies', 'simulate'] } as any) && {
+    mutate: async (params: PolicySimulationRequest): Promise<PolicySimulationResult> => {
+      return astroid.policies.simulate(params);
+    },
+  };
 }

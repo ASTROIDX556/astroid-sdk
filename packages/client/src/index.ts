@@ -1,97 +1,64 @@
-/**
- * Typed HTTP client for the Astroid REST API.
- *
- * @module
- */
-
-import type { HttpMethod, Middleware, PreparedRequest, RawResponse, RetryOptions } from '@astroid/core';
-import { HttpClient } from '@astroid/core';
-
-// Re-export core types and errors for convenience
-export {
-  HttpClient,
-  backoffDelay,
-  isRetryableStatus,
-  createRetryMiddleware,
-  retryMiddleware,
-} from '@astroid/core';
-export type {
-  PreparedRequest,
-  RawResponse,
-  Middleware,
-  RetryOptions,
-} from '@astroid/core';
-
+export * from './error-parser-middleware.js';
 export * from './errors.js';
-export { createCorrelationMiddleware } from './middleware/correlation.js';
-export { createErrorTranslatorMiddleware } from './middleware/error.js';
-export { createRateLimiterMiddleware } from './middleware/rate-limiter.js';
+export * from './middleware/correlation.js';
+export * from './middleware/error.js';
+export * from './middleware/rate-limiter.js';
+export * from './query.js';
 
-/** Options for configuring the Astroid client. */
-export interface AstroidClientOptions {
-  /** API key for authenticating requests. */
-  apiKey?: string;
-  /** Base URL for the Astroid API. Default: https://api.astroid.sh/v1 */
-  baseUrl?: string;
-  /** Custom fetch implementation (e.g. node-fetch or global fetch). */
-  fetch?: typeof fetch;
-  /** Global retry configuration or false to disable. */
-  retry?: RetryOptions | false;
-  /** Number of retries or retry options. */
-  retries?: number | RetryOptions | false;
-  /** Default request timeout in milliseconds. */
-  timeout?: number;
-  /** Rate limiting options. */
-  rateLimit?: {
-    maxRequestsPerSecond?: number;
-    burstCapacity?: number;
-    maxQueueLength?: number;
-    queueTimeoutMs?: number;
-  };
+import { HttpClient } from '@astroid/core';
+import type { ClientConfig } from '@astroid/core';
+import { serializeQuery, type QueryParams } from './query.js';
+
+export interface RequestOptions {
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  path?: string;
+  headers?: Record<string, string>;
+  query?: QueryParams;
+  correlationId?: string;
+  timeoutMs?: number;
+  retryable?: boolean;
+  signal?: AbortSignal;
+  context?: Record<string, unknown>;
 }
 
-/**
- * Main Astroid SDK HTTP Client.
- */
-export class Astroid {
-  private readonly client: HttpClient;
+export class Astroid extends HttpClient {
+  constructor(config: ClientConfig) {
+    super(config);
+  }
 
-  constructor(options: AstroidClientOptions = {}) {
-    let retryOpt: RetryOptions | false | undefined = options.retry;
-    if (retryOpt === undefined && options.retries !== undefined) {
-      if (typeof options.retries === 'number') {
-        retryOpt = { maxRetries: options.retries };
-      } else {
-        retryOpt = options.retries;
-      }
-    }
-
-    this.client = new HttpClient({
-      apiKey: options.apiKey,
-      baseUrl: options.baseUrl,
-      fetch: options.fetch,
-      retry: retryOpt,
-      timeoutMs: options.timeout,
-      rateLimit: options.rateLimit,
+  public async request<T = unknown>(options: RequestOptions): Promise<T> {
+    const queryString = serializeQuery(options.query);
+    const pathWithQuery = `${options.path ?? ''}${queryString}`;
+    return super.request<T>({
+      ...options,
+      path: pathWithQuery,
     });
   }
 
-  /** Register middleware. */
-  use(middleware: Middleware): this {
-    this.client.use(middleware);
-    return this;
-  }
+  public readonly wallets = {
+    get: async (id: string, options?: { query?: QueryParams }) => {
+      return this.request<{ data: any }>({ method: 'GET', path: `/wallets/${id}`, query: options?.query });
+    },
+    list: async (options?: { query?: QueryParams }) => {
+      return this.request<{ data: any[] }>({ method: 'GET', path: '/wallets', query: options?.query });
+    },
+  };
 
-  /** Execute an arbitrary HTTP request. */
-  async request<T>(method: HttpMethod, path: string, options: { query?: Record<string, unknown>; body?: unknown; headers?: Record<string, string>; timeout?: number; signal?: AbortSignal; retry?: RetryOptions | false } = {}): Promise<T> {
-    return this.client.request<T>(method, path, options);
-  }
+  public readonly agents = {
+    get: async (id: string, options?: { query?: QueryParams }) => {
+      return this.request<{ data: any }>({ method: 'GET', path: `/agents/${id}`, query: options?.query });
+    },
+    list: async (options?: { query?: QueryParams }) => {
+      return this.request<{ data: any[] }>({ method: 'GET', path: '/agents', query: options?.query });
+    },
+  };
 
-  // Resource namespaces
-  get wallets() {
-    return {
-      get: async (id: string) => this.client.request<any>('GET', `/wallets/${id}`),
-      list: async () => this.client.request<any>('GET', '/wallets'),
-    };
-  }
+  public readonly transactions = {
+    get: async (id: string, options?: { query?: QueryParams }) => {
+      return this.request<{ data: any }>({ method: 'GET', path: `/transactions/${id}`, query: options?.query });
+    },
+    list: async (options?: { query?: QueryParams }) => {
+      return this.request<{ data: any[] }>({ method: 'GET', path: '/transactions', query: options?.query });
+    },
+  };
 }
