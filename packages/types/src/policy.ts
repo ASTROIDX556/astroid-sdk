@@ -1,61 +1,64 @@
-/**
- * Result types for `policy.simulate` — the pre-flight evaluation that returns
- * violations, required approvals, estimated risk and budget impact without
- * creating a transaction (PRD Doc 8 & Doc 6 "AI Simulation Mode").
- */
+export type PolicyType =
+  | 'MAX_AMOUNT'
+  | 'DAILY_BUDGET'
+  | 'WEEKLY_BUDGET'
+  | 'MONTHLY_BUDGET'
+  | 'BLOCKED_RECIPIENTS'
+  | 'ALLOWED_RECIPIENTS'
+  | 'BLOCKED_ASSETS'
+  | 'ALLOWED_ASSETS';
 
-import type { RiskBand } from './enums.js';
-import type { DecimalString } from './entities.js';
-
-/** A single policy that a simulated transaction would violate. */
-export interface PolicyViolation {
-  policyId: string;
-  policyName: string;
-  policyType: string;
-  message: string;
-  /** The limit that was breached, when applicable. */
-  limit?: number;
-  /** The value that breached it, when applicable. */
-  actual?: number;
+export interface PolicyConfiguration {
+  maxAmount?: number;
+  dailyLimit?: number;
+  weeklyLimit?: number;
+  monthlyLimit?: number;
+  blockedRecipients?: string[];
+  allowedRecipients?: string[];
+  blockedAssets?: string[];
+  allowedAssets?: string[];
+  [key: string]: unknown;
 }
 
-/** An approval that a simulated transaction would require before execution. */
-export interface RequiredApproval {
-  policyId?: string;
-  approvalType: string;
-  requiredApprovals: number;
-  reason: string;
+export interface Policy {
+  id: string;
+  organizationId: string;
+  name: string;
+  type: PolicyType;
+  configuration: PolicyConfiguration;
+  priority: number;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
-/** The risk assessment for a simulated transaction. */
-export interface RiskAssessment {
+export interface PolicyRisk {
   score: number;
-  band: RiskBand;
+  band: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
   factors: string[];
 }
 
-/** How a simulated transaction would affect a budget. */
-export interface BudgetImpact {
-  budgetId: string;
-  budgetName: string;
-  currency: string;
-  limit: DecimalString;
-  spent: DecimalString;
-  remainingBefore: DecimalString;
-  remainingAfter: DecimalString;
-  wouldExceed: boolean;
+export interface PolicyViolation {
+  policyId: string;
+  policyType: PolicyType;
+  message: string;
+  limit?: number;
+  actual?: number;
 }
 
-/**
- * The full result of a policy simulation. `allowed` is the bottom line: whether
- * the transaction could proceed (possibly after the listed approvals).
- */
 export interface PolicySimulationResult {
   allowed: boolean;
   violations: PolicyViolation[];
-  requiredApprovals: RequiredApproval[];
-  risk: RiskAssessment;
-  budgetImpact: BudgetImpact[];
-  /** Human-readable explanation, useful for policy-aware AI reasoning. */
+  requiredApprovals: string[];
+  risk: PolicyRisk;
+  budgetImpact: Array<{ budgetId: string; delta: string; remainingAfter: string }>;
   explanation: string;
+}
+
+export interface SimulatePolicyRequest {
+  walletId?: string;
+  asset: string;
+  amount: string | number;
+  recipientAddress?: string;
+  spentInWindow?: string;
 }
