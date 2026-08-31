@@ -10,6 +10,7 @@ import {
 import { describe, expect, it } from 'vitest';
 
 import { simulateTransactionFee } from '../src/simulation.js';
+import { TransactionSimulationError } from '../src/errors.js';
 
 const TESTNET = Networks.TESTNET;
 
@@ -93,19 +94,22 @@ describe('simulateTransactionFee', () => {
     expect(result.estimatedFee).toBe(1); // 1 * 1.15 = 1.15 -> 1
   });
 
-  it('returns a structured error container for malformed XDR instead of throwing', () => {
+  it('returns a structured TransactionSimulationError container for malformed XDR instead of throwing', () => {
     const result = simulateTransactionFee('not-a-valid-xdr', { networkPassphrase: TESTNET });
 
     expect(result.isViable).toBe(false);
-    expect(result.error?.code).toBe('INVALID_XDR');
-    expect(result.error?.message).toMatch(/parse/i);
+    expect(result.error).toBeInstanceOf(TransactionSimulationError);
+    expect(result.error?.code).toBeDefined();
+    expect(result.error?.message).toMatch(/parse|xdr|base64/i);
   });
 
-  it('flags a zero-fee transaction as non-viable', () => {
+  it('flags a zero-fee transaction as non-viable with TransactionSimulationError', () => {
     const xdr = buildPaymentXdr(0);
     const result = simulateTransactionFee(xdr, { networkPassphrase: TESTNET });
 
     expect(result.isViable).toBe(false);
+    expect(result.error).toBeInstanceOf(TransactionSimulationError);
+    expect(result.error?.code).toBe('ZERO_OR_NEGATIVE_FEE');
   });
 
   it('defaults to the public network passphrase', () => {

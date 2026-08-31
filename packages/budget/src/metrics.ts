@@ -1,5 +1,10 @@
 import type { Budget, BudgetHistoryEntry } from '@astroid/types';
 
+export interface SpendRequest {
+  asset: string;
+  amount: string | number;
+}
+
 export interface UtilizationResult {
   utilization: number;
   percent: number;
@@ -10,8 +15,8 @@ export interface UtilizationResult {
 export interface ThresholdResult {
   exceeded: boolean;
   level: 'ok' | 'warn' | 'critical' | 'exceeded';
-  thresholdCrossed?: number;
   depleted: boolean;
+  thresholdCrossed?: number;
 }
 
 export interface BurnRateResult {
@@ -20,75 +25,84 @@ export interface BurnRateResult {
   unsustainable: boolean;
 }
 
-export interface ThresholdConfig {
-  warn?: number;
-  critical?: number;
+function parseAmount(val: string | number | undefined): number {
+  if (val === undefined || val === null) return 0;
+  const num = typeof val === 'number' ? val : parseFloat(val);
+  return isNaN(num) ? 0 : num;
 }
 
+function formatAmount(val: number): string {
+  return String(Math.max(0, val));
+}
+
+/**
+ * Calculates the utilization metrics for a given budget.
+ */
 export function calculateUtilization(
   budget: Budget,
   history?: BudgetHistoryEntry[],
-  prospectiveRequest?: { asset: string; amount: string | number },
+  request?: SpendRequest
 ): UtilizationResult {
-  let spentNum = parseFloat(budget.spent);
-  if (isNaN(spentNum)) spentNum = 0;
-
+  const limit = parseAmount(budget.limitAmount);
+  
+  let spentNum = parseAmount(budget.spent);
   if (history && history.length > 0) {
-    let historySpent = 0;
+    let totalHistory = 0;
     for (const entry of history) {
-      const amt = parseFloat(entry.amount);
-      if (!isNaN(amt)) {
-        historySpent += amt;
-      }
+      totalHistory += parseAmount(entry.amount);
     }
-    spentNum = historySpent;
+    spentNum = totalHistory;
   }
 
-  if (prospectiveRequest) {
-    const reqAmt = parseFloat(String(prospectiveRequest.amount));
-    if (!isNaN(reqAmt)) {
-      spentNum += reqAmt;
-    }
+  if (request) {
+    spentNum += parseAmount(request.amount);
   }
 
-  let limitNum = parseFloat(budget.limitAmount);
-  if (isNaN(limitNum)) limitNum = 0;
-
-  let utilization = 0;
-  if (limitNum > 0) {
-    utilization = spentNum / limitNum;
+  if (limit <= 0) {
+    return {
+      utilization: 0,
+      percent: 0,
+      spent: formatAmount(spentNum),
+      remaining: '0',
+    };
   }
 
+  let utilization = spentNum / limit;
   if (utilization > 1) {
     utilization = 1;
-  }
-  if (utilization < 0) {
+  } else if (utilization < 0) {
     utilization = 0;
   }
 
-  const percent = Number((utilization * 100).toFixed(2));
-  const remainingNum = Math.max(0, limitNum - spentNum);
+  const remainingNum = Math.max(0, limit - spentNum);
+  const percent = Math.round(utilization * 10000) / 100;
 
   return {
     utilization,
     percent,
-    spent: spentNum.toString(),
-    remaining: remainingNum.toString(),
+    spent: formatAmount(spentNum),
+    remaining: formatAmount(remainingNum),
   };
 }
 
+/**
+ * Determines if budget alert thresholds have been exceeded.
+ */
 export function isThresholdExceeded(
   budget: Budget,
-  config: ThresholdConfig = {},
+  thresholds?: { warn?: number; critical?: number },
+  history?: BudgetHistoryEntry[]
 ): ThresholdResult {
-  const { utilization, remaining } = calculateUtilization(budget);
-  const warnThreshold = config.warn ?? 0.8;
-  const criticalThreshold = config.critical ?? 0.95;
-  const remainingNum = parseFloat(remaining);
+  const warn = thresholds?.warn ?? 0.8;
+  const critical = thresholds?.critical ?? 0.95;
 
-  const depleted = remainingNum <= 0 || utilization >= 1;
+  const { utilization } = calculateUtilization(budget, history);
+  const limit = parseAmount(budget.limitAmount);
+  const spent = parseAmount(budget.spent);
 
-  if (depleted) {
+  const depleted = limit > 0 && spent >= limit;
+
+  if (depleted || utilization >= 1) {
     return {
       exceeded: true,
       level: 'exceeded',
@@ -96,21 +110,21 @@ export function isThresholdExceeded(
     };
   }
 
-  if (utilization >= criticalThreshold) {
+  if (utilization >= critical) {
     return {
       exceeded: true,
       level: 'critical',
-      thresholdCrossed: criticalThreshold,
       depleted: false,
+      thresholdCrossed: critical,
     };
   }
 
-  if (utilization >= warnThreshold) {
+  if (utilization >= warn) {
     return {
       exceeded: true,
       level: 'warn',
-      thresholdCrossed: warnThreshold,
       depleted: false,
+      thresholdCrossed: warn,
     };
   }
 
@@ -121,45 +135,40 @@ export function isThresholdExceeded(
   };
 }
 
-export function estimateBurnRate(
-  budget: Budget,
-  periodsElapsed: number,
-): BurnRateResult {
-  let spentNum = parseFloat(budget.spent);
-  if (isNaN(spentNum)) spentNum = 0;
+/**
+ * Estimates the burn rate and periods until exhaustion.
+ */
+export function estimateBurnRate(budget: Budget, periodsCount = 1): BurnRateResult {
+  const limit = parseAmount(budget.limitAmount);
+  const spent = parseAmount(budget.spent);
+  const remaining = Math.max(0, limit - spent);
 
-  let limitNum = parseFloat(budget.limitAmount);
-  if (isNaN(limitNum)) limitNum = 0;
-
-  const remainingNum = Math.max(0, limitNum - spentNum);
-
-  if (limitNum <= 0 || periodsElapsed <= 0) {
+  if (limit <= 0 || periodsCount <= 0) {
     return {
       averagePerPeriod: 0,
-      periodsUntilExhaustion: null,
-      unsustainable: spentNum >= limitNum,
-    };
-  }
-
-  const unsustainable = spentNum >= limitNum;
-  if (unsustainable || remainingNum === 0) {
-    return {
-      averagePerPeriod: spentNum / periodsElapsed,
-      periodsUntilExhaustion: null,
-      unsustainable: true,
-    };
-  }
-
-  const averagePerPeriod = spentNum / periodsElapsed;
-  if (averagePerPeriod <= 0) {
-    return {
-      averagePerPeriod,
       periodsUntilExhaustion: null,
       unsustainable: false,
     };
   }
 
-  const periodsUntilExhaustion = remainingNum / averagePerPeriod;
+  if (spent >= limit) {
+    return {
+      averagePerPeriod: spent / periodsCount,
+      periodsUntilExhaustion: null,
+      unsustainable: true,
+    };
+  }
+
+  const averagePerPeriod = spent / periodsCount;
+  if (averagePerPeriod <= 0) {
+    return {
+      averagePerPeriod: 0,
+      periodsUntilExhaustion: null,
+      unsustainable: false,
+    };
+  }
+
+  const periodsUntilExhaustion = Math.ceil(remaining / averagePerPeriod);
 
   return {
     averagePerPeriod,
