@@ -178,16 +178,19 @@ describe('useSimulatePolicy', () => {
       apiKey: 'sk_test_hooks',
       baseUrl: 'https://api.test',
     }) as unknown as Astroid;
-    const simulate = client.policies.simulate.bind(client.policies);
     const simulated = {
       allowed: false,
       violations: [],
       requiredApprovals: [],
-      risk: { score: 75, band: 'HIGH' as const, factors: ['amount cap'] },
+      risk: {
+        score: 75,
+        band: 'HIGH' as const,
+        factors: [{ factor: 'amount cap', score: 75, description: 'Exceeds daily limit policy PF_123.' }],
+      },
       budgetImpact: [],
       explanation: 'Exceeds daily limit policy PF_123.',
     };
-    (client.policies as { simulate: typeof simulate }).simulate = async () => simulated;
+    (client.policies as { simulate: typeof client.policies.simulate }).simulate = async () => simulated;
 
     let result: string | null = null;
     function TestComponent() {

@@ -105,6 +105,8 @@ export interface AstroidClientConfig extends AuthConfig {
   apiVersion?: string;
   /** Global request timeout in milliseconds. Default 10_000. */
   timeoutMs?: number;
+  /** Alias for {@link timeoutMs} (accepted for API parity). */
+  timeout?: number;
   /** Retry configuration, or `false` to disable retries entirely. */
   retry?: Partial<RetryConfig> | false;
   /** Extra headers merged into every request. */
@@ -172,7 +174,7 @@ export function resolveConfig(config: AstroidClientConfig): ResolvedConfig {
   return {
     baseUrl: trimTrailingSlash(config.baseUrl ?? DEFAULT_BASE_URL),
     apiVersion: config.apiVersion ?? 'v1',
-    timeoutMs: config.timeoutMs ?? 10_000,
+    timeoutMs: config.timeoutMs ?? config.timeout ?? 10_000,
     retry,
     headers: { ...(config.headers ?? {}) },
     auth: {

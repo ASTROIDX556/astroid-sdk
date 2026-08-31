@@ -1,5 +1,10 @@
 import type { HttpClient } from '@astroid/core';
-import type { AnalyticsQueryParams, AnalyticsMetricsResponse, VolumeSummary } from '@astroid/types';
+import type {
+  AnalyticsOverview,
+  AnalyticsQueryParams,
+  AnalyticsMetricsResponse,
+  VolumeSummary,
+} from '@astroid/types';
 
 export class AnalyticsResource {
   constructor(private readonly client: HttpClient) {}
@@ -20,7 +25,8 @@ export class AnalyticsResource {
 
     const query = searchParams.toString();
     const path = query ? `/analytics/metrics?${query}` : '/analytics/metrics';
-    return this.client.get<AnalyticsMetricsResponse>(path);
+    const res = await this.client.get<AnalyticsMetricsResponse>(path);
+    return res.data;
   }
 
   /**
@@ -41,7 +47,29 @@ export class AnalyticsResource {
 
     const query = searchParams.toString();
     const path = query ? `/analytics/summary?${query}` : '/analytics/summary';
-    return this.client.get<VolumeSummary>(path);
+    const res = await this.client.get<VolumeSummary>(path);
+    return res.data;
+  }
+
+  /**
+   * Fetch a high-level aggregate overview for an organization, wallet, or agent.
+   *
+   * @param params Optional scoping (startDate, endDate, walletId, agentId).
+   */
+  async overview(params?: AnalyticsQueryParams): Promise<AnalyticsOverview> {
+    const searchParams = new URLSearchParams();
+    if (params) {
+      if (params.startDate) searchParams.set('startDate', params.startDate);
+      if (params.endDate) searchParams.set('endDate', params.endDate);
+      if (params.timeframe) searchParams.set('timeframe', params.timeframe);
+      if (params.walletId) searchParams.set('walletId', params.walletId);
+      if (params.agentId) searchParams.set('agentId', params.agentId);
+    }
+
+    const query = searchParams.toString();
+    const path = query ? `/analytics/overview?${query}` : '/analytics/overview';
+    const res = await this.client.get<AnalyticsOverview>(path);
+    return res.data;
   }
 }
 

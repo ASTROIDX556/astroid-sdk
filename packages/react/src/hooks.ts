@@ -1,10 +1,27 @@
 import { useContext } from 'react';
-import { useQuery, type UseQueryResult } from '@tanstack/react-query';
-import { AstroidContext } from './provider.js';
+import { useMutation, useQuery, type UseMutationResult, type UseQueryResult } from '@tanstack/react-query';
+import { AstroidClientContext } from './provider.js';
 import type { Astroid } from '@astroid/client';
-import type { Agent, Paginated, PaginationParams, PolicySimulationRequest, PolicySimulationResult, Wallet } from '@astroid/types';
+import type {
+  Agent,
+  Paginated,
+  PaginationParams,
+  PolicySimulationRequest,
+  PolicySimulationResult,
+} from '@astroid/types';
 
 export { useCreateAgent, useUpdateAgent, useDeleteAgent } from './hooks/useAgents.js';
+export {
+  useWallet,
+  useWallets,
+  useWalletBalance,
+  useTransfer,
+  useWalletMutation,
+  type WalletMutationVariables,
+  type WalletMutationResult,
+  type TransferVariables,
+  type UseWalletBalanceOptions,
+} from './hooks/useWallets.js';
 
 /**
  * Retrieve the active {@link Astroid} client instance from the React context.
@@ -12,9 +29,11 @@ export { useCreateAgent, useUpdateAgent, useDeleteAgent } from './hooks/useAgent
  * @throws Error if called outside an {@link AstroidProvider}.
  */
 export function useAstroid(): Astroid {
-  const client = useContext(AstroidContext);
+  const client = useContext(AstroidClientContext);
   if (!client) {
-    throw new Error('useAstroid must be used within an AstroidProvider.');
+    throw new Error(
+      'useAstroid must be used within an <AstroidProvider>. Wrap your component tree with <AstroidProvider client={client}>.',
+    );
   }
   return client;
 }
@@ -34,6 +53,7 @@ export const queryKeys = {
     all: ['astroid', 'wallets'] as const,
     list: (params?: PaginationParams) => ['astroid', 'wallets', 'list', params ?? {}] as const,
     detail: (id: string) => ['astroid', 'wallets', 'detail', id] as const,
+    balance: (id: string) => ['astroid', 'wallets', 'detail', id, 'balance'] as const,
   },
   agents: {
     all: ['astroid', 'agents'] as const,
@@ -44,29 +64,6 @@ export const queryKeys = {
     all: ['astroid', 'policies'] as const,
   },
 } as const;
-
-/**
- * Fetch a paginated list of wallets.
- */
-export function useWallets(params?: PaginationParams): UseQueryResult<Paginated<Wallet>, Error> {
-  const astroid = useAstroidClient();
-  return useQuery({
-    queryKey: queryKeys.wallets.list(params),
-    queryFn: () => astroid.wallets.list(params),
-  });
-}
-
-/**
- * Fetch a single wallet by ID.
- */
-export function useWallet(id: string | undefined): UseQueryResult<Wallet, Error> {
-  const astroid = useAstroidClient();
-  return useQuery({
-    queryKey: queryKeys.wallets.detail(id ?? ''),
-    queryFn: () => astroid.wallets.get(id!),
-    enabled: Boolean(id),
-  });
-}
 
 /**
  * Fetch a paginated list of agents.
@@ -86,7 +83,7 @@ export function useAgent(id: string | undefined): UseQueryResult<Agent, Error> {
   const astroid = useAstroidClient();
   return useQuery({
     queryKey: queryKeys.agents.detail(id ?? ''),
-    queryFn: () => astroid.agents.get(id!),
+    queryFn: () => astroid.agents.get(id as string),
     enabled: Boolean(id),
   });
 }
@@ -94,11 +91,13 @@ export function useAgent(id: string | undefined): UseQueryResult<Agent, Error> {
 /**
  * Mutation hook to simulate a policy against a proposed transaction.
  */
-export function useSimulatePolicy() {
+export function useSimulatePolicy(): UseMutationResult<
+  PolicySimulationResult,
+  Error,
+  PolicySimulationRequest
+> {
   const astroid = useAstroidClient();
-  return useQuery({ queryKey: ['astroid', 'policies', 'simulate'] } as any) && {
-    mutate: async (params: PolicySimulationRequest): Promise<PolicySimulationResult> => {
-      return astroid.policies.simulate(params);
-    },
-  };
+  return useMutation({
+    mutationFn: (params: PolicySimulationRequest) => astroid.policies.simulate(params),
+  });
 }

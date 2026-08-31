@@ -15,3 +15,4 @@ export { checkBudgetLimit, type BudgetValidationResult } from './validation.js';
 
 export * from './budget.js';
 export * from './alerts.js';
+export { BudgetResource, BudgetsResource, type BudgetListParams } from './resource.js';
