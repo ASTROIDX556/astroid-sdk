@@ -5,6 +5,7 @@ export {
   queryKeys,
   useWallets,
   useWallet,
+  useWalletBalance,
   useAgents,
   useAgent,
   useCreateAgent,

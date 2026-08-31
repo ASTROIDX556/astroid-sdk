@@ -17,6 +17,7 @@ import {
   useDeleteAgent,
   useSimulatePolicy,
   useWallets,
+  useWalletBalance,
   queryKeys,
   useAstroid,
   type AstroidProviderProps,
@@ -76,6 +77,11 @@ describe('queryKeys', () => {
     expect(key).toEqual(['astroid', 'wallets', 'detail', 'wal_abc']);
   });
 
+  it('wallets.balance produces a key containing the id', () => {
+    const key = queryKeys.wallets.balance('wal_abc');
+    expect(key).toEqual(['astroid', 'wallets', 'balance', 'wal_abc']);
+  });
+
   it('agents.list and wallets.list produce different keys', () => {
     expect(queryKeys.agents.list()).not.toEqual(queryKeys.wallets.list());
   });
@@ -127,6 +133,36 @@ describe('useWallets', () => {
 
     const { unmount } = renderInProviders(createElement(TestComponent));
     expect(typeof isLoading).toBe('boolean');
+    unmount();
+  });
+});
+
+describe('useWalletBalance', () => {
+  it('returns a loading state initially', () => {
+    let isLoading = false;
+
+    function TestComponent() {
+      const query = useWalletBalance('wal_1');
+      isLoading = query.isLoading;
+      return null;
+    }
+
+    const { unmount } = renderInProviders(createElement(TestComponent));
+    expect(typeof isLoading).toBe('boolean');
+    unmount();
+  });
+
+  it('query is disabled when walletId is undefined', () => {
+    let isFetching = true;
+
+    function TestComponent() {
+      const query = useWalletBalance(undefined);
+      isFetching = query.isFetching;
+      return null;
+    }
+
+    const { unmount } = renderInProviders(createElement(TestComponent));
+    expect(isFetching).toBe(false);
     unmount();
   });
 });

@@ -42,6 +42,9 @@ export class Astroid extends HttpClient {
     list: async (options?: { query?: QueryParams }) => {
       return this.request<{ data: any[] }>({ method: 'GET', path: '/wallets', query: options?.query });
     },
+    balance: async (id: string, options?: { query?: QueryParams }) => {
+      return this.request<{ data: any }>({ method: 'GET', path: `/wallets/${id}/balance`, query: options?.query });
+    },
   };
 
   public readonly agents = {
