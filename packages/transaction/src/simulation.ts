@@ -1,4 +1,5 @@
-import { Asset, Networks, Transaction, TransactionBuilder } from '@stellar/stellar-base';
+import { Networks, TransactionBuilder } from '@stellar/stellar-base';
+import type { FeeBumpTransaction, Transaction } from '@stellar/stellar-base';
 import { TransactionSimulationError, normalizeTransactionError } from './errors.js';
 
 export interface SimulationOptions {
@@ -25,7 +26,7 @@ export function simulateTransactionFee(
   const feeBufferPercentage = options?.feeBufferPercentage ?? 15;
 
   let xdrString = '';
-  let tx: Transaction;
+  let tx: Transaction | FeeBumpTransaction;
 
   try {
     if (typeof transactionOrXdr === 'string') {
