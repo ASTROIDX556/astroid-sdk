@@ -4,7 +4,7 @@ import type { HttpClient } from '@astroid/core';
 
 describe('AnalyticsResource', () => {
   it('calls getMetrics with serialized query parameters', async () => {
-    const mockGet = vi.fn().mockResolvedValue({ points: [], summary: { timeframe: 'day', totalVolume: '0', totalFees: '0', transactionCount: 0, successRate: 0, averageLatencyMs: 0 } });
+    const mockGet = vi.fn().mockResolvedValue({ data: { points: [], summary: { timeframe: 'day', totalVolume: '0', totalFees: '0', transactionCount: 0, successRate: 0, averageLatencyMs: 0 } } });
     const client = { get: mockGet } as unknown as HttpClient;
     const resource = new AnalyticsResource(client);
 
@@ -26,7 +26,7 @@ describe('AnalyticsResource', () => {
   });
 
   it('calls getVolumeSummary with string timeframe', async () => {
-    const mockGet = vi.fn().mockResolvedValue({ timeframe: 'month', totalVolume: '100', totalFees: '1', transactionCount: 10, successRate: 1, averageLatencyMs: 150 });
+    const mockGet = vi.fn().mockResolvedValue({ data: { timeframe: 'month', totalVolume: '100', totalFees: '1', transactionCount: 10, successRate: 1, averageLatencyMs: 150 } });
     const client = { get: mockGet } as unknown as HttpClient;
     const resource = new AnalyticsResource(client);
 
@@ -37,7 +37,7 @@ describe('AnalyticsResource', () => {
   });
 
   it('calls getVolumeSummary with query params object', async () => {
-    const mockGet = vi.fn().mockResolvedValue({ timeframe: 'day', totalVolume: '50', totalFees: '0.5', transactionCount: 5, successRate: 0.8, averageLatencyMs: 200 });
+    const mockGet = vi.fn().mockResolvedValue({ data: { timeframe: 'day', totalVolume: '50', totalFees: '0.5', transactionCount: 5, successRate: 0.8, averageLatencyMs: 200 } });
     const client = { get: mockGet } as unknown as HttpClient;
     const resource = new AnalyticsResource(client);
 

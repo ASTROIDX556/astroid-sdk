@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { ServerError, AuthenticationError } from '@astroid/errors';
+import { AuthenticationError } from '@astroid/errors';
 import {
   Astroid,
   createRetryMiddleware,

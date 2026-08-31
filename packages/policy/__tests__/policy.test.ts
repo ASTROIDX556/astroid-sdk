@@ -137,7 +137,7 @@ describe('PolicyResource — pre-flight simulation and dry-run helper', () => {
   });
 
   it('simulatePolicy performs dry-run check against active spending policies', async () => {
-    const { resource, fetch } = clientWith(async () => jsonResponse({ data: SIM_RESULT }));
+    const { resource, fetch } = client(async () => jsonResponse({ data: SIM_RESULT }));
 
     const input = {
       walletId: 'w_1',

@@ -1,51 +1,65 @@
 import { Resource } from '@astroid/core';
 import type {
+  Paginated,
   Policy,
   PolicySimulationRequest,
   PolicySimulationResult,
 } from '@astroid/types';
+
+/** Filters accepted by {@link PolicyResource.list}. */
+export interface PolicyListParams {
+  /** Only policies that are enabled (or disabled). */
+  enabled?: boolean;
+  /** Only policies of this type. */
+  type?: string;
+  /** Only policies scoped to this agent. */
+  agentId?: string;
+}
 
 export class PolicyResource extends Resource {
   /**
    * Create a new spending policy.
    */
   async create(input: Omit<Policy, 'id' | 'organizationId' | 'createdAt' | 'updatedAt'>): Promise<Policy> {
-    return this.http.post<Policy>('/policies', input);
+    const res = await this.client.post<Policy>('/policies', input);
+    return res.data;
   }
 
   /**
    * Retrieve a policy by ID.
    */
   async get(id: string): Promise<Policy> {
-    return this.http.get<Policy>(`/policies/${encodeURIComponent(id)}`);
+    return this.getData<Policy>(`/policies/${encodeURIComponent(id)}`);
   }
 
   /**
    * List policies with optional filtering.
    */
-  async list(params?: { enabled?: boolean; type?: string }): Promise<{ data: Policy[]; meta?: { page: number; limit: number; total: number; totalPages: number } }> {
-    return this.http.get('/policies', { params });
+  async list(params: PolicyListParams = {}): Promise<Paginated<Policy>> {
+    return this.listData<Policy>('/policies', { ...params });
   }
 
   /**
    * Update an existing policy.
    */
   async update(id: string, input: Partial<Omit<Policy, 'id' | 'organizationId' | 'createdAt' | 'updatedAt'>>): Promise<Policy> {
-    return this.http.patch<Policy>(`/policies/${encodeURIComponent(id)}`, input);
+    const res = await this.client.patch<Policy>(`/policies/${encodeURIComponent(id)}`, input);
+    return res.data;
   }
 
   /**
    * Delete a policy.
    */
   async delete(id: string): Promise<void> {
-    return this.http.delete<void>(`/policies/${encodeURIComponent(id)}`);
+    await this.client.delete<void>(`/policies/${encodeURIComponent(id)}`);
   }
 
   /**
    * Perform a pre-flight server-side policy simulation.
    */
   async simulate(input: PolicySimulationRequest): Promise<PolicySimulationResult> {
-    return this.http.post<PolicySimulationResult>('/policies/simulate', input);
+    const res = await this.client.post<PolicySimulationResult>('/policies/simulate', input);
+    return res.data;
   }
 
   /**
@@ -55,5 +69,8 @@ export class PolicyResource extends Resource {
     return this.simulate(input);
   }
 }
+
+/** Alias of {@link PolicyResource} matching the `*sResource` client naming. */
+export const PoliciesResource = PolicyResource;
 
 export * from './simulator.js';
