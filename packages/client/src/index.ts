@@ -1,68 +1,64 @@
-/**
- * @astroid/client entry point.
- */
+export * from './error-parser-middleware.js';
+export * from './errors.js';
+export * from './middleware/correlation.js';
+export * from './middleware/error.js';
+export * from './middleware/rate-limiter.js';
+export * from './query.js';
 
-import type { PaginationParams, PaginatedResponse } from '@astroid/types';
-import type { QueryValue, AstroidResponse } from '@astroid/core';
-import { serializePaginationParams } from './pagination.js';
+import { HttpClient } from '@astroid/core';
+import type { ClientConfig } from '@astroid/core';
+import { serializeQuery, type QueryParams } from './query.js';
 
-export { serializePaginationParams, unwrapPaginatedResponse } from './pagination.js';
-
-export interface AstroidClientConfig {
-  apiKey: string;
-  baseUrl: string;
-  fetch?: typeof fetch;
-  retry?: boolean | { maxAttempts?: number; baseDelayMs?: number };
-  rateLimit?: {
-    maxRequestsPerSecond: number;
-    burstCapacity?: number;
-    maxQueueLength?: number;
-    queueTimeoutMs?: number;
-  };
+export interface RequestOptions {
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  path?: string;
+  headers?: Record<string, string>;
+  query?: QueryParams;
+  correlationId?: string;
+  timeoutMs?: number;
+  retryable?: boolean;
+  signal?: AbortSignal;
+  context?: Record<string, unknown>;
 }
 
-export class Astroid {
-  public static version = '0.1.0';
-  private config: AstroidClientConfig;
-
-  constructor(config: AstroidClientConfig) {
-    this.config = config;
+export class Astroid extends HttpClient {
+  constructor(config: ClientConfig) {
+    super(config);
   }
 
-  public use(_middleware: unknown): this {
-    return this;
+  public async request<T = unknown>(options: RequestOptions): Promise<T> {
+    const queryString = serializeQuery(options.query);
+    const pathWithQuery = `${options.path ?? ''}${queryString}`;
+    return super.request<T>({
+      ...options,
+      path: pathWithQuery,
+    });
   }
 
-  public wallets = {
-    get: async (id: string): Promise<{ id: string; name?: string }> => {
-      return { id, name: 'Wallet' };
+  public readonly wallets = {
+    get: async (id: string, options?: { query?: QueryParams }) => {
+      return this.request<{ data: any }>({ method: 'GET', path: `/wallets/${id}`, query: options?.query });
+    },
+    list: async (options?: { query?: QueryParams }) => {
+      return this.request<{ data: any[] }>({ method: 'GET', path: '/wallets', query: options?.query });
     },
   };
 
-  /**
-   * Helper to build query parameters including pagination support.
-   */
-  public buildQuery(params?: PaginationParams & Record<string, QueryValue>): Record<string, QueryValue> {
-    if (!params) {
-      return {};
-    }
-    const pagination = serializePaginationParams(params);
-    const rest: Record<string, QueryValue> = {};
-    for (const [key, value] of Object.entries(params)) {
-      if (key !== 'cursor' && key !== 'limit' && key !== 'order') {
-        rest[key] = value;
-      }
-    }
-    return {
-      ...pagination,
-      ...rest,
-    };
-  }
-}
+  public readonly agents = {
+    get: async (id: string, options?: { query?: QueryParams }) => {
+      return this.request<{ data: any }>({ method: 'GET', path: `/agents/${id}`, query: options?.query });
+    },
+    list: async (options?: { query?: QueryParams }) => {
+      return this.request<{ data: any[] }>({ method: 'GET', path: '/agents', query: options?.query });
+    },
+  };
 
-export function createRateLimiterMiddleware(options: { maxRequestsPerSecond: number; burstCapacity?: number }) {
-  return {
-    name: 'rate-limiter',
-    options,
+  public readonly transactions = {
+    get: async (id: string, options?: { query?: QueryParams }) => {
+      return this.request<{ data: any }>({ method: 'GET', path: `/transactions/${id}`, query: options?.query });
+    },
+    list: async (options?: { query?: QueryParams }) => {
+      return this.request<{ data: any[] }>({ method: 'GET', path: '/transactions', query: options?.query });
+    },
   };
 }

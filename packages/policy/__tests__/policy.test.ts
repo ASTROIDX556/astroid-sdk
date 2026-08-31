@@ -116,7 +116,7 @@ describe('PolicyResource — CRUD with mocked API responses', () => {
   });
 });
 
-describe('PolicyResource — pre-flight simulation', () => {
+describe('PolicyResource — pre-flight simulation and dry-run helper', () => {
   it('simulate POSTs the request payload and returns the result', async () => {
     const { resource, fetch } = clientWith(async () => jsonResponse({ data: SIM_RESULT }));
 
@@ -128,6 +128,25 @@ describe('PolicyResource — pre-flight simulation', () => {
     };
 
     const result = await resource.simulate(input);
+
+    expect(result).toEqual(SIM_RESULT);
+    const [url, init] = fetch.mock.calls[0]!;
+    expect(String(url)).toContain('/policies/simulate');
+    expect((init as RequestInit).method).toBe('POST');
+    expect(JSON.parse(String((init as RequestInit).body))).toEqual(input);
+  });
+
+  it('simulatePolicy performs dry-run check against active spending policies', async () => {
+    const { resource, fetch } = clientWith(async () => jsonResponse({ data: SIM_RESULT }));
+
+    const input = {
+      walletId: 'w_1',
+      asset: 'USDC',
+      amount: '100',
+      recipientAddress: 'GABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUVW',
+    };
+
+    const result = await resource.simulatePolicy(input);
 
     expect(result).toEqual(SIM_RESULT);
     const [url, init] = fetch.mock.calls[0]!;
