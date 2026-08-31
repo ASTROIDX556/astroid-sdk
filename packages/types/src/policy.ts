@@ -1,24 +1,12 @@
-export type PolicyType = 
-  | 'MAX_AMOUNT'
-  | 'DAILY_BUDGET'
-  | 'WEEKLY_BUDGET'
-  | 'MONTHLY_BUDGET'
-  | 'BLOCKED_RECIPIENTS'
-  | 'ALLOWED_RECIPIENTS'
-  | 'BLOCKED_ASSETS'
-  | 'ALLOWED_ASSETS';
+/**
+ * Policy simulation and risk-assessment payloads.
+ *
+ * The canonical {@link Policy} entity lives in `./entities.ts` and the
+ * {@link PolicyType} enum in `./enums.ts`; this module only adds the
+ * simulation request/response shapes.
+ */
 
-export interface Policy {
-  id: string;
-  organizationId: string;
-  name: string;
-  type: PolicyType;
-  configuration: Record<string, unknown>;
-  priority: number;
-  enabled: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
+import type { PolicyType } from './enums.js';
 
 export interface PolicySimulationRequest {
   walletId?: string;
