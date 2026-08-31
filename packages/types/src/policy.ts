@@ -63,3 +63,11 @@ export interface PolicySimulationResult {
   budgetImpact: PolicyBudgetImpact[];
   explanation: string;
 }
+
+export interface SimulatePolicyRequest {
+  walletId?: string;
+  asset: string;
+  amount: string | number;
+  recipientAddress?: string;
+  spentInWindow?: string;
+}
