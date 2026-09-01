@@ -11,28 +11,16 @@
 import { Resource } from '@astroid/core';
 import type {
   AgentAnalytics,
+  AgentSpendingRow,
+  AnalyticsListParams,
   AnalyticsOverview,
   AnalyticsQuery,
   BudgetAnalytics,
+  BudgetUtilizationRow,
   CashflowReport,
+  Paginated,
   RiskReport,
 } from '@astroid/types';
-
-export {
-  aggregateTransactionMetrics,
-  type AggregateOptions,
-  type AggregateGranularity,
-  type AggregatedMetrics,
-  type TransactionMetricBucket,
-} from './metrics.js';
-
-export {
-  aggregateTransactionMetrics as aggregateTransactionTelemetry,
-  type AggregateGranularity as TelemetryGranularity,
-  type AggregateTelemetryOptions,
-  type AggregatedTelemetry,
-  type TransactionTelemetryBucket,
-} from './aggregations.js';
 
 export {
   exportToCSV,
@@ -81,5 +69,27 @@ export class AnalyticsResource extends Resource {
   /** Per-budget utilization breakdown. */
   async budgets(query: AnalyticsQuery = {}): Promise<BudgetAnalytics> {
     return this.getData<BudgetAnalytics>('/analytics/budgets', { ...query });
+  }
+
+  /**
+   * Densely paginated per-agent performance rows.
+   *
+   * Unlike {@link AnalyticsResource.agents} (which returns the full aggregate
+   * in one payload), this endpoint is cursor/page-aware so clients can page
+   * through large historical sets without loading everything at once. Accepts
+   * the shared {@link AnalyticsListParams} filters plus pagination controls.
+   */
+  async listAgents(query: AnalyticsListParams = {}): Promise<Paginated<AgentSpendingRow>> {
+    return this.listData<AgentSpendingRow>('/analytics/agents', { ...query });
+  }
+
+  /**
+   * Densely paginated per-budget utilization rows.
+   *
+   * Use when there are many budgets and you want to page through them with
+   * `page`/`limit`/`order` rather than fetch every row in a single response.
+   */
+  async listBudgets(query: AnalyticsListParams = {}): Promise<Paginated<BudgetUtilizationRow>> {
+    return this.listData<BudgetUtilizationRow>('/analytics/budgets', { ...query });
   }
 }

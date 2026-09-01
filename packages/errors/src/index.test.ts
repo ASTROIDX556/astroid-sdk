@@ -434,4 +434,31 @@ describe('@astroid/errors', () => {
       expect(auth instanceof ValidationError).toBe(false);
     });
   });
+
+  /* ------------------------------------------------------------------------ */
+  /* Stack trace preservation                                                  */
+  /* ------------------------------------------------------------------------ */
+
+  it('preserves cause for stack trace via Error constructor', () => {
+    const cause = new Error('original failure');
+    const err = new ValidationError('wrapped', {
+      code: 'VALIDATION_ERROR',
+      cause,
+    });
+    expect(err.cause).toBe(cause);
+    expect(err.stack).toBeDefined();
+  });
+
+  it('sets name to the subclass name', () => {
+    expect(new AuthenticationError('auth', { code: 'AUTHENTICATION_ERROR' }).name).toBe(
+      'AuthenticationError',
+    );
+    expect(new RateLimitError('rate', { code: 'RATE_LIMITED' }).name).toBe('RateLimitError');
+    expect(new PolicyViolationError('policy', { code: 'POLICY_VIOLATION' }).name).toBe(
+      'PolicyViolationError',
+    );
+    expect(new NotFoundError('nf', { code: 'NOT_FOUND' }).name).toBe('NotFoundError');
+    expect(new ValidationError('val', { code: 'VALIDATION_ERROR' }).name).toBe('ValidationError');
+    expect(new ServerError('srv', { code: 'INTERNAL_ERROR' }).name).toBe('ServerError');
+  });
 });
