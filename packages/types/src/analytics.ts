@@ -1,21 +1,36 @@
 export type Timeframe = 'hour' | 'day' | 'week' | 'month' | 'year' | string;
 
-export interface AnalyticsQueryParams {
-  startDate?: string;
-  endDate?: string;
-  timeframe?: Timeframe;
-  asset?: string;
-  walletId?: string;
+import type { DecimalString } from './entities.js';
+import type { RiskBand } from './enums.js';
+import type { Paginated, PaginationParams } from './common.js';
+
+/** Query parameters accepted by analytics endpoints. */
+export interface AnalyticsQuery {
+  from?: string;
+  to?: string;
   agentId?: string;
 }
 
-export interface TimeSeriesMetricPoint {
-  timestamp: string;
-  volume: string;
-  fee: string;
-  count: number;
-  successCount: number;
-  failureCount: number;
+/**
+ * Analytics list queries: the shared {@link AnalyticsQuery} filters plus
+ * standard pagination controls (`page`, `limit`, `sort`, `order`, `search`).
+ *
+ * Applied to the tabular analytics endpoints (per-agent and per-budget rows) so
+ * clients can page through large historical result sets without pulling the
+ * full payload into memory.
+ */
+export interface AnalyticsListParams extends AnalyticsQuery, PaginationParams {}
+
+/**
+ * Alias for a paginated analytics results payload. Keeps the narrow, row-level
+ * item type explicit at call sites (e.g. {@link AgentSpendingRow}).
+ */
+export type PaginatedResponse<TItem> = Paginated<TItem>;
+
+/** A single (timestamp, value) point in a time series. */
+export interface TimeSeriesPoint {
+  date: string;
+  value: number;
 }
 
 export interface VolumeSummary {
