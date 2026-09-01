@@ -34,6 +34,69 @@ describe('Astroid client', () => {
     expect(install).toHaveBeenCalledWith(astroid);
     expect(astroid.installedPlugins).toEqual(['metrics']);
   });
+
+  it('injects static bearer token into request headers', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: true, data: {} }), { status: 200 }));
+    const astroid = new Astroid({ baseUrl: 'https://api.example.test', accessToken: 'static_token_123', fetch: fetchMock });
+
+    await astroid.client.get('/test');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const callArgs = fetchMock.mock.calls[0];
+    const headers = callArgs[1].headers;
+    expect(headers['authorization']).toBe('Bearer static_token_123');
+  });
+
+  it('evaluates asynchronous dynamic token configuration', async () => {
+    const tokenFn = vi.fn().mockResolvedValue('dynamic_token_456');
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: true, data: {} }), { status: 200 }));
+    const astroid = new Astroid({ baseUrl: 'https://api.example.test', accessToken: tokenFn, fetch: fetchMock });
+
+    await astroid.client.get('/test');
+    expect(tokenFn).toHaveBeenCalledOnce();
+    const callArgs = fetchMock.mock.calls[0];
+    const headers = callArgs[1].headers;
+    expect(headers['authorization']).toBe('Bearer dynamic_token_456');
+  });
+
+  it('retries request once on 401 Unauthorized when dynamic token function is registered', async () => {
+    const tokenFn = vi.fn().mockResolvedValueOnce('old_token').mockResolvedValueOnce('fresh_token');
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: { message: 'Unauthorized' } }), { status: 401 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ success: true, data: { ok: true } }), { status: 200 }));
+
+    const astroid = new Astroid({ baseUrl: 'https://api.example.test', accessToken: tokenFn, fetch: fetchMock });
+
+    const res = await astroid.client.get('/test');
+    expect(res.data).toEqual({ ok: true });
+    expect(tokenFn).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0][1].headers['authorization']).toBe('Bearer old_token');
+    expect(fetchMock.mock.calls[1][1].headers['authorization']).toBe('Bearer fresh_token');
+  });
+
+  it('does not retry 401 when token is static', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { message: 'Unauthorized' } }), { status: 401 }));
+    const astroid = new Astroid({ baseUrl: 'https://api.example.test', accessToken: 'static_token', fetch: fetchMock });
+
+    await expect(astroid.client.get('/test')).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('prevents concurrent identical token refresh invocations by caching pending promise', async () => {
+    let resolveToken!: (token: string) => void;
+    const tokenFn = vi.fn().mockReturnValue(new Promise((res) => { resolveToken = res; }));
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: true, data: {} }), { status: 200 }));
+
+    const astroid = new Astroid({ baseUrl: 'https://api.example.test', accessToken: tokenFn, fetch: fetchMock });
+
+    const p1 = astroid.client.get('/test1');
+    const p2 = astroid.client.get('/test2');
+
+    resolveToken('concurrent_token');
+    await Promise.all([p1, p2]);
+
+    expect(tokenFn).toHaveBeenCalledOnce();
+  });
 });
 
 describe('Astroid event system', () => {

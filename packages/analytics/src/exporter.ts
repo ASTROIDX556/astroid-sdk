@@ -274,8 +274,7 @@ export function exportToCSV<T extends Record<string, unknown>>(
   const lineBreak = options.lineBreak ?? '\n';
 
   const columns: CsvColumn<T>[] =
-    options.columns ??
-    (records.length > 0 ? inferColumns(records[0] as T) : []);
+    options.columns ?? (records.length > 0 ? inferColumns(records[0] as T) : []);
 
   if (columns.length === 0) return '';
 
@@ -336,9 +335,7 @@ export function exportToJSON<T>(records: T[], options: JsonExportOptions = {}): 
  * const csv = exportToCSV(rows);
  * ```
  */
-export function formatTransactionForExport(
-  tx: Record<string, unknown>,
-): Record<string, string> {
+export function formatTransactionForExport(tx: Record<string, unknown>): Record<string, string> {
   const get = (keys: string[]): string => {
     for (const k of keys) {
       const v = k.includes('.') ? getByPath(tx, k) : tx[k];
@@ -349,7 +346,16 @@ export function formatTransactionForExport(
 
   // Fee may be nested: fee.amount, gasEstimate, metadata.fee, etc.
   const fee =
-    get(['feePaid', 'fee', 'gasEstimate', 'gas_estimate', 'totalFee', 'metadata.fee', 'metadata.gasEstimate', 'fee.amount']) ||
+    get([
+      'feePaid',
+      'fee',
+      'gasEstimate',
+      'gas_estimate',
+      'totalFee',
+      'metadata.fee',
+      'metadata.gasEstimate',
+      'fee.amount',
+    ]) ||
     (typeof tx.fee === 'object' && tx.fee !== null
       ? String((tx.fee as Record<string, unknown>).amount ?? '')
       : '');

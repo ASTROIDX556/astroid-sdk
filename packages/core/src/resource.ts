@@ -15,6 +15,9 @@ import { paginate } from './pagination.js';
 /** Options a list method accepts beyond its typed filters. */
 export type ListRequestOptions = Omit<RequestOptions, 'method' | 'path' | 'body'>;
 
+/** Extra request options that can be forwarded to the HTTP client. */
+export type RequestOptionsExtras = Omit<RequestOptions, 'method' | 'path' | 'body' | 'query'>;
+
 export abstract class Resource {
   protected readonly client: HttpClient;
 
@@ -23,8 +26,12 @@ export abstract class Resource {
   }
 
   /** Unwrap just the `data` from a GET. */
-  protected async getData<TData>(path: string, query?: Record<string, QueryValue>): Promise<TData> {
-    const res = await this.client.get<TData>(path, query ? { query } : {});
+  protected async getData<TData>(
+    path: string,
+    query?: Record<string, QueryValue>,
+    extras?: RequestOptionsExtras,
+  ): Promise<TData> {
+    const res = await this.client.get<TData>(path, { ...(extras ?? {}), ...(query ? { query } : {}) });
     return res.data;
   }
 
@@ -32,8 +39,12 @@ export abstract class Resource {
   protected async listData<TItem>(
     path: string,
     query?: Record<string, QueryValue>,
+    extras?: RequestOptionsExtras,
   ): Promise<Paginated<TItem>> {
-    const res: AstroidResponse<TItem[]> = await this.client.get<TItem[]>(path, query ? { query } : {});
+    const res: AstroidResponse<TItem[]> = await this.client.get<TItem[]>(
+      path,
+      { ...(extras ?? {}), ...(query ? { query } : {}) },
+    );
     return { data: res.data ?? [], meta: normalizeMeta(res) };
   }
 
@@ -46,9 +57,10 @@ export abstract class Resource {
   protected iterateData<TItem>(
     path: string,
     query?: Record<string, QueryValue>,
+    extras?: RequestOptionsExtras,
   ): AsyncGenerator<TItem, void, void> {
     return paginate<TItem>((page) =>
-      this.client.get<TItem[]>(path, { query: { ...(query ?? {}), page } }),
+      this.client.get<TItem[]>(path, { ...(extras ?? {}), query: { ...(query ?? {}), page } }),
     );
   }
 }
