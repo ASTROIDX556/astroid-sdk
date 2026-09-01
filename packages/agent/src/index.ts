@@ -15,50 +15,157 @@ import { validateCreateAgentParams } from './validation.js';
 export { AstroidValidationError } from './errors.js';
 export { validateCreateAgentParams, isValidCreateAgentParams } from './validation.js';
 
+/** Filters accepted by {@link AgentResource.list}. */
+export type AgentListParams = ListAgentsParams;
+
 /**
  * Resource methods for managing AI agents on Astroid.
  */
 export class AgentResource extends Resource {
   /**
    * Create a new autonomous AI agent with strict input payload validation.
-   * 
+   *
    * @param params Agent creation parameters.
    * @returns The created agent entity.
    */
   async create(params: CreateAgentParams): Promise<Agent> {
     validateCreateAgentParams(params);
-    return this.http.post<Agent>('/v1/agents', params);
+    const res = await this.client.post<Agent>('/agents', params);
+    return res.data;
   }
 
   /**
    * Retrieve an agent by its unique identifier.
-   * 
+   *
    * @param agentId The unique agent ID.
    * @returns The agent entity.
    */
   async get(agentId: string): Promise<Agent> {
-    return this.http.get<Agent>(`/v1/agents/${agentId}`);
+    return this.getData<Agent>(`/agents/${encodeURIComponent(agentId)}`);
   }
 
   /**
    * List all agents associated with the organization.
-   * 
-   * @param params Optional pagination parameters.
+   *
+   * @param params Optional filters and pagination parameters.
    * @returns A paginated list of agent entities.
    */
-  async list(params?: PaginationParams): Promise<PaginatedResponse<Agent>> {
-    return this.http.get<PaginatedResponse<Agent>>('/v1/agents', { query: params });
+  async list(params: AgentListParams = {}): Promise<Paginated<Agent>> {
+    return this.listData<Agent>('/agents', { ...params });
+  }
+
+  /**
+   * Iterate every agent across all pages.
+   *
+   * @param params Optional filters and pagination parameters.
+   */
+  iterate(params: AgentListParams = {}): AsyncGenerator<Agent, void, void> {
+    return this.iterateData<Agent>('/agents', { ...params });
   }
 
   /**
    * Update an existing agent configuration.
-   * 
+   *
    * @param agentId The unique agent ID.
    * @param params Updated agent parameters.
    * @returns The updated agent entity.
    */
   async update(agentId: string, params: UpdateAgentParams): Promise<Agent> {
-    return this.http.patch<Agent>(`/v1/agents/${agentId}`, params);
+    const res = await this.client.patch<Agent>(`/agents/${encodeURIComponent(agentId)}`, params);
+    return res.data;
+  }
+
+  /**
+   * Delete an agent by its unique identifier.
+   *
+   * @param agentId The unique agent ID.
+   */
+  async delete(agentId: string): Promise<void> {
+    await this.client.delete<void>(`/agents/${encodeURIComponent(agentId)}`);
+  }
+
+  /**
+   * Fetch real-time operational status metrics for an agent.
+   *
+   * @param agentId The unique agent ID.
+   * @returns The agent's status metrics.
+   */
+  async status(agentId: string): Promise<AgentStatusMetrics> {
+    return this.getData<AgentStatusMetrics>(`/agents/${encodeURIComponent(agentId)}/status`);
+  }
+
+  /**
+   * Fetch paginated execution logs for an agent.
+   *
+   * @param agentId The unique agent ID.
+   * @returns A paginated list of agent log entries.
+   */
+  async logs(agentId: string): Promise<Paginated<AgentLog>> {
+    return this.listData<AgentLog>(`/agents/${encodeURIComponent(agentId)}/logs`);
+  }
+
+  /**
+   * List the agent's lifecycle event stream (creation, suspension, resumption,
+   * budget exhaustion). Accepts an optional `event` filter and pagination.
+   */
+  async listEvents(
+    agentId: string,
+    params: PaginationParams & { event?: AgentLifecycleEventRecord['event'] } = {},
+  ): Promise<Paginated<AgentLifecycleEventRecord>> {
+    return this.listData<AgentLifecycleEventRecord>(
+      `/agents/${encodeURIComponent(agentId)}/events`,
+      { ...params },
+    );
+  }
+
+  /**
+   * Subscribe to an agent's lifecycle event stream via the SDK event bridge.
+   *
+   * Returns an unsubscribe function; call it (or abort via `options.signal`) to
+   * stop receiving events. The handler receives the typed payload.
+   *
+   * > **Stub:** wiring to the live event bridge / polling transport is not yet
+   * > implemented. This method validates its arguments and returns a working
+   * > teardown, so callers can adopt the typed surface now and receive events
+   * > once the transport lands. Backfill via `options.since` is forwarded to the
+   * > transport when available.
+   *
+   * @param agentId The agent to observe (must be a non-empty string).
+   * @param handler Called with each lifecycle event payload as it arrives.
+   * @param options {@link AgentEventSubscriptionOptions} for error handling,
+   *                abort support, and optional backfill (`since`).
+   * @returns       A function that tears the subscription down.
+   */
+  subscribe(
+    agentId: string,
+    handler: (payload: AgentLifecycleEventRecord['data']) => void,
+    options: AgentEventSubscriptionOptions = {},
+  ): () => void {
+    if (!agentId) {
+      throw new Error('AgentResource.subscribe requires a non-empty agentId.');
+    }
+
+    let active = true;
+    const abort = () => {
+      active = false;
+    };
+
+    if (options.signal) {
+      if (options.signal.aborted) {
+        active = false;
+      } else {
+        options.signal.addEventListener('abort', abort, { once: true });
+      }
+    }
+
+    void handler;
+    void options.since;
+    void options.replayLimit;
+
+    return () => {
+      active = false;
+      options.signal?.removeEventListener('abort', abort);
+    };
   }
 
   /* ------------------------------------------------------------------------ */
@@ -130,3 +237,6 @@ function toAgentEventQuery(params?: ListAgentEventsParams): Record<string, strin
   }
   return query;
 }
+
+/** Alias of {@link AgentResource} matching the `*sResource` client naming. */
+export const AgentsResource = AgentResource;

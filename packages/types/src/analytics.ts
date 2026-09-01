@@ -11,13 +11,26 @@ export interface AnalyticsQueryParams extends PaginationParams {
   agentId?: string;
 }
 
-export interface TimeSeriesMetricPoint {
-  timestamp: string;
-  volume: string;
-  fee: string;
-  count: number;
-  successCount: number;
-  failureCount: number;
+/**
+ * Analytics list queries: the shared {@link AnalyticsQuery} filters plus
+ * standard pagination controls (`page`, `limit`, `sort`, `order`, `search`).
+ *
+ * Applied to the tabular analytics endpoints (per-agent and per-budget rows) so
+ * clients can page through large historical result sets without pulling the
+ * full payload into memory.
+ */
+export interface AnalyticsListParams extends AnalyticsQuery, PaginationParams {}
+
+/**
+ * Alias for a paginated analytics results payload. Keeps the narrow, row-level
+ * item type explicit at call sites (e.g. {@link AgentSpendingRow}).
+ */
+export type PaginatedResponse<TItem> = Paginated<TItem>;
+
+/** A single (timestamp, value) point in a time series. */
+export interface TimeSeriesPoint {
+  date: string;
+  value: number;
 }
 
 export interface VolumeSummary {
@@ -32,4 +45,23 @@ export interface VolumeSummary {
 export interface AnalyticsMetricsResponse {
   points: TimeSeriesMetricPoint[];
   summary: VolumeSummary;
+}
+
+/**
+ * High-level aggregate overview for an organization, wallet, or agent.
+ *
+ * Returned by `analytics.overview`; the transaction/policy counters power the
+ * real-time agent metric dashboards.
+ */
+export interface AnalyticsOverview {
+  /** Total transactions in the window. */
+  transactionCount: number;
+  /** Transactions blocked by policy in the window. */
+  policyViolations: number;
+  /** Total volume moved, as a decimal string. */
+  totalVolume: string;
+  /** Total fees paid, as a decimal string. */
+  totalFees: string;
+  /** Success rate as a percentage `0`–`100`. */
+  successRate: number;
 }

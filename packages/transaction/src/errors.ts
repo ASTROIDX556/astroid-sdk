@@ -126,6 +126,8 @@ export function normalizeTransactionError(
         if (Array.isArray(resultCodes.operations)) {
           operationResultCodes = resultCodes.operations as string[];
           operationCode = operationResultCodes[0];
+          // Prefer the more specific operation-level code when present.
+          if (operationCode) stellarCode = operationCode;
         }
       }
     }

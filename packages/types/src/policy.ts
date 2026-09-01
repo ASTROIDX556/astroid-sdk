@@ -8,6 +8,18 @@
 
 import type { PolicyType } from './enums.js';
 
+/** A single policy rule breach reported by a client-side simulation. */
+export interface PolicyViolation {
+  policyId: string;
+  policyName: string;
+  policyType: PolicyType;
+  message: string;
+  /** The configured limit that was breached, when applicable. */
+  limit?: number | string;
+  /** The actual value that breached the limit, when applicable. */
+  actual?: number | string;
+}
+
 export interface PolicySimulationRequest {
   walletId?: string;
   agentId?: string;

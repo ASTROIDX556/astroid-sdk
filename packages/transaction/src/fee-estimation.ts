@@ -151,7 +151,8 @@ export function estimateFromNetworkFee(
   }
 
   const validBase = Number.isNaN(baseFee) || baseFee <= 0 ? 100 : baseFee;
-  const buffered = Math.ceil(liveFee * (1 + bufferPercentage / 100));
+  // Integer math avoids floating-point drift (e.g. 200 * 1.1 -> 220.00000000000003).
+  const buffered = Math.ceil((liveFee * (100 + bufferPercentage)) / 100);
   const recommendedFee = Math.max(buffered, validBase);
 
   let networkState: FeeEstimationResult['networkState'] = 'normal';
@@ -202,9 +203,9 @@ export async function estimateLiveFee(
   // Find freshest bucket or fallback to modeFee
   let activeLiveFee = stats.modeFee;
   if (stats.feeCharged.length > 0) {
-    // Sort by seconds ascending to get freshest
+    // Sort by seconds ascending; the freshest bucket has the largest window.
     const sorted = [...stats.feeCharged].sort((a, b) => (a.seconds ?? 0) - (b.seconds ?? 0));
-    const freshest = sorted[0];
+    const freshest = sorted[sorted.length - 1];
     if (freshest && freshest.p50 !== undefined && freshest.p50 !== null) {
       activeLiveFee = Number(freshest.p50);
     } else if (freshest && freshest.fee_charged !== undefined && freshest.fee_charged !== null) {

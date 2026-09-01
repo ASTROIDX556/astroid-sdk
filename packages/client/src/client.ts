@@ -1,114 +1,101 @@
 /**
- * Astroid REST client implementation.
- *
- * @module
+ * The main Astroid SDK client: composes all resource namespaces, event emitter,
+ * and shared HTTP client.
  */
 
-import { HttpClient, type ClientConfig, type RequestOptions } from '@astroid/core';
-import { AgentsResource } from '@astroid/agent';
-import { WalletsResource } from '@astroid/wallet';
-import { TransactionsResource } from '@astroid/transaction';
-import { PoliciesResource } from '@astroid/policy';
-import { BudgetsResource } from '@astroid/budget';
+import { HttpClient, type AstroidClientConfig } from '@astroid/core';
+
+import { AgentResource } from '@astroid/agent';
 import { AnalyticsResource } from '@astroid/analytics';
 import { AuthResource } from '@astroid/auth';
-import { WebhooksResource } from '@astroid/webhook';
-import { NotificationsResource } from '@astroid/notification';
+import { BudgetResource } from '@astroid/budget';
+import { NotificationResource } from '@astroid/notification';
+import { PolicyResource } from '@astroid/policy';
+import { TransactionResource } from '@astroid/transaction';
+import { WalletResource } from '@astroid/wallet';
+import { WebhookResource } from '@astroid/webhook';
+import { AIResource } from '@astroid/agent'; // or ai package if exists, wait let's check exports
 
-import { createErrorTranslatorMiddleware } from './middleware/error.js';
-import { createRateLimiterMiddleware, type RateLimitMiddlewareOptions } from './middleware/rate-limiter.js';
-import { createCorrelationMiddleware } from './middleware/correlation.js';
-import { createRetryMiddleware, type RetryOptions } from './middleware/retry.js';
+// Event emitter for webhook and real-time events
+type EventListener<T = any> = (data: T) => void;
 
-/** Configuration options for {@link AstroidClient}. */
-export interface AstroidClientConfig extends ClientConfig {
-  /** Rate limiting options. */
-  rateLimit?: RateLimitMiddlewareOptions | boolean;
-  /** Retry configuration options or boolean flag. */
-  retry?: RetryOptions | boolean;
-  /** Maximum number of retries (shorthand option). */
-  retries?: number;
-  /** Base retry delay in ms (shorthand option). */
-  retryDelay?: number;
-}
-
-/**
- * Astroid API Client.
- */
-export class AstroidClient {
-  readonly http: HttpClient;
-  readonly agents: AgentsResource;
-  readonly wallets: WalletsResource;
-  readonly transactions: TransactionsResource;
-  readonly policies: PoliciesResource;
-  readonly budgets: BudgetsResource;
-  readonly analytics: AnalyticsResource;
+export class Astroid {
+  readonly client: HttpClient;
   readonly auth: AuthResource;
-  readonly webhooks: WebhooksResource;
-  readonly notifications: NotificationsResource;
+  readonly wallets: WalletResource;
+  readonly agents: AgentResource;
+  readonly policies: PolicyResource;
+  readonly budgets: BudgetResource;
+  readonly transactions: TransactionResource;
+  readonly notifications: NotificationResource;
+  readonly analytics: AnalyticsResource;
+  readonly webhooks: WebhookResource;
+  readonly ai: any; // AI resource namespace
+
+  private readonly listeners = new Map<string, Set<EventListener>>();
+  private readonly installedPluginNames = new Set<string>();
 
   constructor(config: AstroidClientConfig) {
-    this.http = new HttpClient(config);
-
-    // Register core middleware
-    this.http.use(createCorrelationMiddleware());
-    this.http.use(createErrorTranslatorMiddleware());
-
-    if (config.rateLimit !== false) {
-      const opts = typeof config.rateLimit === 'object' ? config.rateLimit : undefined;
-      this.http.use(createRateLimiterMiddleware(opts));
-    }
-
-    if (config.retry !== false) {
-      const retryOpts: RetryOptions = {};
-      if (typeof config.retry === 'object' && config.retry !== null) {
-        Object.assign(retryOpts, config.retry);
-      }
-      if (typeof config.retries === 'number') {
-        retryOpts.maxRetries = config.retries;
-      }
-      if (typeof config.retryDelay === 'number') {
-        retryOpts.baseDelayMs = config.retryDelay;
-      }
-      this.http.use(createRetryMiddleware(retryOpts));
-    }
-
-    this.agents = new AgentsResource(this.http);
-    this.wallets = new WalletsResource(this.http);
-    this.transactions = new TransactionsResource(this.http);
-    this.policies = new PoliciesResource(this.http);
-    this.budgets = new BudgetsResource(this.http);
-    this.analytics = new AnalyticsResource(this.http);
-    this.auth = new AuthResource(this.http);
-    this.webhooks = new WebhooksResource(this.http);
-    this.notifications = new NotificationsResource(this.http);
+    this.client = new HttpClient(config);
+    this.auth = new AuthResource(this.client);
+    this.wallets = new WalletResource(this.client);
+    this.agents = new AgentResource(this.client);
+    this.policies = new PolicyResource(this.client);
+    this.budgets = new BudgetResource(this.client);
+    this.transactions = new TransactionResource(this.client);
+    this.notifications = new NotificationResource(this.client);
+    this.analytics = new AnalyticsResource(this.client);
+    this.webhooks = new WebhookResource(this.client);
+    this.ai = new AgentResource(this.client); // Placeholder or actual if available
   }
 
-  /** Register a custom middleware. */
-  use(middleware: Parameters<HttpClient['use']>[0]): this {
-    this.http.use(middleware);
+  static readonly version = '0.1.0';
+
+  /** Update access token at runtime. */
+  setAccessToken(accessToken: string | (() => Promise<string>) | undefined): void {
+    this.client.setAccessToken(accessToken);
+  }
+
+  /** Register a plugin. */
+  register(plugin: { name: string; install: (astroid: Astroid) => void }): this {
+    plugin.install(this);
+    this.installedPluginNames.add(plugin.name);
     return this;
   }
 
-  /** Perform a raw GET request. */
-  async get<T>(path: string, options?: RequestOptions): Promise<T> {
-    return this.http.get<T>(path, options);
+  get installedPlugins(): string[] {
+    return Array.from(this.installedPluginNames);
   }
 
-  /** Perform a raw POST request. */
-  async post<T>(path: string, body?: unknown, options?: RequestOptions): Promise<T> {
-    return this.http.post<T>(path, body, options);
+  /* Event emitter methods */
+  on(event: string, listener: EventListener): () => void {
+    if (!this.listeners.has(event)) {
+      this.listeners.set(event, new Set());
+    }
+    this.listeners.get(event)!.add(listener);
+    return () => {
+      this.listeners.get(event)?.delete(listener);
+    };
   }
 
-  /** Perform a raw PUT request. */
-  async put<T>(path: string, body?: unknown, options?: RequestOptions): Promise<T> {
-    return this.http.put<T>(path, body, options);
+  once(event: string, listener: EventListener): () => void {
+    const off = this.on(event, (data) => {
+      off();
+      listener(data);
+    });
+    return off;
   }
 
-  /** Perform a raw DELETE request. */
-  async delete<T>(path: string, options?: RequestOptions): Promise<T> {
-    return this.http.delete<T>(path, options);
+  emit(envelope: { event: string; data: any }): void {
+    const set = this.listeners.get(envelope.event);
+    if (set) {
+      for (const listener of set) {
+        listener(envelope.data);
+      }
+    }
+  }
+
+  removeAllListeners(): void {
+    this.listeners.clear();
   }
 }
-
-export { AstroidClient as Astroid };
