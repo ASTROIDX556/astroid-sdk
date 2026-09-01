@@ -6,6 +6,11 @@ import type {
   PolicySimulationResult,
 } from '@astroid/types';
 
+import { simulatePolicy } from './simulator.js';
+import type { PolicySimulationReport, SimulatedTransaction } from './simulator.js';
+
+export type { PolicySimulationReport, SimulatedTransaction };
+
 /** Filters accepted by {@link PolicyResource.list}. */
 export interface PolicyListParams {
   /** Only policies that are enabled (or disabled). */
@@ -67,6 +72,43 @@ export class PolicyResource extends Resource {
    */
   async simulatePolicy(input: PolicySimulationRequest): Promise<PolicySimulationResult> {
     return this.simulate(input);
+  }
+
+  /**
+   * Pre-flight check a proposed transaction against an agent's configured
+   * spending and security policies before execution.
+   *
+   * This is the high-level simulation wrapper: it fetches the active policies
+   * for the given agent (or wallet), converts the proposed transaction into a
+   * {@link SimulatedTransaction}, and evaluates it client-side with the local
+   * policy engine. The result tells the caller whether the transaction may
+   * proceed and, if not, exactly which rules were breached — all without
+   * spending network fees on a transaction that would be rejected.
+   *
+   * @param options.agentId     Agent whose policies apply (mutually exclusive with `walletId`).
+   * @param options.walletId    Wallet whose policies apply (mutually exclusive with `agentId`).
+   * @param options.transaction The proposed transaction to evaluate.
+   * @returns                   A structured report with a `passed` flag and per-rule violations.
+   * @throws                    If neither `agentId` nor `walletId` is provided.
+   */
+  async simulateTransaction(options: {
+    agentId?: string;
+    walletId?: string;
+    transaction: SimulatedTransaction;
+  }): Promise<PolicySimulationReport> {
+    const { agentId, walletId, transaction } = options;
+
+    if (!agentId && !walletId) {
+      throw new Error('simulateTransaction requires an `agentId` or `walletId` to scope the policy check.');
+    }
+
+    const params: PolicyListParams & { walletId?: string } = { enabled: true };
+    if (agentId) params.agentId = agentId;
+    if (walletId) (params as { walletId?: string }).walletId = walletId;
+
+    const { data: policies } = await this.list(params);
+
+    return simulatePolicy(policies, transaction);
   }
 }
 
