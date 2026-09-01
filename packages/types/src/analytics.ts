@@ -1,13 +1,13 @@
+import type { PaginationParams } from './common.js';
+
 export type Timeframe = 'hour' | 'day' | 'week' | 'month' | 'year' | string;
 
-import type { DecimalString } from './entities.js';
-import type { RiskBand } from './enums.js';
-import type { Paginated, PaginationParams } from './common.js';
-
-/** Query parameters accepted by analytics endpoints. */
-export interface AnalyticsQuery {
-  from?: string;
-  to?: string;
+export interface AnalyticsQueryParams extends PaginationParams {
+  startDate?: string;
+  endDate?: string;
+  timeframe?: Timeframe;
+  asset?: string;
+  walletId?: string;
   agentId?: string;
 }
 

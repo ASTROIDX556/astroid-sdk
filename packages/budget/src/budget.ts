@@ -26,6 +26,8 @@ import type {
   BudgetHistoryEntry,
   BudgetHistoryQueryParams,
   BudgetMetrics,
+  BudgetSimulationRequest,
+  BudgetSimulationResult,
   ConsumeBudgetInput,
   CreateBudgetInput,
   DecimalString,
@@ -231,9 +233,61 @@ export class BudgetClient {
     });
   }
 
+  /**
+   * Alias of {@link get} that matches the SDK's `getBudget` resource naming.
+   *
+   * @example
+   * ```ts
+   * const budget = await budgets.getBudget('bud_1');
+   * ```
+   */
+  async getBudget(budgetId: string, options?: { signal?: AbortSignal }): Promise<Budget> {
+    return this.get(budgetId, options);
+  }
+
   /** List budgets with optional filters and pagination. */
   async list(params?: ListBudgetsParams): Promise<PaginatedResponse<Budget>> {
     return this.http.get<PaginatedResponse<Budget>>(BASE_PATH, { query: toBudgetQuery(params) });
+  }
+
+  /**
+   * Alias of {@link list} that matches the SDK's `listBudgets` resource naming.
+   *
+   * @example
+   * ```ts
+   * const page = await budgets.listBudgets({ agentId: 'agt_1', limit: 25 });
+   * ```
+   */
+  async listBudgets(params?: ListBudgetsParams): Promise<PaginatedResponse<Budget>> {
+    return this.list(params);
+  }
+
+  /**
+   * Simulate a prospective spend against a budget before executing it.
+   *
+   * The server evaluates the request against the budget's limit, active
+   * window and policy rules, returning whether the spend is allowed and the
+   * resulting headroom.
+   *
+   * @example
+   * ```ts
+   * const result = await budgets.simulateBudgetCheck('bud_1', {
+   *   asset: 'USDC',
+   *   amount: '250',
+   * });
+   * if (!result.allowed) {
+   *   throw new Error(result.explanation);
+   * }
+   * ```
+   */
+  async simulateBudgetCheck(
+    budgetId: string,
+    request: BudgetSimulationRequest,
+  ): Promise<BudgetSimulationResult> {
+    return this.http.post<BudgetSimulationResult>(
+      `${BASE_PATH}/${encodeURIComponent(budgetId)}/simulate`,
+      request,
+    );
   }
 
   /** Update an existing budget. */

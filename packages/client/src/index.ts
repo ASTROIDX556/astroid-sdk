@@ -63,9 +63,17 @@ export class Astroid {
     this.ai = {};
   }
 
-  setAccessToken(accessToken: string | undefined): void {
-    this.httpClient.setAccessToken(accessToken);
-  }
+  public readonly wallets = {
+    get: async (id: string, options?: { query?: QueryParams }) => {
+      return this.request<{ data: any }>({ method: 'GET', path: `/wallets/${id}`, query: options?.query });
+    },
+    list: async (options?: { query?: QueryParams }) => {
+      return this.request<{ data: any[] }>({ method: 'GET', path: '/wallets', query: options?.query });
+    },
+    balance: async (id: string, options?: { query?: QueryParams }) => {
+      return this.request<{ data: any }>({ method: 'GET', path: `/wallets/${id}/balance`, query: options?.query });
+    },
+  };
 
   register(plugin: ClientPlugin): this {
     this.plugins.push(plugin);
