@@ -1,18 +1,17 @@
-/**
- * `@astroid/budget` — recurring and one-time spending-budget resource.
- *
- * A budget caps spend over a period (daily/weekly/monthly/…) and tracks
- * consumption. Agents draw against budgets; this resource manages them and
- * exposes the running consumption history.
- *
- * @packageDocumentation
- */
+export * from './calculator.js';
 
+// `metrics.ts` and `validation.ts` both export a `SpendRequest` alias for the
+// same shape; re-export explicitly to avoid a duplicate-export ambiguity.
 export {
-  checkBudgetLimit,
-  type BudgetValidationResult,
+  calculateUtilization,
+  isThresholdExceeded,
+  estimateBurnRate,
   type SpendRequest,
-} from './validation.js';
+  type UtilizationResult,
+  type ThresholdResult,
+  type BurnRateResult,
+} from './metrics.js';
+export { checkBudgetLimit, type BudgetValidationResult } from './validation.js';
 
 import { Resource } from '@astroid/core';
 import type {

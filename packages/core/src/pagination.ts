@@ -17,7 +17,8 @@ function readMeta(response: AstroidResponse<unknown>): PaginationMeta | undefine
   if (!meta) return undefined;
   const { page, limit, total, totalPages } = meta as Partial<PaginationMeta>;
   if (page === undefined || limit === undefined) return undefined;
-  const resolvedTotalPages = totalPages ?? (total !== undefined && limit > 0 ? Math.ceil(total / limit) : page);
+  const resolvedTotalPages =
+    totalPages ?? (total !== undefined && limit > 0 ? Math.ceil(total / limit) : page);
   return {
     page,
     limit,
@@ -32,7 +33,9 @@ function readMeta(response: AstroidResponse<unknown>): PaginationMeta | undefine
  * Lazily iterate every item across all pages. Stops when a page returns no
  * items or the pagination metadata indicates the last page was reached.
  */
-export async function* paginate<TItem>(fetchPage: PageFetcher<TItem>): AsyncGenerator<TItem, void, void> {
+export async function* paginate<TItem>(
+  fetchPage: PageFetcher<TItem>,
+): AsyncGenerator<TItem, void, void> {
   let page = 1;
   // Hard ceiling to avoid an accidental infinite loop against a broken API.
   const maxPages = 10_000;
