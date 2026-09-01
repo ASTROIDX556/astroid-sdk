@@ -4,15 +4,16 @@
  * built on this class; it holds no domain knowledge itself.
  */
 
-import {
-  fromApiError,
-  fromStatus,
-  toNetworkError,
-  type AstroidError,
-} from '@astroid/errors';
+import { fromApiError, fromStatus, toNetworkError, type AstroidError } from '@astroid/errors';
 import type { ApiError } from '@astroid/types';
 
-import { resolveConfig, type AstroidClientConfig, type ResolvedConfig } from './config.js';
+import {
+  resolveConfig,
+  type AstroidClientConfig,
+  type ResolvedConfig,
+  type RetryConfig,
+} from './config.js';
+import type { RetryMiddlewareOptions } from './middleware.js';
 import {
   MiddlewareStack,
   type AstroidResponse,
@@ -23,6 +24,7 @@ import {
 } from './http-types.js';
 import { buildUrl } from './url.js';
 import { backoffDelay, isRetryableStatus, sleep } from './backoff.js';
+import { AstroidTimeoutError } from './timeout-error.js';
 
 /** Methods considered safe to retry by default (idempotent verbs). */
 const IDEMPOTENT_METHODS = new Set(['GET', 'PUT', 'DELETE']);
@@ -33,9 +35,15 @@ export const SDK_VERSION = '0.1.0';
 export class HttpClient {
   readonly config: ResolvedConfig;
   readonly middleware = new MiddlewareStack();
+  private on401Handler?: (req: PreparedRequest) => Promise<boolean>;
+  private tokenProvider?: () => Promise<string>;
+  private pendingTokenPromise?: Promise<string>;
 
   constructor(config: AstroidClientConfig) {
     this.config = resolveConfig(config);
+    if (this.config.auth.tokenProvider) {
+      this.tokenProvider = this.config.auth.tokenProvider;
+    }
   }
 
   /** Register a middleware. Returns `this` for chaining. */
@@ -44,30 +52,89 @@ export class HttpClient {
     return this;
   }
 
+  /** Register an automatic 401 retry handler. */
+  set401Handler(handler: (req: PreparedRequest) => Promise<boolean>): void {
+    this.on401Handler = handler;
+  }
+
   /** Update auth credentials at runtime (e.g. after a token refresh). */
-  setAccessToken(accessToken: string | undefined): void {
+  setAccessToken(accessToken: string | (() => Promise<string>) | undefined): void {
     this.config.auth.accessToken = accessToken;
+    this.tokenPromise = undefined;
+  }
+
+  /**
+   * Set a dynamic token provider function. When provided, it is evaluated
+   * before every outbound request. Concurrent requests share a single
+   * in-flight promise to avoid redundant invocations.
+   */
+  setTokenProvider(provider: (() => Promise<string>) | undefined): void {
+    this.tokenProvider = provider;
+  }
+
+  /**
+   * Resolve the current access token. If a dynamic token provider is
+   * registered, evaluates it and caches the in-flight promise so concurrent
+   * callers share a single refresh. Falls back to the static
+   * `accessToken` / `apiKey` string.
+   */
+  private async resolveToken(): Promise<string | undefined> {
+    if (this.tokenProvider) {
+      if (this.pendingTokenPromise) {
+        return this.pendingTokenPromise;
+      }
+      this.pendingTokenPromise = (async () => {
+        try {
+          const token = await this.tokenProvider!();
+          this.config.auth.accessToken = token;
+          return token;
+        } finally {
+          this.pendingTokenPromise = undefined;
+        }
+      })();
+      return this.pendingTokenPromise;
+    }
+    const token = this.config.auth.accessToken;
+    return typeof token === 'string' ? token : undefined;
   }
 
   /* ----------------------------- verb helpers ----------------------------- */
 
-  get<TData>(path: string, options: Omit<RequestOptions, 'method' | 'path'> = {}): Promise<AstroidResponse<TData>> {
+  get<TData>(
+    path: string,
+    options: Omit<RequestOptions, 'method' | 'path'> = {},
+  ): Promise<AstroidResponse<TData>> {
     return this.request<TData>({ ...options, method: 'GET', path });
   }
 
-  post<TData>(path: string, body?: unknown, options: Omit<RequestOptions, 'method' | 'path' | 'body'> = {}): Promise<AstroidResponse<TData>> {
+  post<TData>(
+    path: string,
+    body?: unknown,
+    options: Omit<RequestOptions, 'method' | 'path' | 'body'> = {},
+  ): Promise<AstroidResponse<TData>> {
     return this.request<TData>({ ...options, method: 'POST', path, body });
   }
 
-  patch<TData>(path: string, body?: unknown, options: Omit<RequestOptions, 'method' | 'path' | 'body'> = {}): Promise<AstroidResponse<TData>> {
+  patch<TData>(
+    path: string,
+    body?: unknown,
+    options: Omit<RequestOptions, 'method' | 'path' | 'body'> = {},
+  ): Promise<AstroidResponse<TData>> {
     return this.request<TData>({ ...options, method: 'PATCH', path, body });
   }
 
-  put<TData>(path: string, body?: unknown, options: Omit<RequestOptions, 'method' | 'path' | 'body'> = {}): Promise<AstroidResponse<TData>> {
+  put<TData>(
+    path: string,
+    body?: unknown,
+    options: Omit<RequestOptions, 'method' | 'path' | 'body'> = {},
+  ): Promise<AstroidResponse<TData>> {
     return this.request<TData>({ ...options, method: 'PUT', path, body });
   }
 
-  delete<TData>(path: string, options: Omit<RequestOptions, 'method' | 'path'> = {}): Promise<AstroidResponse<TData>> {
+  delete<TData>(
+    path: string,
+    options: Omit<RequestOptions, 'method' | 'path'> = {},
+  ): Promise<AstroidResponse<TData>> {
     return this.request<TData>({ ...options, method: 'DELETE', path });
   }
 
@@ -76,10 +143,16 @@ export class HttpClient {
   /** Issue a request with retries, returning the unwrapped, typed response. */
   async request<TData>(options: RequestOptions): Promise<AstroidResponse<TData>> {
     const prepared = await this.prepare(options);
-    const retry = this.config.retry;
+    const contextRetry = prepared.options.context?._retryConfig as RetryConfig | undefined;
+    const contextOptions = prepared.options.context?._retryOptions as
+      | RetryMiddlewareOptions
+      | undefined;
+    const retry = contextRetry !== undefined ? contextRetry : this.config.retry;
     const maxAttempts = retry && prepared.retryable ? retry.maxRetries + 1 : 1;
 
     let lastError: unknown;
+    let hasRetriedAuth = false;
+
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         const raw = await this.send(prepared);
@@ -89,14 +162,62 @@ export class HttpClient {
           return this.unwrap<TData>(raw);
         }
 
+        // Intercept 401 Unauthorized for automatic token refresh and request replay
+        if (
+          raw.status === 401 &&
+          !prepared.options.context?._is401Retry &&
+          !prepared.url.includes('/auth/refresh') &&
+          !prepared.url.includes('/auth/login') &&
+          !prepared.url.includes('/auth/register')
+        ) {
+          prepared.options.context = { ...prepared.options.context, _is401Retry: true };
+          let refreshed = false;
+
+          // Priority 1: re-evaluate the dynamic token provider.
+          if (this.tokenProvider) {
+            this.pendingTokenPromise = undefined;
+            try {
+              const newToken = await this.tokenProvider();
+              this.config.auth.accessToken = newToken;
+              refreshed = true;
+            } catch {
+              // Provider failed — fall through to the handler below.
+            }
+          }
+
+          // Priority 2: session-based / custom 401 handler.
+          if (!refreshed && this.on401Handler) {
+            refreshed = await this.on401Handler(prepared);
+          }
+
+          if (refreshed) {
+            if (this.config.auth.accessToken) {
+              prepared.headers['authorization'] = `Bearer ${this.config.auth.accessToken}`;
+            }
+            const retriedRaw = await this.send(prepared);
+            await this.middleware.applyResponse(retriedRaw, prepared);
+            if (retriedRaw.status >= 200 && retriedRaw.status < 300) {
+              return this.unwrap<TData>(retriedRaw);
+            }
+            const retryError = this.toError(retriedRaw);
+            await this.middleware.applyError(retryError, prepared);
+            throw retryError;
+          }
+        }
+
         // Non-2xx: decide whether to retry, otherwise throw a typed error.
         const error = this.toError(raw);
-        if (retry && prepared.retryable && attempt < maxAttempts && isRetryableStatus(raw.status)) {
+        await this.middleware.applyError(error, prepared);
+        const shouldRetryStatus = contextOptions?.shouldRetryStatus ?? isRetryableStatus;
+        if (retry && prepared.retryable && attempt < maxAttempts && shouldRetryStatus(raw.status)) {
           lastError = error;
-          await sleep(this.retryDelay(attempt, raw), prepared.signal);
+          const delay = this.retryDelay(attempt, raw, retry);
+          if (contextOptions?.onRetry) {
+            contextOptions.onRetry(attempt, error, delay, prepared);
+          }
+          await sleep(delay, prepared.signal);
           continue;
         }
-        await this.middleware.applyError(error, prepared);
         throw error;
       } catch (err) {
         if (isAbortError(err)) throw err;
@@ -106,7 +227,11 @@ export class HttpClient {
         const networkError = toNetworkError(err);
         if (retry && prepared.retryable && attempt < maxAttempts) {
           lastError = networkError;
-          await sleep(backoffDelay(attempt, retry), prepared.signal);
+          const delay = backoffDelay(attempt, retry);
+          if (contextOptions?.onRetry) {
+            contextOptions.onRetry(attempt, networkError, delay, prepared);
+          }
+          await sleep(delay, prepared.signal);
           continue;
         }
         await this.middleware.applyError(networkError, prepared);
@@ -130,8 +255,25 @@ export class HttpClient {
       ...(options.headers ?? {}),
     };
 
-    if (auth.accessToken) {
-      headers['authorization'] = `Bearer ${auth.accessToken}`;
+    let token: string | undefined;
+    if (typeof auth.accessToken === 'function') {
+      if (!this.tokenPromise) {
+        this.tokenPromise = auth.accessToken().finally(() => {
+          // keep or clear? Caching pending promise during execution is desired.
+        });
+      }
+      try {
+        token = await this.tokenPromise;
+      } finally {
+        // once resolved, we can keep it or clear it. The requirement states:
+        // "Prevent concurrent identical token refresh invocations by caching the pending promise during authorization flow execution."
+      }
+    } else if (typeof auth.accessToken === 'string') {
+      token = auth.accessToken;
+    }
+
+    if (token) {
+      headers['authorization'] = `Bearer ${token}`;
     } else if (auth.apiKey) {
       headers['authorization'] = `Bearer ${auth.apiKey}`;
     }
@@ -145,7 +287,9 @@ export class HttpClient {
       headers['content-type'] = 'application/json';
     }
 
-    const retryable = options.retryable ?? (IDEMPOTENT_METHODS.has(options.method) || Boolean(options.idempotencyKey));
+    const retryable =
+      options.retryable ??
+      (IDEMPOTENT_METHODS.has(options.method) || Boolean(options.idempotencyKey));
 
     const prepared: PreparedRequest = {
       method: options.method,
@@ -162,8 +306,16 @@ export class HttpClient {
 
   /** Perform one transport round-trip with a timeout. */
   private async send(req: PreparedRequest): Promise<RawResponse> {
+    // Caller already aborted before the request was dispatched.
+    if (req.signal?.aborted) {
+      throw abortError(req.signal.reason);
+    }
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), req.timeoutMs);
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, req.timeoutMs);
     const onExternalAbort = (): void => controller.abort();
     req.signal?.addEventListener('abort', onExternalAbort, { once: true });
 
@@ -177,6 +329,9 @@ export class HttpClient {
       const requestId = response.headers.get('x-request-id') ?? undefined;
       const parsed = await this.parseBody(response);
       return { status: response.status, headers: response.headers, body: parsed, requestId };
+    } catch (error) {
+      if (timedOut) throw new AstroidTimeoutError(req.timeoutMs);
+      throw error;
     } finally {
       clearTimeout(timer);
       req.signal?.removeEventListener('abort', onExternalAbort);
@@ -197,52 +352,48 @@ export class HttpClient {
 
   /** Unwrap a success envelope `{ success, data, meta, requestId }`. */
   private unwrap<TData>(raw: RawResponse): AstroidResponse<TData> {
-    const envelope = raw.body as
-      | { success?: boolean; data?: TData; meta?: AstroidResponse<TData>['meta']; requestId?: string }
-      | undefined;
-    const requestId = envelope?.requestId ?? raw.requestId;
-    // Support both enveloped and bare payloads for resilience.
-    const data = (envelope && 'data' in envelope ? envelope.data : (raw.body as TData)) as TData;
+    const envelope = raw.body as { success?: boolean; data?: TData; meta?: any; error?: ApiError } | undefined;
+
     return {
-      data,
+      data: (envelope && 'data' in envelope ? envelope.data : raw.body) as TData,
       meta: envelope?.meta,
-      requestId,
+      requestId: raw.requestId,
       status: raw.status,
       headers: raw.headers,
     };
   }
 
-  /** Convert a non-2xx raw response into a typed `AstroidError`. */
+  /** Map a failed RawResponse to an AstroidError. */
   private toError(raw: RawResponse): AstroidError {
-    const envelope = raw.body as { error?: ApiError; requestId?: string } | undefined;
-    const requestId = envelope?.requestId ?? raw.requestId;
-    if (envelope?.error) {
-      return fromApiError(envelope.error, { status: raw.status, requestId });
+    const apiError = (raw.body as { error?: ApiError })?.error;
+    if (apiError) {
+      return fromApiError(apiError, raw.status, raw.requestId);
     }
-    return fromStatus(raw.status, `Request failed with status ${raw.status}`, { requestId });
+    return fromStatus(raw.status, (raw.body as { message?: string })?.message ?? 'API Error', raw.requestId);
   }
 
   /** Honour `Retry-After` (seconds) on 429s, else exponential backoff. */
-  private retryDelay(attempt: number, raw: RawResponse): number {
-    const retry = this.config.retry;
+  private retryDelay(
+    attempt: number,
+    raw: RawResponse,
+    retry: RetryConfig | null = this.config.retry,
+  ): number {
     if (!retry) return 0;
-    if (raw.status === 429) {
-      const header = raw.headers.get('retry-after');
-      const seconds = header ? Number(header) : NaN;
-      if (Number.isFinite(seconds) && seconds >= 0) {
-        return Math.min(seconds * 1000, retry.maxDelayMs);
-      }
+    const header = raw.headers.get('retry-after');
+    if (header) {
+      const seconds = Number(header);
+      if (!Number.isNaN(seconds)) return seconds * 1000;
+      const date = Date.parse(header);
+      if (!Number.isNaN(date)) return Math.max(0, date - Date.now());
     }
     return backoffDelay(attempt, retry);
   }
 }
 
-/** Whether an unknown value is a DOMException-style abort. */
-function isAbortError(value: unknown): boolean {
-  return value instanceof Error && value.name === 'AbortError';
+function isAbortError(err: unknown): boolean {
+  return err instanceof Error && err.name === 'AbortError';
 }
 
-/** Loose check: was this error already produced by our error layer? */
-function isAstroidErrorLike(value: unknown): boolean {
-  return value instanceof Error && 'code' in value && 'isRetryable' in value;
+function isAstroidErrorLike(err: unknown): boolean {
+  return err !== null && typeof err === 'object' && 'name' in err && typeof (err as any).name === 'string' && (err as any).name.endsWith('Error') && 'status' in err;
 }

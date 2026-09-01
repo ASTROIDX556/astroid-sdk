@@ -6,7 +6,7 @@
 
 import { AuthenticationError } from '@astroid/errors';
 import type { AuthTokens } from '@astroid/types';
-import type { Middleware, PreparedRequest } from '@astroid/core';
+import type { HttpClient, Middleware, PreparedRequest } from '@astroid/core';
 
 /** Custom storage interface for persisting session tokens (e.g., localStorage). */
 export interface TokenStorage {
@@ -22,6 +22,7 @@ export interface SessionManagerConfig {
   storage?: TokenStorage;
   storageKeyPrefix?: string;
   bufferSeconds?: number;
+  onTokenUpdate?: (tokens: AuthTokens) => void | Promise<void>;
 }
 
 /** Standard JWT payload claims. */
@@ -95,6 +96,7 @@ export class SessionManager {
   private readonly storage?: TokenStorage;
   private readonly prefix: string;
   private readonly bufferSeconds: number;
+  private readonly onTokenUpdate?: (tokens: AuthTokens) => void | Promise<void>;
   private activeRefreshPromise: Promise<AuthTokens> | null = null;
 
   constructor(config: SessionManagerConfig = {}) {
@@ -103,6 +105,7 @@ export class SessionManager {
     this.storage = config.storage;
     this.prefix = config.storageKeyPrefix ?? 'astroid_auth_';
     this.bufferSeconds = config.bufferSeconds ?? 30;
+    this.onTokenUpdate = config.onTokenUpdate;
   }
 
   /** The active access token. */
@@ -134,6 +137,23 @@ export class SessionManager {
         // Storage quota exceptions should not crash token adoption
         // eslint-disable-next-line no-console
         console.warn('Failed to persist tokens to storage:', err);
+      }
+    }
+
+    if (this.onTokenUpdate) {
+      try {
+        const exp = getTokenExpiration(tokens.accessToken);
+        const now = Math.floor(Date.now() / 1000);
+        const expiresIn = exp ? Math.max(0, exp - now) : 3600;
+        await this.onTokenUpdate({
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken ?? this.refreshToken ?? '',
+          expiresIn,
+          tokenType: 'Bearer',
+        });
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn('Failed to execute onTokenUpdate callback:', err);
       }
     }
   }
@@ -210,6 +230,36 @@ export class SessionManager {
 
     return this.activeRefreshPromise;
   }
+}
+
+/**
+ * Wire a {@link SessionManager} to an {@link HttpClient} so that 401
+ * responses trigger automatic token refresh and the failed request is
+ * retried with the new credentials.
+ *
+ * ```ts
+ * import { SessionManager, wireSessionToHttpClient } from '@astroid/auth';
+ *
+ * const session = new SessionManager({ storage: localStorage });
+ * const client = new Astroid({ baseUrl, apiKey });
+ * wireSessionToHttpClient(client, session, refreshFn);
+ * ```
+ */
+export function wireSessionToHttpClient(
+  client: HttpClient,
+  sessionManager: SessionManager,
+  refreshFn: (refreshToken: string) => Promise<AuthTokens>,
+): void {
+  client.set401Handler(async () => {
+    try {
+      await sessionManager.refreshSession(refreshFn);
+      const token = sessionManager.getAccessToken();
+      if (token) client.setAccessToken(token);
+      return true;
+    } catch {
+      return false;
+    }
+  });
 }
 
 /**

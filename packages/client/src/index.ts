@@ -111,6 +111,14 @@ export class Astroid {
   static get version(): string {
     return '0.1.0';
   }
+
+  /**
+   * Merge pagination parameters with arbitrary query parameters into a single
+   * serialisable record, ready to pass as the `query` option of any request.
+   */
+  buildQuery(params: PaginationParams & Record<string, QueryValue>): Record<string, QueryValue> {
+    return { ...serializePaginationParams(params), ...params };
+  }
 }
 
 export { parseAstroidError, AstroidHorizonError, AstroidPolicyViolationError } from './errors.js';

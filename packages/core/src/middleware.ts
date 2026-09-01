@@ -44,11 +44,22 @@ export function loggingMiddleware(sink: LogSink = defaultSink): Middleware {
   return {
     name: 'logging',
     onRequest(req: PreparedRequest) {
-      sink({ phase: 'request', method: req.method, url: req.url, headers: redactHeaders(req.headers) });
+      sink({
+        phase: 'request',
+        method: req.method,
+        url: req.url,
+        headers: redactHeaders(req.headers),
+      });
       return req;
     },
     onResponse(res: RawResponse, req: PreparedRequest) {
-      sink({ phase: 'response', method: req.method, url: req.url, status: res.status, requestId: res.requestId });
+      sink({
+        phase: 'response',
+        method: req.method,
+        url: req.url,
+        status: res.status,
+        requestId: res.requestId,
+      });
     },
     onError(error: unknown, req: PreparedRequest) {
       sink({
@@ -73,3 +84,48 @@ export function headerMiddleware(headers: Record<string, string>): Middleware {
     },
   };
 }
+
+import type { RetryConfig } from './config.js';
+
+export interface RetryMiddlewareOptions extends Partial<RetryConfig> {
+  /** Optional callback invoked on each retry attempt. */
+  onRetry?: (attempt: number, error: unknown, delayMs: number, req: PreparedRequest) => void;
+  /** Custom check for whether a status code is retryable. Defaults to isRetryableStatus. */
+  shouldRetryStatus?: (status: number) => boolean;
+  /** Force all requests passing through this middleware to be retryable (unless explicitly set false). Default false. */
+  retryAllMethods?: boolean;
+}
+
+/**
+ * Creates an exponential backoff and retry middleware for network and 5xx errors.
+ */
+export function createRetryMiddleware(options: RetryMiddlewareOptions = {}): Middleware {
+  const retryConfig: RetryConfig = {
+    maxRetries: options.maxRetries ?? 2,
+    baseDelayMs: options.baseDelayMs ?? 250,
+    maxDelayMs: options.maxDelayMs ?? 8000,
+  };
+
+  return {
+    name: 'retry',
+    onRequest(req: PreparedRequest) {
+      const context = {
+        ...req.options.context,
+        _retryConfig: retryConfig,
+        _retryOptions: options,
+      };
+      const retryable = options.retryAllMethods ? (req.options.retryable ?? true) : req.retryable;
+
+      return {
+        ...req,
+        retryable,
+        options: {
+          ...req.options,
+          context,
+        },
+      };
+    },
+  };
+}
+
+export const retryMiddleware = createRetryMiddleware;
