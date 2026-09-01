@@ -4,15 +4,15 @@
  * built on this class; it holds no domain knowledge itself.
  */
 
-import {
-  fromApiError,
-  fromStatus,
-  toNetworkError,
-  type AstroidError,
-} from '@astroid/errors';
+import { fromApiError, fromStatus, toNetworkError, type AstroidError } from '@astroid/errors';
 import type { ApiError } from '@astroid/types';
 
-import { resolveConfig, type AstroidClientConfig, type ResolvedConfig, type RetryConfig } from './config.js';
+import {
+  resolveConfig,
+  type AstroidClientConfig,
+  type ResolvedConfig,
+  type RetryConfig,
+} from './config.js';
 import type { RetryMiddlewareOptions } from './middleware.js';
 import {
   MiddlewareStack,
@@ -24,6 +24,7 @@ import {
 } from './http-types.js';
 import { buildUrl } from './url.js';
 import { backoffDelay, isRetryableStatus, sleep } from './backoff.js';
+import { AstroidTimeoutError } from './timeout-error.js';
 
 /** Methods considered safe to retry by default (idempotent verbs). */
 const IDEMPOTENT_METHODS = new Set(['GET', 'PUT', 'DELETE']);
@@ -57,8 +58,9 @@ export class HttpClient {
   }
 
   /** Update auth credentials at runtime (e.g. after a token refresh). */
-  setAccessToken(accessToken: string | undefined): void {
+  setAccessToken(accessToken: string | (() => Promise<string>) | undefined): void {
     this.config.auth.accessToken = accessToken;
+    this.tokenPromise = undefined;
   }
 
   /**
@@ -98,23 +100,41 @@ export class HttpClient {
 
   /* ----------------------------- verb helpers ----------------------------- */
 
-  get<TData>(path: string, options: Omit<RequestOptions, 'method' | 'path'> = {}): Promise<AstroidResponse<TData>> {
+  get<TData>(
+    path: string,
+    options: Omit<RequestOptions, 'method' | 'path'> = {},
+  ): Promise<AstroidResponse<TData>> {
     return this.request<TData>({ ...options, method: 'GET', path });
   }
 
-  post<TData>(path: string, body?: unknown, options: Omit<RequestOptions, 'method' | 'path' | 'body'> = {}): Promise<AstroidResponse<TData>> {
+  post<TData>(
+    path: string,
+    body?: unknown,
+    options: Omit<RequestOptions, 'method' | 'path' | 'body'> = {},
+  ): Promise<AstroidResponse<TData>> {
     return this.request<TData>({ ...options, method: 'POST', path, body });
   }
 
-  patch<TData>(path: string, body?: unknown, options: Omit<RequestOptions, 'method' | 'path' | 'body'> = {}): Promise<AstroidResponse<TData>> {
+  patch<TData>(
+    path: string,
+    body?: unknown,
+    options: Omit<RequestOptions, 'method' | 'path' | 'body'> = {},
+  ): Promise<AstroidResponse<TData>> {
     return this.request<TData>({ ...options, method: 'PATCH', path, body });
   }
 
-  put<TData>(path: string, body?: unknown, options: Omit<RequestOptions, 'method' | 'path' | 'body'> = {}): Promise<AstroidResponse<TData>> {
+  put<TData>(
+    path: string,
+    body?: unknown,
+    options: Omit<RequestOptions, 'method' | 'path' | 'body'> = {},
+  ): Promise<AstroidResponse<TData>> {
     return this.request<TData>({ ...options, method: 'PUT', path, body });
   }
 
-  delete<TData>(path: string, options: Omit<RequestOptions, 'method' | 'path'> = {}): Promise<AstroidResponse<TData>> {
+  delete<TData>(
+    path: string,
+    options: Omit<RequestOptions, 'method' | 'path'> = {},
+  ): Promise<AstroidResponse<TData>> {
     return this.request<TData>({ ...options, method: 'DELETE', path });
   }
 
@@ -124,11 +144,15 @@ export class HttpClient {
   async request<TData>(options: RequestOptions): Promise<AstroidResponse<TData>> {
     const prepared = await this.prepare(options);
     const contextRetry = prepared.options.context?._retryConfig as RetryConfig | undefined;
-    const contextOptions = prepared.options.context?._retryOptions as RetryMiddlewareOptions | undefined;
+    const contextOptions = prepared.options.context?._retryOptions as
+      | RetryMiddlewareOptions
+      | undefined;
     const retry = contextRetry !== undefined ? contextRetry : this.config.retry;
     const maxAttempts = retry && prepared.retryable ? retry.maxRetries + 1 : 1;
 
     let lastError: unknown;
+    let hasRetriedAuth = false;
+
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         const raw = await this.send(prepared);
@@ -183,6 +207,7 @@ export class HttpClient {
 
         // Non-2xx: decide whether to retry, otherwise throw a typed error.
         const error = this.toError(raw);
+        await this.middleware.applyError(error, prepared);
         const shouldRetryStatus = contextOptions?.shouldRetryStatus ?? isRetryableStatus;
         if (retry && prepared.retryable && attempt < maxAttempts && shouldRetryStatus(raw.status)) {
           lastError = error;
@@ -193,7 +218,6 @@ export class HttpClient {
           await sleep(delay, prepared.signal);
           continue;
         }
-        await this.middleware.applyError(error, prepared);
         throw error;
       } catch (err) {
         if (isAbortError(err)) throw err;
@@ -231,10 +255,25 @@ export class HttpClient {
       ...(options.headers ?? {}),
     };
 
-    // Resolve the access token (dynamic provider or static value).
-    const resolvedToken = await this.resolveToken();
-    if (resolvedToken) {
-      headers['authorization'] = `Bearer ${resolvedToken}`;
+    let token: string | undefined;
+    if (typeof auth.accessToken === 'function') {
+      if (!this.tokenPromise) {
+        this.tokenPromise = auth.accessToken().finally(() => {
+          // keep or clear? Caching pending promise during execution is desired.
+        });
+      }
+      try {
+        token = await this.tokenPromise;
+      } finally {
+        // once resolved, we can keep it or clear it. The requirement states:
+        // "Prevent concurrent identical token refresh invocations by caching the pending promise during authorization flow execution."
+      }
+    } else if (typeof auth.accessToken === 'string') {
+      token = auth.accessToken;
+    }
+
+    if (token) {
+      headers['authorization'] = `Bearer ${token}`;
     } else if (auth.apiKey) {
       headers['authorization'] = `Bearer ${auth.apiKey}`;
     }
@@ -248,7 +287,9 @@ export class HttpClient {
       headers['content-type'] = 'application/json';
     }
 
-    const retryable = options.retryable ?? (IDEMPOTENT_METHODS.has(options.method) || Boolean(options.idempotencyKey));
+    const retryable =
+      options.retryable ??
+      (IDEMPOTENT_METHODS.has(options.method) || Boolean(options.idempotencyKey));
 
     const prepared: PreparedRequest = {
       method: options.method,
@@ -265,8 +306,16 @@ export class HttpClient {
 
   /** Perform one transport round-trip with a timeout. */
   private async send(req: PreparedRequest): Promise<RawResponse> {
+    // Caller already aborted before the request was dispatched.
+    if (req.signal?.aborted) {
+      throw abortError(req.signal.reason);
+    }
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), req.timeoutMs);
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, req.timeoutMs);
     const onExternalAbort = (): void => controller.abort();
     req.signal?.addEventListener('abort', onExternalAbort, { once: true });
 
@@ -280,6 +329,9 @@ export class HttpClient {
       const requestId = response.headers.get('x-request-id') ?? undefined;
       const parsed = await this.parseBody(response);
       return { status: response.status, headers: response.headers, body: parsed, requestId };
+    } catch (error) {
+      if (timedOut) throw new AstroidTimeoutError(req.timeoutMs);
+      throw error;
     } finally {
       clearTimeout(timer);
       req.signal?.removeEventListener('abort', onExternalAbort);
@@ -300,51 +352,48 @@ export class HttpClient {
 
   /** Unwrap a success envelope `{ success, data, meta, requestId }`. */
   private unwrap<TData>(raw: RawResponse): AstroidResponse<TData> {
-    const envelope = raw.body as
-      | { success?: boolean; data?: TData; meta?: AstroidResponse<TData>['meta']; requestId?: string }
-      | undefined;
-    const requestId = envelope?.requestId ?? raw.requestId;
-    // Support both enveloped and bare payloads for resilience.
-    const data = (envelope && 'data' in envelope ? envelope.data : (raw.body as TData)) as TData;
+    const envelope = raw.body as { success?: boolean; data?: TData; meta?: any; error?: ApiError } | undefined;
+
     return {
-      data,
+      data: (envelope && 'data' in envelope ? envelope.data : raw.body) as TData,
       meta: envelope?.meta,
-      requestId,
+      requestId: raw.requestId,
       status: raw.status,
       headers: raw.headers,
     };
   }
 
-  /** Convert a non-2xx raw response into a typed `AstroidError`. */
+  /** Map a failed RawResponse to an AstroidError. */
   private toError(raw: RawResponse): AstroidError {
-    const envelope = raw.body as { error?: ApiError; requestId?: string } | undefined;
-    const requestId = envelope?.requestId ?? raw.requestId;
-    if (envelope?.error) {
-      return fromApiError(envelope.error, { status: raw.status, requestId });
+    const apiError = (raw.body as { error?: ApiError })?.error;
+    if (apiError) {
+      return fromApiError(apiError, raw.status, raw.requestId);
     }
-    return fromStatus(raw.status, `Request failed with status ${raw.status}`, { requestId });
+    return fromStatus(raw.status, (raw.body as { message?: string })?.message ?? 'API Error', raw.requestId);
   }
 
   /** Honour `Retry-After` (seconds) on 429s, else exponential backoff. */
-  private retryDelay(attempt: number, raw: RawResponse, retry: RetryConfig | null = this.config.retry): number {
+  private retryDelay(
+    attempt: number,
+    raw: RawResponse,
+    retry: RetryConfig | null = this.config.retry,
+  ): number {
     if (!retry) return 0;
-    if (raw.status === 429) {
-      const header = raw.headers.get('retry-after');
-      const seconds = header ? Number(header) : NaN;
-      if (Number.isFinite(seconds) && seconds >= 0) {
-        return Math.min(seconds * 1000, retry.maxDelayMs);
-      }
+    const header = raw.headers.get('retry-after');
+    if (header) {
+      const seconds = Number(header);
+      if (!Number.isNaN(seconds)) return seconds * 1000;
+      const date = Date.parse(header);
+      if (!Number.isNaN(date)) return Math.max(0, date - Date.now());
     }
     return backoffDelay(attempt, retry);
   }
 }
 
-/** Whether an unknown value is a DOMException-style abort. */
-function isAbortError(value: unknown): boolean {
-  return value instanceof Error && value.name === 'AbortError';
+function isAbortError(err: unknown): boolean {
+  return err instanceof Error && err.name === 'AbortError';
 }
 
-/** Loose check: was this error already produced by our error layer? */
-function isAstroidErrorLike(value: unknown): boolean {
-  return value instanceof Error && 'code' in value && 'isRetryable' in value;
+function isAstroidErrorLike(err: unknown): boolean {
+  return err !== null && typeof err === 'object' && 'name' in err && typeof (err as any).name === 'string' && (err as any).name.endsWith('Error') && 'status' in err;
 }

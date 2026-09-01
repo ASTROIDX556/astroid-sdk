@@ -13,15 +13,11 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-function errorResponse(
-  status: number,
-  message: string,
-  code = 'UNAUTHORIZED',
-): Response {
-  return new Response(
-    JSON.stringify({ error: { message, code } }),
-    { status, headers: { 'content-type': 'application/json' } },
-  );
+function errorResponse(status: number, message: string, code = 'UNAUTHORIZED'): Response {
+  return new Response(JSON.stringify({ error: { message, code } }), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
 }
 
 const STATIC_TOKEN = 'static_bearer_token';
@@ -41,38 +37,40 @@ describe('401 Automatic Token Refresh Interceptor & Queuing', () => {
     const onTokenUpdate = vi.fn();
     let refreshCallCount = 0;
 
-    const mockFetch = vi.fn().mockImplementation(async (url: string | URL, options?: RequestInit) => {
-      const urlStr = url.toString();
-      const headers = (options?.headers as Record<string, string>) ?? {};
+    const mockFetch = vi
+      .fn()
+      .mockImplementation(async (url: string | URL, options?: RequestInit) => {
+        const urlStr = url.toString();
+        const headers = (options?.headers as Record<string, string>) ?? {};
 
-      if (urlStr.includes('/auth/refresh')) {
-        refreshCallCount++;
-        return new Response(
-          JSON.stringify({
-            accessToken: newAccessToken,
-            refreshToken: newRefreshToken,
-            tokenType: 'Bearer',
-            expiresIn: 3600,
-          }),
-          { status: 200, headers: { 'content-type': 'application/json' } }
-        );
-      }
-
-      if (urlStr.includes('/wallets/w_1')) {
-        if (headers.authorization === `Bearer ${newAccessToken}`) {
+        if (urlStr.includes('/auth/refresh')) {
+          refreshCallCount++;
           return new Response(
-            JSON.stringify({ data: { id: 'w_1', address: 'G123' } }),
-            { status: 200, headers: { 'content-type': 'application/json' } }
+            JSON.stringify({
+              accessToken: newAccessToken,
+              refreshToken: newRefreshToken,
+              tokenType: 'Bearer',
+              expiresIn: 3600,
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
           );
         }
-        return new Response(
-          JSON.stringify({ error: { message: 'Token expired', code: 'TOKEN_EXPIRED' } }),
-          { status: 401, headers: { 'content-type': 'application/json' } }
-        );
-      }
 
-      return new Response(JSON.stringify({}), { status: 404 });
-    });
+        if (urlStr.includes('/wallets/w_1')) {
+          if (headers.authorization === `Bearer ${newAccessToken}`) {
+            return new Response(JSON.stringify({ data: { id: 'w_1', address: 'G123' } }), {
+              status: 200,
+              headers: { 'content-type': 'application/json' },
+            });
+          }
+          return new Response(
+            JSON.stringify({ error: { message: 'Token expired', code: 'TOKEN_EXPIRED' } }),
+            { status: 401, headers: { 'content-type': 'application/json' } },
+          );
+        }
+
+        return new Response(JSON.stringify({}), { status: 404 });
+      });
 
     const client = new Astroid({
       accessToken: initialAccessToken,
@@ -98,35 +96,37 @@ describe('401 Automatic Token Refresh Interceptor & Queuing', () => {
   it('Scenario 2: Multiple concurrent calls hit 401, only ONE refresh request is dispatched, and all original calls complete successfully', async () => {
     let refreshCallCount = 0;
 
-    const mockFetch = vi.fn().mockImplementation(async (url: string | URL, options?: RequestInit) => {
-      const urlStr = url.toString();
-      const headers = (options?.headers as Record<string, string>) ?? {};
+    const mockFetch = vi
+      .fn()
+      .mockImplementation(async (url: string | URL, options?: RequestInit) => {
+        const urlStr = url.toString();
+        const headers = (options?.headers as Record<string, string>) ?? {};
 
-      if (urlStr.includes('/auth/refresh')) {
-        refreshCallCount++;
-        await new Promise((res) => setTimeout(res, 40));
+        if (urlStr.includes('/auth/refresh')) {
+          refreshCallCount++;
+          await new Promise((res) => setTimeout(res, 40));
+          return new Response(
+            JSON.stringify({
+              accessToken: newAccessToken,
+              refreshToken: newRefreshToken,
+              tokenType: 'Bearer',
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          );
+        }
+
+        if (headers.authorization === `Bearer ${newAccessToken}`) {
+          return new Response(JSON.stringify({ data: { success: true, url: urlStr } }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+
         return new Response(
-          JSON.stringify({
-            accessToken: newAccessToken,
-            refreshToken: newRefreshToken,
-            tokenType: 'Bearer',
-          }),
-          { status: 200, headers: { 'content-type': 'application/json' } }
+          JSON.stringify({ error: { message: 'Unauthorized', code: 'UNAUTHORIZED' } }),
+          { status: 401, headers: { 'content-type': 'application/json' } },
         );
-      }
-
-      if (headers.authorization === `Bearer ${newAccessToken}`) {
-        return new Response(
-          JSON.stringify({ data: { success: true, url: urlStr } }),
-          { status: 200, headers: { 'content-type': 'application/json' } }
-        );
-      }
-
-      return new Response(
-        JSON.stringify({ error: { message: 'Unauthorized', code: 'UNAUTHORIZED' } }),
-        { status: 401, headers: { 'content-type': 'application/json' } }
-      );
-    });
+      });
 
     const client = new Astroid({
       accessToken: initialAccessToken,
@@ -157,13 +157,13 @@ describe('401 Automatic Token Refresh Interceptor & Queuing', () => {
       if (urlStr.includes('/auth/refresh')) {
         return new Response(
           JSON.stringify({ error: { message: 'Refresh token revoked', code: 'TOKEN_INVALID' } }),
-          { status: 401, headers: { 'content-type': 'application/json' } }
+          { status: 401, headers: { 'content-type': 'application/json' } },
         );
       }
 
       return new Response(
         JSON.stringify({ error: { message: 'Unauthorized', code: 'UNAUTHORIZED' } }),
-        { status: 401, headers: { 'content-type': 'application/json' } }
+        { status: 401, headers: { 'content-type': 'application/json' } },
       );
     });
 
@@ -174,16 +174,9 @@ describe('401 Automatic Token Refresh Interceptor & Queuing', () => {
       fetch: mockFetch as unknown as typeof fetch,
     });
 
-    const promises = [
-      client.wallets.get('w1'),
-      client.agents.get('a1'),
-    ];
+    const promises = [client.wallets.get('w1'), client.agents.get('a1')];
 
-    await Promise.all(
-      promises.map((p) =>
-        expect(p).rejects.toThrow(AuthenticationError)
-      )
-    );
+    await Promise.all(promises.map((p) => expect(p).rejects.toThrow(AuthenticationError)));
 
     expect(client.sessionManager.getAccessToken()).toBeUndefined();
     expect(client.sessionManager.getRefreshToken()).toBeUndefined();

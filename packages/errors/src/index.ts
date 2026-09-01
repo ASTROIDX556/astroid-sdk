@@ -254,3 +254,20 @@ export function toNetworkError(cause: unknown, message = 'Network request failed
 export function isAstroidError(value: unknown): value is AstroidError {
   return value instanceof AstroidError;
 }
+
+/* -------------------------------------------------------------------------- */
+/* Documented aliases (issue #126)                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Alias for {@link AstroidError} — the "API error" name used throughout the
+ * API docs and client middleware. `err instanceof AstroidApiError` matches
+ * every error the SDK throws.
+ */
+export const AstroidApiError = AstroidError;
+
+/** Alias for {@link ValidationError} — request/schema validation failures. */
+export const AstroidValidationError = ValidationError;
+
+/** Alias for {@link NetworkError} — transport failures and timeouts. */
+export const AstroidNetworkError = NetworkError;
