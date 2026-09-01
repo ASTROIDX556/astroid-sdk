@@ -7,4 +7,4 @@ export * from './analytics.js';
 export * from './agent-events.js';
 export * from './webhooks.js';
 export * from './ai.js';
-export * from './client.js';
+export * from './schemas.js';
