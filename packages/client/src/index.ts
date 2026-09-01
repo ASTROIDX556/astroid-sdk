@@ -393,25 +393,8 @@ export {
 } from '@astroid/webhook';
 
 // Convenience re-exports of the most-used types and errors.
-export {
-  backoffDelay,
-  isRetryableStatus,
-  type Middleware,
-  type RateLimitConfig,
-  type RetryConfig,
-  type RetryMiddlewareOptions,
-} from '@astroid/core';
-export {
-  createRateLimiterMiddleware,
-  rateLimiterMiddleware,
-  type RateLimitMiddlewareOptions,
-} from './middleware/rate-limiter.js';
-export {
-  createRetryMiddleware,
-  retryMiddleware,
-  computeRetryDelay,
-  type RetryMiddlewareConfig,
-} from './middleware/retry.js';
+export { verifyWebhookSignature } from './webhooks.js';
+export type { AstroidClientConfig, Middleware } from '@astroid/core';
 export * from '@astroid/types';
 export {
   AstroidError,
