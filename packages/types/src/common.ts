@@ -1,176 +1,148 @@
 /**
- * Transport-level types shared by every Astroid API response.
- *
- * The response envelope is contractually fixed across all repositories:
- * `{ success, data, meta, requestId }` for success and
- * `{ success: false, error, requestId }` for failure.
+ * Common shared types, pagination, and response metadata.
  */
 
-/** Machine-readable API error codes returned in the error envelope. */
-export const ApiErrorCode = {
-  // Auth
-  AUTHENTICATION_ERROR: 'AUTHENTICATION_ERROR',
-  UNAUTHORIZED: 'UNAUTHORIZED',
-  FORBIDDEN: 'FORBIDDEN',
-  INVALID_API_KEY: 'INVALID_API_KEY',
-  TOKEN_EXPIRED: 'TOKEN_EXPIRED',
-  // Validation
-  VALIDATION_ERROR: 'VALIDATION_ERROR',
-  BAD_REQUEST: 'BAD_REQUEST',
-  // Domain
-  POLICY_VIOLATION: 'POLICY_VIOLATION',
-  BUDGET_EXCEEDED: 'BUDGET_EXCEEDED',
-  RISK_THRESHOLD_EXCEEDED: 'RISK_THRESHOLD_EXCEEDED',
-  APPROVAL_REQUIRED: 'APPROVAL_REQUIRED',
-  WALLET_FROZEN: 'WALLET_FROZEN',
-  INSUFFICIENT_FUNDS: 'INSUFFICIENT_FUNDS',
-  PROPOSAL_EXPIRED: 'PROPOSAL_EXPIRED',
-  // Resource
-  NOT_FOUND: 'NOT_FOUND',
-  CONFLICT: 'CONFLICT',
-  // Rate / server
-  RATE_LIMITED: 'RATE_LIMITED',
-  INTERNAL_ERROR: 'INTERNAL_ERROR',
-  SERVICE_UNAVAILABLE: 'SERVICE_UNAVAILABLE',
-  // Client-side (SDK generated)
-  NETWORK_ERROR: 'NETWORK_ERROR',
-  TIMEOUT: 'TIMEOUT',
-} as const;
-export type ApiErrorCode = (typeof ApiErrorCode)[keyof typeof ApiErrorCode];
-
-/** The `error` object embedded in a failed response envelope. */
-export interface ApiError {
-  code: ApiErrorCode | string;
-  message: string;
-  /** Optional structured detail (e.g. field validation errors, policy context). */
-  details?: Record<string, unknown>;
+/** Standard pagination request parameters. */
+export interface PaginationParams {
+  /** 1-based page number (offset pagination). */
+  page?: number;
+  /** Opaque cursor for keyset pagination. */
+  cursor?: string;
+  /** Maximum number of items to return per page. */
+  limit?: number;
+  /** Sort direction. */
+  order?: 'asc' | 'desc';
 }
 
-/** Metadata attached to a successful response (pagination, timing, etc.). */
-export interface ResponseMeta {
-  page?: number;
+/** Full pagination metadata attached to a list response. */
+export interface PaginationMeta {
+  /** The current 1-based page number. */
+  page: number;
+  /** The page size used for this response. */
+  limit: number;
+  /** Total number of matching items across all pages. */
+  total: number;
+  /** Total number of pages given `limit`. */
+  totalPages: number;
+  /** Whether a page exists after this one. */
+  hasNextPage: boolean;
+  /** Whether a page exists before this one. */
+  hasPreviousPage: boolean;
+}
+
+/** Standard paginated response envelope. */
+export interface PaginatedResponse<T> {
+  data: T[];
+  meta?: ResponseMeta;
+}
+
+/** A normalized page of results with complete pagination metadata. */
+export interface Paginated<T> {
+  /** The items on this page. */
+  data: T[];
+  /** Pagination metadata for navigating the result set. */
+  meta: PaginationMeta;
+}
+
+/** Request parameters for cursor-based (keyset) pagination. */
+export interface CursorPaginationParams {
+  /** Opaque cursor identifying where the next page should start. */
+  cursor?: string;
+  /** Maximum number of items to return. */
   limit?: number;
+  /** Sort direction relative to the cursor. */
+  order?: 'asc' | 'desc';
+}
+
+/** A normalized page of results for cursor-based pagination. */
+export interface CursorPaginated<T> {
+  /** The items on this page. */
+  items: T[];
+  /** Cursor to pass back for the next page, or `null` when exhausted. */
+  nextCursor: string | null;
+  /** Whether more pages follow this one. */
+  hasMore: boolean;
+}
+
+/** Standard metadata returned with API responses. */
+export interface ResponseMeta {
+  cursor?: string;
+  hasMore?: boolean;
   total?: number;
-  totalPages?: number;
-  hasNextPage?: boolean;
-  hasPreviousPage?: boolean;
   [key: string]: unknown;
 }
 
+/** Standard API error payload structure. */
+export interface ApiError {
+  code: string;
+  message: string;
+  details?: Record<string, unknown>;
+}
+
+/**
+ * Machine-readable error codes returned by the Astroid API.
+ *
+ * Mirrors the backend error catalogue exactly so the SDK's error classes can
+ * branch on a stable value rather than a message string.
+ */
+export const ApiErrorCode = {
+  /** Missing or invalid credentials. */
+  AUTHENTICATION_ERROR: 'AUTHENTICATION_ERROR',
+  /** Request was not authenticated. */
+  UNAUTHORIZED: 'UNAUTHORIZED',
+  /** The supplied API key is invalid or revoked. */
+  INVALID_API_KEY: 'INVALID_API_KEY',
+  /** The access token has expired. */
+  TOKEN_EXPIRED: 'TOKEN_EXPIRED',
+  /** Authenticated but not permitted to perform this action. */
+  FORBIDDEN: 'FORBIDDEN',
+  /** The request failed schema or business validation. */
+  VALIDATION_ERROR: 'VALIDATION_ERROR',
+  /** The request was malformed. */
+  BAD_REQUEST: 'BAD_REQUEST',
+  /** The requested resource does not exist. */
+  NOT_FOUND: 'NOT_FOUND',
+  /** The request conflicts with the current resource state. */
+  CONFLICT: 'CONFLICT',
+  /** A transaction violates one or more spending policies. */
+  POLICY_VIOLATION: 'POLICY_VIOLATION',
+  /** The transaction's risk score exceeds the configured threshold. */
+  RISK_THRESHOLD_EXCEEDED: 'RISK_THRESHOLD_EXCEEDED',
+  /** The transaction would exceed an available budget. */
+  BUDGET_EXCEEDED: 'BUDGET_EXCEEDED',
+  /** The source account lacks sufficient funds. */
+  INSUFFICIENT_FUNDS: 'INSUFFICIENT_FUNDS',
+  /** The wallet is frozen and cannot transact. */
+  WALLET_FROZEN: 'WALLET_FROZEN',
+  /** The action requires human approval before it can execute. */
+  APPROVAL_REQUIRED: 'APPROVAL_REQUIRED',
+  /** Rate limit exceeded. */
+  RATE_LIMITED: 'RATE_LIMITED',
+  /** A network-level failure occurred before a response was received. */
+  NETWORK_ERROR: 'NETWORK_ERROR',
+  /** The request timed out. */
+  TIMEOUT: 'TIMEOUT',
+  /** An unexpected server error occurred. */
+  INTERNAL_ERROR: 'INTERNAL_ERROR',
+  /** The service is temporarily unavailable. */
+  SERVICE_UNAVAILABLE: 'SERVICE_UNAVAILABLE',
+} as const;
+export type ApiErrorCode = (typeof ApiErrorCode)[keyof typeof ApiErrorCode];
+
 /** A successful API response envelope. */
-export interface ApiSuccessResponse<TData> {
+export interface ApiSuccessResponse<T> {
   success: true;
-  data: TData;
+  data: T;
   meta?: ResponseMeta;
-  requestId: string;
+  requestId?: string;
 }
 
 /** A failed API response envelope. */
 export interface ApiErrorResponse {
   success: false;
   error: ApiError;
-  meta?: ResponseMeta;
-  requestId: string;
+  requestId?: string;
 }
 
-/** The union of both envelope shapes. */
-export type ApiResponse<TData> = ApiSuccessResponse<TData> | ApiErrorResponse;
-
-/** Pagination metadata returned for list endpoints. */
-export interface PaginationMeta {
-  page: number;
-  limit: number;
-  total: number;
-  totalPages: number;
-  hasNextPage: boolean;
-  hasPreviousPage: boolean;
-}
-
-/** A page of results plus its pagination metadata. */
-export interface Paginated<TItem> {
-  data: TItem[];
-  meta: PaginationMeta;
-}
-
-/**
- * Cursor-based pagination metadata embedded in a paginated response.
- */
-export interface CursorPaginationMeta {
-  /** Total number of items across all pages. */
-  total: number;
-  /** Whether more pages are available after this one. */
-  hasMore: boolean;
-  /** Opaque cursor for the next page, or `null` when there are no more pages. */
-  nextCursor: string | null;
-  /** Maximum number of items returned per page. */
-  limit: number;
-}
-
-/**
- * A paginated API response envelope. Wraps the standard success/error
- * response structure with a list-oriented `data` array and cursor-based
- * pagination metadata.
- *
- * @example
- * ```ts
- * const res: PaginatedResponse<Wallet> = await fetch('/wallets');
- * for (const wallet of res.data) { ... }
- * if (res.pagination?.hasMore) { ... }
- * ```
- */
-export interface PaginatedResponse<TItem> {
-  /** Whether the request succeeded. */
-  success: boolean;
-  /** The list of items returned for this page. */
-  data: TItem[];
-  /** Cursor-based pagination metadata, or `undefined` for non-paginated endpoints. */
-  pagination?: CursorPaginationMeta;
-  /** The API request ID for tracing. */
-  requestId: string;
-}
-
-/** Query parameters supported by every list endpoint. */
-export interface PaginationParams {
-  page?: number;
-  limit?: number;
-  sort?: string;
-  order?: 'asc' | 'desc';
-  search?: string;
-}
-
-/**
- * Generic list parameters: pagination plus an arbitrary, string-serialisable
- * filter map (e.g. `{ status: 'COMPLETED', asset: 'USDC' }`).
- */
-export interface ListParams extends PaginationParams {
-  filter?: Record<string, string | number | boolean | undefined>;
-}
-
-/** A value that can be safely encoded into a query string. */
-export type QueryValue = string | number | boolean | null | undefined | Array<string | number>;
-
-/** A raw query parameter map. */
-export type QueryParams = Record<string, QueryValue>;
-
-/* -------------------------------------------------------------------------- */
-/* Cursor-based pagination                                                     */
-/* -------------------------------------------------------------------------- */
-
-/** Query parameters for cursor-based (keyset) pagination. */
-export interface CursorPaginationParams {
-  /** Maximum number of items per page. Defaults to the endpoint default; capped at 100. */
-  limit?: number;
-  /** Opaque cursor from the previous page, used to fetch the next page. */
-  cursor?: string;
-  /** Sort direction. Defaults to `'desc'` (newest first). */
-  order?: 'asc' | 'desc';
-}
-
-/** A page of results returned by a cursor-paginated list endpoint. */
-export interface CursorPaginated<TItem> {
-  items: TItem[];
-  /** Opaque cursor for the next page, or `null` when there are no more pages. */
-  nextCursor: string | null;
-  /** Whether more pages are available after this one. */
-  hasMore: boolean;
-}
+/** The discriminated union of every API response shape. */
+export type ApiResponse<T> = ApiSuccessResponse<T> | ApiErrorResponse;

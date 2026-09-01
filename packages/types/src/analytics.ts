@@ -1,19 +1,31 @@
-/**
- * Typed analytics result objects, ready to bind directly to charts.
- * Correspond to the `GET /analytics/*` endpoints (PRD Doc 5).
- */
+export type Timeframe = 'hour' | 'day' | 'week' | 'month' | 'year' | string;
 
 import type { DecimalString } from './entities.js';
 import type { RiskBand } from './enums.js';
+import type { Paginated, PaginationParams } from './common.js';
 
 /** Query parameters accepted by analytics endpoints. */
 export interface AnalyticsQuery {
   from?: string;
   to?: string;
   agentId?: string;
-  currency?: string;
-  granularity?: 'day' | 'week' | 'month';
 }
+
+/**
+ * Analytics list queries: the shared {@link AnalyticsQuery} filters plus
+ * standard pagination controls (`page`, `limit`, `sort`, `order`, `search`).
+ *
+ * Applied to the tabular analytics endpoints (per-agent and per-budget rows) so
+ * clients can page through large historical result sets without pulling the
+ * full payload into memory.
+ */
+export interface AnalyticsListParams extends AnalyticsQuery, PaginationParams {}
+
+/**
+ * Alias for a paginated analytics results payload. Keeps the narrow, row-level
+ * item type explicit at call sites (e.g. {@link AgentSpendingRow}).
+ */
+export type PaginatedResponse<TItem> = Paginated<TItem>;
 
 /** A single (timestamp, value) point in a time series. */
 export interface TimeSeriesPoint {
@@ -21,63 +33,35 @@ export interface TimeSeriesPoint {
   value: number;
 }
 
-/** `GET /analytics/overview`. */
+export interface VolumeSummary {
+  timeframe: string;
+  totalVolume: string;
+  totalFees: string;
+  transactionCount: number;
+  successRate: number;
+  averageLatencyMs: number;
+}
+
+export interface AnalyticsMetricsResponse {
+  points: TimeSeriesMetricPoint[];
+  summary: VolumeSummary;
+}
+
+/**
+ * High-level aggregate overview for an organization, wallet, or agent.
+ *
+ * Returned by `analytics.overview`; the transaction/policy counters power the
+ * real-time agent metric dashboards.
+ */
 export interface AnalyticsOverview {
-  totalSpent: DecimalString;
-  currency: string;
+  /** Total transactions in the window. */
   transactionCount: number;
-  activeAgents: number;
-  activeWallets: number;
-  pendingApprovals: number;
+  /** Transactions blocked by policy in the window. */
   policyViolations: number;
-  spendingTrend: TimeSeriesPoint[];
-}
-
-/** `GET /analytics/spending` and `GET /analytics/cashflow`. */
-export interface CashflowReport {
-  currency: string;
-  inflow: TimeSeriesPoint[];
-  outflow: TimeSeriesPoint[];
-  net: TimeSeriesPoint[];
-  totalInflow: DecimalString;
-  totalOutflow: DecimalString;
-}
-
-/** `GET /analytics/risk`. */
-export interface RiskReport {
-  distribution: Record<RiskBand, number>;
-  averageScore: number;
-  highRiskTransactions: number;
-  trend: TimeSeriesPoint[];
-}
-
-/** One agent's line in the agent-performance report. */
-export interface AgentSpendingRow {
-  agentId: string;
-  agentName: string;
-  totalSpent: DecimalString;
-  transactionCount: number;
-  averageRisk: number;
-}
-
-/** `GET /analytics/agents`. */
-export interface AgentAnalytics {
-  currency: string;
-  agents: AgentSpendingRow[];
-}
-
-/** One budget's line in the budget-utilization report. */
-export interface BudgetUtilizationRow {
-  budgetId: string;
-  budgetName: string;
-  limit: DecimalString;
-  spent: DecimalString;
-  remaining: DecimalString;
-  utilization: number;
-}
-
-/** `GET /analytics/budgets`. */
-export interface BudgetAnalytics {
-  currency: string;
-  budgets: BudgetUtilizationRow[];
+  /** Total volume moved, as a decimal string. */
+  totalVolume: string;
+  /** Total fees paid, as a decimal string. */
+  totalFees: string;
+  /** Success rate as a percentage `0`–`100`. */
+  successRate: number;
 }
