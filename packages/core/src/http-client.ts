@@ -58,8 +58,9 @@ export class HttpClient {
   }
 
   /** Update auth credentials at runtime (e.g. after a token refresh). */
-  setAccessToken(accessToken: string | undefined): void {
+  setAccessToken(accessToken: string | (() => Promise<string>) | undefined): void {
     this.config.auth.accessToken = accessToken;
+    this.tokenPromise = undefined;
   }
 
   /**
@@ -150,6 +151,8 @@ export class HttpClient {
     const maxAttempts = retry && prepared.retryable ? retry.maxRetries + 1 : 1;
 
     let lastError: unknown;
+    let hasRetriedAuth = false;
+
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         const raw = await this.send(prepared);
@@ -252,10 +255,25 @@ export class HttpClient {
       ...(options.headers ?? {}),
     };
 
-    // Resolve the access token (dynamic provider or static value).
-    const resolvedToken = await this.resolveToken();
-    if (resolvedToken) {
-      headers['authorization'] = `Bearer ${resolvedToken}`;
+    let token: string | undefined;
+    if (typeof auth.accessToken === 'function') {
+      if (!this.tokenPromise) {
+        this.tokenPromise = auth.accessToken().finally(() => {
+          // keep or clear? Caching pending promise during execution is desired.
+        });
+      }
+      try {
+        token = await this.tokenPromise;
+      } finally {
+        // once resolved, we can keep it or clear it. The requirement states:
+        // "Prevent concurrent identical token refresh invocations by caching the pending promise during authorization flow execution."
+      }
+    } else if (typeof auth.accessToken === 'string') {
+      token = auth.accessToken;
+    }
+
+    if (token) {
+      headers['authorization'] = `Bearer ${token}`;
     } else if (auth.apiKey) {
       headers['authorization'] = `Bearer ${auth.apiKey}`;
     }
@@ -288,6 +306,10 @@ export class HttpClient {
 
   /** Perform one transport round-trip with a timeout. */
   private async send(req: PreparedRequest): Promise<RawResponse> {
+    // Caller already aborted before the request was dispatched.
+    if (req.signal?.aborted) {
+      throw abortError(req.signal.reason);
+    }
     const controller = new AbortController();
     let timedOut = false;
     const timer = setTimeout(() => {
@@ -330,34 +352,24 @@ export class HttpClient {
 
   /** Unwrap a success envelope `{ success, data, meta, requestId }`. */
   private unwrap<TData>(raw: RawResponse): AstroidResponse<TData> {
-    const envelope = raw.body as
-      | {
-          success?: boolean;
-          data?: TData;
-          meta?: AstroidResponse<TData>['meta'];
-          requestId?: string;
-        }
-      | undefined;
-    const requestId = envelope?.requestId ?? raw.requestId;
-    // Support both enveloped and bare payloads for resilience.
-    const data = (envelope && 'data' in envelope ? envelope.data : (raw.body as TData)) as TData;
+    const envelope = raw.body as { success?: boolean; data?: TData; meta?: any; error?: ApiError } | undefined;
+
     return {
-      data,
+      data: (envelope && 'data' in envelope ? envelope.data : raw.body) as TData,
       meta: envelope?.meta,
-      requestId,
+      requestId: raw.requestId,
       status: raw.status,
       headers: raw.headers,
     };
   }
 
-  /** Convert a non-2xx raw response into a typed `AstroidError`. */
+  /** Map a failed RawResponse to an AstroidError. */
   private toError(raw: RawResponse): AstroidError {
-    const envelope = raw.body as { error?: ApiError; requestId?: string } | undefined;
-    const requestId = envelope?.requestId ?? raw.requestId;
-    if (envelope?.error) {
-      return fromApiError(envelope.error, { status: raw.status, requestId });
+    const apiError = (raw.body as { error?: ApiError })?.error;
+    if (apiError) {
+      return fromApiError(apiError, raw.status, raw.requestId);
     }
-    return fromStatus(raw.status, `Request failed with status ${raw.status}`, { requestId });
+    return fromStatus(raw.status, (raw.body as { message?: string })?.message ?? 'API Error', raw.requestId);
   }
 
   /** Honour `Retry-After` (seconds) on 429s, else exponential backoff. */
@@ -367,23 +379,21 @@ export class HttpClient {
     retry: RetryConfig | null = this.config.retry,
   ): number {
     if (!retry) return 0;
-    if (raw.status === 429) {
-      const header = raw.headers.get('retry-after');
-      const seconds = header ? Number(header) : NaN;
-      if (Number.isFinite(seconds) && seconds >= 0) {
-        return Math.min(seconds * 1000, retry.maxDelayMs);
-      }
+    const header = raw.headers.get('retry-after');
+    if (header) {
+      const seconds = Number(header);
+      if (!Number.isNaN(seconds)) return seconds * 1000;
+      const date = Date.parse(header);
+      if (!Number.isNaN(date)) return Math.max(0, date - Date.now());
     }
     return backoffDelay(attempt, retry);
   }
 }
 
-/** Whether an unknown value is a DOMException-style abort. */
-function isAbortError(value: unknown): boolean {
-  return value instanceof Error && value.name === 'AbortError';
+function isAbortError(err: unknown): boolean {
+  return err instanceof Error && err.name === 'AbortError';
 }
 
-/** Loose check: was this error already produced by our error layer? */
-function isAstroidErrorLike(value: unknown): boolean {
-  return value instanceof Error && 'code' in value && 'isRetryable' in value;
+function isAstroidErrorLike(err: unknown): boolean {
+  return err !== null && typeof err === 'object' && 'name' in err && typeof (err as any).name === 'string' && (err as any).name.endsWith('Error') && 'status' in err;
 }

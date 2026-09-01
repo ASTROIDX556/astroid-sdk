@@ -12,6 +12,9 @@ import {
   AstroidProvider,
   useAgent,
   useAgents,
+  useCreateAgent,
+  useUpdateAgent,
+  useDeleteAgent,
   useSimulatePolicy,
   useWallets,
   queryKeys,
@@ -144,23 +147,50 @@ describe('useAgents', () => {
   });
 });
 
+describe('Agent mutation hooks', () => {
+  it('provides useCreateAgent, useUpdateAgent, and useDeleteAgent hooks', () => {
+    let hasCreate = false;
+    let hasUpdate = false;
+    let hasDelete = false;
+
+    function TestComponent() {
+      const createMutation = useCreateAgent();
+      const updateMutation = useUpdateAgent();
+      const deleteMutation = useDeleteAgent();
+
+      hasCreate = typeof createMutation.mutate === 'function';
+      hasUpdate = typeof updateMutation.mutate === 'function';
+      hasDelete = typeof deleteMutation.mutate === 'function';
+      return null;
+    }
+
+    const { unmount } = renderInProviders(createElement(TestComponent));
+    expect(hasCreate).toBe(true);
+    expect(hasUpdate).toBe(true);
+    expect(hasDelete).toBe(true);
+    unmount();
+  });
+});
+
 describe('useSimulatePolicy', () => {
   it('returns the simulated policy result and explanation', async () => {
     const client = new Astroid({
       apiKey: 'sk_test_hooks',
       baseUrl: 'https://api.test',
-    }) as unknown as Astroid; // kept a real client for provider wiring
-    const simulate = client.policies.simulate.bind(client.policies);
+    }) as unknown as Astroid;
     const simulated = {
       allowed: false,
       violations: [],
       requiredApprovals: [],
-      risk: { score: 75, band: 'HIGH' as const, factors: ['amount cap'] },
+      risk: {
+        score: 75,
+        band: 'HIGH' as const,
+        factors: [{ factor: 'amount cap', score: 75, description: 'Exceeds daily limit policy PF_123.' }],
+      },
       budgetImpact: [],
       explanation: 'Exceeds daily limit policy PF_123.',
     };
-    // Stub out the HTTP layer without hitting the network.
-    (client.policies as { simulate: typeof simulate }).simulate = async () => simulated;
+    (client.policies as { simulate: typeof client.policies.simulate }).simulate = async () => simulated;
 
     let result: string | null = null;
     function TestComponent() {
@@ -169,7 +199,6 @@ describe('useSimulatePolicy', () => {
         mutate({ asset: 'USDC', amount: '1000', walletId: 'wal_1' });
       }, 0);
       const client = useAstroid();
-      // Prove the hook is wired to the provided client.
       if (client.policies) result = 'wired';
       return null;
     }

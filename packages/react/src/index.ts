@@ -30,11 +30,15 @@
  * @packageDocumentation
  */
 
-import { useEffect, useRef } from 'react';
-import { useAstroid } from './hooks.js';
-export { AstroidProvider, type AstroidProviderProps } from './provider.js';
-export { useAstroidClient } from './hooks.js';
-export { useAstroid } from './hooks.js';
+import {
+  createContext,
+  createElement,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  type ReactNode,
+} from 'react';
 import {
   useMutation,
   useQuery,
@@ -45,6 +49,7 @@ import {
   type UseQueryResult,
 } from '@tanstack/react-query';
 import {
+  Astroid,
   type AgentListParams,
   type BudgetListParams,
   type PolicyListParams,
@@ -63,12 +68,11 @@ import type {
   PaymentIntent,
   PaymentIntentResult,
   Policy,
-  PolicySimulationResult,
-  SimulatePolicyInput,
   Transaction,
   TransactionListParams,
   TransferInput,
   Wallet,
+  WalletBalance,
   WebhookEventEnvelope,
   WebhookEventName,
 } from '@astroid/types';
@@ -76,6 +80,42 @@ import type {
 /* -------------------------------------------------------------------------- */
 /*                                  provider                                  */
 /* -------------------------------------------------------------------------- */
+
+const AstroidContext = createContext<Astroid | null>(null);
+
+/** Props for {@link AstroidProvider}: supply a ready client or a config to build one. */
+export type AstroidProviderProps = {
+  children: ReactNode;
+} & (
+  | { client: Astroid; config?: never }
+  | { config: ConstructorParameters<typeof Astroid>[0]; client?: never }
+);
+
+/**
+ * Provides an {@link Astroid} client to the tree. Pass either an existing
+ * `client` (recommended if you construct it elsewhere) or a `config` object
+ * from which one is memoized. Assumes a TanStack Query `QueryClientProvider`
+ * is present higher in the tree.
+ */
+export function AstroidProvider(props: AstroidProviderProps): ReactNode {
+  const { children } = props;
+  const client = useMemo(
+    () => ('client' in props && props.client ? props.client : new Astroid(props.config)),
+    // Rebuild only when the identity of the passed client/config changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    ['client' in props ? props.client : props.config],
+  );
+  return createElement(AstroidContext.Provider, { value: client }, children);
+}
+
+/** Access the {@link Astroid} client from context. Throws if no provider is present. */
+export function useAstroid(): Astroid {
+  const client = useContext(AstroidContext);
+  if (!client) {
+    throw new Error('useAstroid must be used within an <AstroidProvider>.');
+  }
+  return client;
+}
 
 /* -------------------------------------------------------------------------- */
 /*                               query key factory                            */
@@ -120,73 +160,117 @@ export const queryKeys = {
     unreadCount: ['astroid', 'notifications', 'unread-count'] as const,
   },
   analytics: {
-    overview: (query?: AnalyticsQuery) =>
-      ['astroid', 'analytics', 'overview', query ?? {}] as const,
+    overview: (query?: AnalyticsQuery) => ['astroid', 'analytics', 'overview', query ?? {}] as const,
   },
 } as const;
 
 /**
- * Extra options forwarded to TanStack Query's `useQuery` for read hooks.
- * Includes `enabled`, `refetchInterval`, `staleTime`, `gcTime`, etc.
- * The `queryKey` and `queryFn` are set internally and cannot be overridden.
+ * Options a caller may pass to a read hook (wrapper over TanStack `UseQueryOptions`).
+ *
+ * Supports full TanStack overrides including `queryKey`, `staleTime`,
+ * `refetchInterval`, `gcTime`, `select`, `enabled`, etc. When `queryKey` is
+ * supplied it replaces the hook's default `queryKeys.*` value, enabling custom
+ * caching strategies and integration with global state managers.
+ *
+ * @typeParam TData  Data returned by the query.
+ * @typeParam TError Error type (defaults to `Error`).
  */
-type ReadOptions<TData> = Omit<UseQueryOptions<TData, Error, TData>, 'queryKey' | 'queryFn'>;
+export type ReadOptions<TData, TError = Error> = Omit<
+  UseQueryOptions<TData, TError, TData, readonly unknown[]>,
+  'queryKey' | 'queryFn'
+> & {
+  /** Override the default query key for custom caching / global state sync. */
+  queryKey?: readonly unknown[];
+};
 
 /* -------------------------------------------------------------------------- */
 /*                                 read hooks                                 */
 /* -------------------------------------------------------------------------- */
 
 /**
- * Fetch a paginated list of wallets belonging to the current organization.
+ * List wallets.
  *
- * @param params  Optional filters: `page`, `pageSize`, `walletType`, etc.
- * @param options Extra TanStack Query options (`enabled`, `staleTime`, etc.).
- * @returns       A TanStack Query result with `data` (a {@link Paginated} of
- *                {@link Wallet}), `isLoading`, `isError`, `error`, etc.
+ * Supports custom query options such as `queryKey`, `staleTime`,
+ * `refetchInterval`, `gcTime`, and `select` for advanced caching strategies.
  *
- * @example
- * ```tsx
- * const { data, isLoading } = useWallets({ page: 1, pageSize: 10 });
- * ```
+ * @param params  Pagination/filter params forwarded to `astroid.wallets.list`.
+ * @param options Custom TanStack Query options including `queryKey` override,
+ *                `staleTime`, `refetchInterval`, `gcTime`, `select`, etc.
+ *                When `queryKey` is supplied it replaces the default
+ *                `queryKeys.wallets.list(params)` key, enabling integration
+ *                with global state managers.
  */
 export function useWallets(
   params?: WalletListParams,
   options?: ReadOptions<Paginated<Wallet>>,
 ): UseQueryResult<Paginated<Wallet>, Error> {
   const astroid = useAstroid();
+  const { queryKey, ...rest } = options ?? {};
   return useQuery({
-    queryKey: queryKeys.wallets.list(params),
+    queryKey: queryKey ?? queryKeys.wallets.list(params),
     queryFn: () => astroid.wallets.list(params),
-    ...options,
+    ...(rest as Omit<UseQueryOptions<Paginated<Wallet>, Error, Paginated<Wallet>, readonly unknown[]>, 'queryKey' | 'queryFn'>),
   });
 }
 
 /**
- * Fetch a single wallet by its ID.
+ * Fetch a single wallet. Disabled until `id` is truthy.
  *
- * The query is automatically **disabled** when `id` is `undefined` or empty,
- * so it is safe to pass a conditional value without guarding the render.
+ * `options.enabled` is merged with the internal `Boolean(id)` guard so a
+ * custom `enabled: false` still disables the query even when `id` is present.
  *
- * @param id      The wallet ID to fetch. Pass `undefined` to skip the request.
- * @param options Extra TanStack Query options.
- * @returns       A TanStack Query result with `data` (a {@link Wallet}),
- *                `isLoading`, `isError`, `error`, etc.
- *
- * @example
- * ```tsx
- * const { data: wallet } = useWallet(selectedWalletId);
- * if (wallet) console.log(wallet.name);
- * ```
+ * @param id      Wallet id (when falsy, the query is disabled regardless of options).
+ * @param options Custom query options including `queryKey` override, `staleTime`,
+ *                `refetchInterval`, `gcTime`, `select`, and `enabled`.
  */
 export function useWallet(
   id: string | undefined,
   options?: ReadOptions<Wallet>,
 ): UseQueryResult<Wallet, Error> {
   const astroid = useAstroid();
+  const { queryKey, enabled: optionEnabled, ...rest } = options ?? {};
+  const enabled = Boolean(id) && (optionEnabled ?? true);
   return useQuery({
-    queryKey: queryKeys.wallets.detail(id ?? ''),
+    queryKey: queryKey ?? queryKeys.wallets.detail(id ?? ''),
     queryFn: () => astroid.wallets.get(id as string),
-    enabled: Boolean(id) && options?.enabled !== false,
+    enabled,
+    ...(rest as Omit<UseQueryOptions<Wallet, Error, Wallet, readonly unknown[]>, 'queryKey' | 'queryFn' | 'enabled'>),
+  });
+}
+
+/**
+ * Fetch the live on-chain balance of a single wallet, with a sensible
+ * stale-time default so balances stay fresh without hammering the API.
+ *
+ * The query is automatically **disabled** when `walletId` is `undefined` or
+ * empty. Balances are inherently volatile, so by default the result is marked
+ * stale after 15s; pass `options.staleTime` to tune, or set
+ * `refetchInterval` (e.g. `30_000`) to poll while mounted.
+ *
+ * @param walletId The wallet to read balances for. Pass `undefined` to skip.
+ * @param options  Extra TanStack Query options (`enabled`, `staleTime`,
+ *                 `refetchInterval`, etc.). The `queryKey`/`queryFn` are set
+ *                 internally and cannot be overridden.
+ * @returns       A TanStack Query result with `data` (a {@link WalletBalance}),
+ *                `isLoading`, `isError`, `error`, etc.
+ *
+ * @example
+ * ```tsx
+ * const { data: balance, isStale } = useWalletBalance(activeWalletId, {
+ *   refetchInterval: 30_000,
+ * });
+ * ```
+ */
+export function useWalletBalance(
+  walletId: string | undefined,
+  options?: ReadOptions<WalletBalance>,
+): UseQueryResult<WalletBalance, Error> {
+  const astroid = useAstroid();
+  return useQuery({
+    queryKey: queryKeys.wallets.balance(walletId ?? ''),
+    queryFn: () => astroid.wallets.balance(walletId as string),
+    enabled: Boolean(walletId) && options?.enabled !== false,
+    staleTime: 15_000, // balances go stale quickly; refresh on refocus/interval
     ...options,
   });
 }
@@ -209,195 +293,137 @@ export function useAgents(
   options?: ReadOptions<Paginated<Agent>>,
 ): UseQueryResult<Paginated<Agent>, Error> {
   const astroid = useAstroid();
+  const { queryKey, ...rest } = options ?? {};
   return useQuery({
-    queryKey: queryKeys.agents.list(params),
+    queryKey: queryKey ?? queryKeys.agents.list(params),
     queryFn: () => astroid.agents.list(params),
-    ...options,
+    ...(rest as Omit<UseQueryOptions<Paginated<Agent>, Error, Paginated<Agent>, readonly unknown[]>, 'queryKey' | 'queryFn'>),
   });
 }
 
 /**
- * Fetch a single AI agent by its ID.
- *
- * The query is automatically **disabled** when `id` is `undefined` or empty.
- *
- * @param id      The agent ID to fetch. Pass `undefined` to skip the request.
- * @param options Extra TanStack Query options.
- * @returns       A TanStack Query result with `data` (an {@link Agent}),
- *                `isLoading`, `isError`, `error`, etc.
- *
- * @example
- * ```tsx
- * const { data: agent } = useAgent(agentId);
- * ```
+ * Fetch a single agent. Disabled until `id` is truthy.
+ * @param id      Agent id.
+ * @param options Custom query options (`queryKey` override, `staleTime`, `refetchInterval`, etc.).
  */
 export function useAgent(
   id: string | undefined,
   options?: ReadOptions<Agent>,
 ): UseQueryResult<Agent, Error> {
   const astroid = useAstroid();
+  const { queryKey, enabled: optionEnabled, ...rest } = options ?? {};
+  const enabled = Boolean(id) && (optionEnabled ?? true);
   return useQuery({
-    queryKey: queryKeys.agents.detail(id ?? ''),
+    queryKey: queryKey ?? queryKeys.agents.detail(id ?? ''),
     queryFn: () => astroid.agents.get(id as string),
-    enabled: Boolean(id) && options?.enabled !== false,
-    ...options,
+    enabled,
+    ...(rest as Omit<UseQueryOptions<Agent, Error, Agent, readonly unknown[]>, 'queryKey' | 'queryFn' | 'enabled'>),
   });
 }
 
 /**
- * Fetch a paginated list of spending policies.
- *
- * @param params  Optional filters: `page`, `pageSize`, `type`, `enabled`,
- *                `agentId`, `walletId`, etc.
- * @param options Extra TanStack Query options.
- * @returns       A TanStack Query result with `data` (a {@link Paginated} of
- *                {@link Policy}), `isLoading`, `isError`, `error`, etc.
- *
- * @example
- * ```tsx
- * const { data } = usePolicies({ type: 'MAX_AMOUNT', enabled: true });
- * ```
+ * List policies.
+ * @param params  Filter params.
+ * @param options Custom query options (`queryKey`, `staleTime`, `refetchInterval`, etc.).
  */
 export function usePolicies(
   params?: PolicyListParams,
   options?: ReadOptions<Paginated<Policy>>,
 ): UseQueryResult<Paginated<Policy>, Error> {
   const astroid = useAstroid();
+  const { queryKey, ...rest } = options ?? {};
   return useQuery({
-    queryKey: queryKeys.policies.list(params),
+    queryKey: queryKey ?? queryKeys.policies.list(params),
     queryFn: () => astroid.policies.list(params),
-    ...options,
+    ...(rest as Omit<UseQueryOptions<Paginated<Policy>, Error, Paginated<Policy>, readonly unknown[]>, 'queryKey' | 'queryFn'>),
   });
 }
 
 /**
- * Fetch a paginated list of budgets.
- *
- * @param params  Optional filters: `page`, `pageSize`, `walletId`, etc.
- * @param options Extra TanStack Query options.
- * @returns       A TanStack Query result with `data` (a {@link Paginated} of
- *                {@link Budget}), `isLoading`, `isError`, `error`, etc.
- *
- * @example
- * ```tsx
- * const { data } = useBudgets({ walletId: 'wal_123' });
- * ```
+ * List budgets.
+ * @param params  Filter params.
+ * @param options Custom query options (`queryKey`, `staleTime`, `refetchInterval`, etc.).
  */
 export function useBudgets(
   params?: BudgetListParams,
   options?: ReadOptions<Paginated<Budget>>,
 ): UseQueryResult<Paginated<Budget>, Error> {
   const astroid = useAstroid();
+  const { queryKey, ...rest } = options ?? {};
   return useQuery({
-    queryKey: queryKeys.budgets.list(params),
+    queryKey: queryKey ?? queryKeys.budgets.list(params),
     queryFn: () => astroid.budgets.list(params),
-    ...options,
+    ...(rest as Omit<UseQueryOptions<Paginated<Budget>, Error, Paginated<Budget>, readonly unknown[]>, 'queryKey' | 'queryFn'>),
   });
 }
 
 /**
- * Fetch a paginated list of transactions.
- *
- * @param params  Optional filters: `page`, `pageSize`, `walletId`,
- *                `status`, etc.
- * @param options Extra TanStack Query options.
- * @returns       A TanStack Query result with `data` (a {@link Paginated} of
- *                {@link Transaction}), `isLoading`, `isError`, `error`, etc.
- *
- * @example
- * ```tsx
- * const { data } = useTransactions({ walletId: 'wal_123', pageSize: 20 });
- * ```
+ * List transactions.
+ * @param params  Filter params.
+ * @param options Custom query options (`queryKey`, `staleTime`, `refetchInterval`, etc.).
  */
 export function useTransactions(
   params?: TransactionListParams,
   options?: ReadOptions<Paginated<Transaction>>,
 ): UseQueryResult<Paginated<Transaction>, Error> {
   const astroid = useAstroid();
+  const { queryKey, ...rest } = options ?? {};
   return useQuery({
-    queryKey: queryKeys.transactions.list(params),
+    queryKey: queryKey ?? queryKeys.transactions.list(params),
     queryFn: () => astroid.transactions.list(params),
-    ...options,
+    ...(rest as Omit<UseQueryOptions<Paginated<Transaction>, Error, Paginated<Transaction>, readonly unknown[]>, 'queryKey' | 'queryFn'>),
   });
 }
 
 /**
- * Fetch a paginated list of notifications.
- *
- * @param params  Optional filters: `page`, `pageSize`, `read`, etc.
- * @param options Extra TanStack Query options.
- * @returns       A TanStack Query result with `data` (a {@link Paginated} of
- *                {@link Notification}), `isLoading`, `isError`, `error`, etc.
- *
- * @example
- * ```tsx
- * const { data } = useNotifications({ read: false });
- * ```
+ * List notifications.
+ * @param params  Filter params.
+ * @param options Custom query options (`queryKey`, `staleTime`, `refetchInterval`, etc.).
  */
 export function useNotifications(
   params?: NotificationListParams,
   options?: ReadOptions<Paginated<Notification>>,
 ): UseQueryResult<Paginated<Notification>, Error> {
   const astroid = useAstroid();
+  const { queryKey, ...rest } = options ?? {};
   return useQuery({
-    queryKey: queryKeys.notifications.list(params),
+    queryKey: queryKey ?? queryKeys.notifications.list(params),
     queryFn: () => astroid.notifications.list(params),
-    ...options,
+    ...(rest as Omit<UseQueryOptions<Paginated<Notification>, Error, Paginated<Notification>, readonly unknown[]>, 'queryKey' | 'queryFn'>),
   });
 }
 
 /**
- * Fetch the count of unread notifications for the current user.
- *
- * Useful for rendering badge indicators (e.g. notification bell count).
- *
- * @param options Extra TanStack Query options.
- * @returns       A TanStack Query result with `data` (a `number`),
- *                `isLoading`, `isError`, `error`, etc.
- *
- * @example
- * ```tsx
- * const { data: count } = useUnreadCount();
- * return <Badge>{count ?? 0}</Badge>;
- * ```
+ * The count of unread notifications.
+ * @param options Custom query options (`queryKey`, `staleTime`, `refetchInterval`, etc.).
  */
-export function useUnreadCount(options?: ReadOptions<number>): UseQueryResult<number, Error> {
+export function useUnreadCount(
+  options?: ReadOptions<number>,
+): UseQueryResult<number, Error> {
   const astroid = useAstroid();
+  const { queryKey, ...rest } = options ?? {};
   return useQuery({
-    queryKey: queryKeys.notifications.unreadCount,
+    queryKey: queryKey ?? queryKeys.notifications.unreadCount,
     queryFn: () => astroid.notifications.unreadCount(),
-    ...options,
+    ...(rest as Omit<UseQueryOptions<number, Error, number, readonly unknown[]>, 'queryKey' | 'queryFn'>),
   });
 }
 
 /**
- * Fetch headline analytics (total volume, transaction count, etc.) for a
- * dashboard or reporting view.
- *
- * @param query   Optional filters: date range, wallet ID, agent ID, etc.
- *                See {@link AnalyticsQuery} for the full shape.
- * @param options Extra TanStack Query options.
- * @returns       A TanStack Query result with `data` (an
- *                {@link AnalyticsOverview}), `isLoading`, `isError`, `error`,
- *                etc.
- *
- * @example
- * ```tsx
- * const { data } = useAnalyticsOverview({
- *   startDate: '2026-01-01',
- *   endDate: '2026-01-31',
- * });
- * ```
+ * Headline analytics for the dashboard.
+ * @param query   Analytics filters.
+ * @param options Custom query options (`queryKey`, `staleTime`, `refetchInterval`, etc.).
  */
 export function useAnalyticsOverview(
   query?: AnalyticsQuery,
   options?: ReadOptions<AnalyticsOverview>,
 ): UseQueryResult<AnalyticsOverview, Error> {
   const astroid = useAstroid();
+  const { queryKey, ...rest } = options ?? {};
   return useQuery({
-    queryKey: queryKeys.analytics.overview(query),
+    queryKey: queryKey ?? queryKeys.analytics.overview(query),
     queryFn: () => astroid.analytics.overview(query),
-    ...options,
+    ...(rest as Omit<UseQueryOptions<AnalyticsOverview, Error, AnalyticsOverview, readonly unknown[]>, 'queryKey' | 'queryFn'>),
   });
 }
 
@@ -406,70 +432,55 @@ export function useAnalyticsOverview(
 /* -------------------------------------------------------------------------- */
 
 /**
- * Extra options forwarded to TanStack Query's `useMutation` for write hooks.
- * Includes `onSuccess`, `onError`, `onSettled`, `retry`, etc. The
- * `mutationFn` is set internally and cannot be overridden.
+ * Options a caller may pass to a mutation hook (wrapping `UseMutationOptions`).
+ *
+ * Supports standard overrides: `mutationKey`, `onSuccess`, `onError`,
+ * `onSettled`, `retry`, `gcTime`, etc. The hook's automatic cache
+ * invalidation is composed with any user-provided callbacks so both run.
+ *
+ * @typeParam TData  Result data type.
+ * @typeParam TVars  Variable type passed to the mutation.
+ * @typeParam TError Error type (defaults to `Error`).
  */
-type WriteOptions<TData, TVars> = Omit<UseMutationOptions<TData, Error, TVars>, 'mutationFn'>;
+export type WriteOptions<TData, TVars, TError = Error, TContext = unknown> = Omit<
+  UseMutationOptions<TData, TError, TVars, TContext>,
+  'mutationFn'
+>;
 
 /**
- * Create a new wallet.
+ * Create a wallet; invalidates the wallet lists on success.
  *
- * Automatically **invalidates all wallet queries** on success so lists and
- * detail views refresh without manual bookkeeping.
+ * Supports full mutation option overrides: `mutationKey`, `onSuccess`,
+ * `onError`, `onSettled`, `retry`, etc. User callbacks are composed with
+ * the automatic invalidation so both run.
  *
- * @param options Extra TanStack Query mutation options (`onSuccess`,
- *                `onError`, `retry`, etc.).
- * @returns       A TanStack Query mutation result with `mutate`,
- *                `mutateAsync`, `isPending`, `isSuccess`, `error`, etc.
- *
- * @example
- * ```tsx
- * const { mutate, isPending } = useCreateWallet();
- *
- * function handleCreate() {
- *   mutate({ name: 'Ops Wallet', walletType: 'CUSTODIAL' });
- * }
- * ```
+ * @param options Custom mutation options including `onSuccess`, `onError`,
+ *                `onSettled`, `mutationKey`, `retry`, etc.
  */
 export function useCreateWallet(
   options?: WriteOptions<Wallet, CreateWalletInput>,
 ): UseMutationResult<Wallet, Error, CreateWalletInput> {
   const astroid = useAstroid();
   const qc = useQueryClient();
+  const { onSuccess, onError, onSettled, ...rest } = options ?? {};
   return useMutation({
     mutationFn: (input: CreateWalletInput) => astroid.wallets.create(input),
-    ...options,
+    ...(rest as Omit<UseMutationOptions<Wallet, Error, CreateWalletInput, unknown>, 'mutationFn'>),
     onSuccess: (data, vars, ctx) => {
       void qc.invalidateQueries({ queryKey: queryKeys.wallets.all });
-      options?.onSuccess?.(data, vars, ctx);
+      onSuccess?.(data, vars, ctx as unknown as void);
     },
+    onError: (err, vars, ctx) => onError?.(err, vars, ctx as unknown as void),
+    onSettled: (data, err, vars, ctx) => onSettled?.(data, err, vars, ctx as unknown as void),
   });
 }
 
 /**
- * Execute a transfer from a specific wallet.
+ * Transfer from a wallet; invalidates wallets and transactions on success.
  *
- * Automatically **invalidates all wallet and transaction queries** on success
- * so balances and transaction lists refresh immediately.
- *
- * @param walletId The ID of the wallet to transfer from.
- * @param options  Extra TanStack Query mutation options.
- * @returns        A TanStack Query mutation result with `mutate`,
- *                 `mutateAsync`, `isPending`, `isSuccess`, `error`, etc.
- *
- * @example
- * ```tsx
- * const { mutate } = useTransfer('wal_abc123');
- *
- * function handleSend() {
- *   mutate({
- *     destinationAddress: 'GABC...XYZ',
- *     asset: 'USDC',
- *     amount: '25.00',
- *   });
- * }
- * ```
+ * @param walletId Source wallet id.
+ * @param options  Custom mutation options (`onSuccess`, `onError`, `onSettled`,
+ *                 `mutationKey`, `retry`, etc.).
  */
 export function useTransfer(
   walletId: string,
@@ -477,136 +488,67 @@ export function useTransfer(
 ): UseMutationResult<Transaction, Error, TransferInput> {
   const astroid = useAstroid();
   const qc = useQueryClient();
+  const { onSuccess, onError, onSettled, ...rest } = options ?? {};
   return useMutation({
     mutationFn: (input: TransferInput) => astroid.wallets.transfer(walletId, input),
-    ...options,
+    ...(rest as Omit<UseMutationOptions<Transaction, Error, TransferInput, unknown>, 'mutationFn'>),
     onSuccess: (data, vars, ctx) => {
       void qc.invalidateQueries({ queryKey: queryKeys.wallets.all });
       void qc.invalidateQueries({ queryKey: queryKeys.transactions.all });
-      options?.onSuccess?.(data, vars, ctx);
+      onSuccess?.(data, vars, ctx as unknown as void);
     },
+    onError: (err, vars, ctx) => onError?.(err, vars, ctx as unknown as void),
+    onSettled: (data, err, vars, ctx) => onSettled?.(data, err, vars, ctx as unknown as void),
   });
 }
 
 /**
- * Create a new AI agent.
- *
- * Automatically **invalidates all agent queries** on success so lists and
- * detail views refresh.
- *
- * @param options Extra TanStack Query mutation options.
- * @returns       A TanStack Query mutation result with `mutate`,
- *                `mutateAsync`, `isPending`, `isSuccess`, `error`, etc.
- *
- * @example
- * ```tsx
- * const { mutate } = useCreateAgent();
- *
- * function handleCreate() {
- *   mutate({ name: 'Payment Bot', walletId: 'wal_abc123' });
- * }
- * ```
+ * Create an agent; invalidates the agent lists on success.
+ * @param options Custom mutation options (`onSuccess`, `onError`, `onSettled`, etc.).
  */
 export function useCreateAgent(
   options?: WriteOptions<Agent, CreateAgentInput>,
 ): UseMutationResult<Agent, Error, CreateAgentInput> {
   const astroid = useAstroid();
   const qc = useQueryClient();
+  const { onSuccess, onError, onSettled, ...rest } = options ?? {};
   return useMutation({
     mutationFn: (input: CreateAgentInput) => astroid.agents.create(input),
-    ...options,
+    ...(rest as Omit<UseMutationOptions<Agent, Error, CreateAgentInput, unknown>, 'mutationFn'>),
     onSuccess: (data, vars, ctx) => {
       void qc.invalidateQueries({ queryKey: queryKeys.agents.all });
-      options?.onSuccess?.(data, vars, ctx);
+      onSuccess?.(data, vars, ctx as unknown as void);
     },
+    onError: (err, vars, ctx) => onError?.(err, vars, ctx as unknown as void),
+    onSettled: (data, err, vars, ctx) => onSettled?.(data, err, vars, ctx as unknown as void),
   });
 }
 
 /**
- * Pre-flight a hypothetical transaction against the applicable policies
- * without creating anything. Equivalent to {@link PolicyResource.simulate}.
+ * The AI-native mutation: submit a financial intent. On an executed or pending
+ * outcome it invalidates transactions and wallets so balances reflect the draw.
  *
- * The backend policy engine evaluates the proposed payload and returns
- * violations, required approvals, risk and budget impact, plus a
- * human-readable explanation. No transaction is created or submitted.
- *
- * @param options Extra TanStack Query mutation options.
- * @returns       A TanStack Query mutation result with `mutate`,
- *                `mutateAsync`, `isPending`, `isSuccess`, `error`, and a
- *                `data` of {@link PolicySimulationResult} on success.
- *
- * @example
- * ```tsx
- * const { mutateAsync, data, isPending } = useSimulatePolicy();
- *
- * async function handleCheck() {
- *   const result = await mutateAsync({
- *     walletId: 'wal_123',
- *     asset: 'USDC',
- *     amount: '150',
- *     recipientAddress: 'GA…XYZ',
- *   });
- *   if (!result.allowed) console.log(result.explanation);
- * }
- * ```
- */
-export function useSimulatePolicy(
-  options?: WriteOptions<PolicySimulationResult, SimulatePolicyInput>,
-): UseMutationResult<PolicySimulationResult, Error, SimulatePolicyInput> {
-  const astroid = useAstroid();
-  return useMutation({
-    mutationFn: (input: SimulatePolicyInput) => astroid.policies.simulate(input),
-    ...options,
-  });
-}
-
-/**
- * The AI-native mutation: submit a high-level financial intent (e.g.
- * "Pay 150 USDC for OpenAI credits"). The backend orchestrates the full
- * workflow — proposal, policy evaluation, risk scoring, transaction — and
- * returns a {@link PaymentIntentResult} whose `outcome` says what happened
- * (`executed`, `pending_approval`, `simulated`, or `rejected`).
- *
- * On an `executed` or `pending_approval` outcome, **transaction and wallet
- * queries are automatically invalidated** so balances reflect the draw.
- *
- * @param options Extra TanStack Query mutation options.
- * @returns       A TanStack Query mutation result with `mutate`,
- *                `mutateAsync`, `isPending`, `isSuccess`, `error`, etc.
- *
- * @example
- * ```tsx
- * const { mutate, data } = useRequestPayment();
- *
- * function handlePay() {
- *   mutate({
- *     intent: 'Purchase OpenAI credits',
- *     amount: 150,
- *     asset: 'USDC',
- *   });
- * }
- *
- * // After mutation completes:
- * if (data?.outcome === 'executed') {
- *   toast.success(data.explanation);
- * }
- * ```
+ * @param options Custom mutation options (`onSuccess`, `onError`, `onSettled`,
+ *                `mutationKey`, `retry`, etc.).
  */
 export function useRequestPayment(
   options?: WriteOptions<PaymentIntentResult, PaymentIntent>,
 ): UseMutationResult<PaymentIntentResult, Error, PaymentIntent> {
   const astroid = useAstroid();
   const qc = useQueryClient();
+  const { onSuccess, onError, onSettled, ...rest } = options ?? {};
   return useMutation({
     mutationFn: (intent: PaymentIntent) => astroid.ai.requestPayment(intent),
-    ...options,
+    ...(rest as Omit<UseMutationOptions<PaymentIntentResult, Error, PaymentIntent, unknown>, 'mutationFn'>),
     onSuccess: (data, vars, ctx) => {
       if (data.outcome === 'executed' || data.outcome === 'pending_approval') {
         void qc.invalidateQueries({ queryKey: queryKeys.transactions.all });
         void qc.invalidateQueries({ queryKey: queryKeys.wallets.all });
       }
-      options?.onSuccess?.(data, vars, ctx);
+      onSuccess?.(data, vars, ctx as unknown as void);
     },
+    onError: (err, vars, ctx) => onError?.(err, vars, ctx as unknown as void),
+    onSettled: (data, err, vars, ctx) => onSettled?.(data, err, vars, ctx as unknown as void),
   });
 }
 
@@ -615,25 +557,11 @@ export function useRequestPayment(
 /* -------------------------------------------------------------------------- */
 
 /**
- * Subscribe a component to an Astroid SDK event for its lifetime. The
- * subscription is automatically cleaned up when the component unmounts.
+ * Subscribe a component to a client event for its lifetime. The handler is kept
+ * in a ref, so passing a fresh closure each render does not re-subscribe.
  *
- * The handler is stored in a ref, so passing a fresh closure each render does
- * **not** cause a re-subscription — the latest handler is always called.
- *
- * @param event   The webhook event name to listen for (e.g.
- *                `'transaction.completed'`, `'wallet.frozen'`).
- * @param handler Called with the typed event data and the full event envelope
- *                every time the event fires.
- *
- * @example
  * ```tsx
- * function TxNotifier() {
- *   useAstroidEvent('transaction.completed', (tx) => {
- *     toast.success(`Transaction ${tx.id} confirmed!`);
- *   });
- *   return null;
- * }
+ * useAstroidEvent('transaction.completed', (tx) => toast(`Sent ${tx.id}`));
  * ```
  */
 export function useAstroidEvent<K extends WebhookEventName>(
@@ -653,19 +581,3 @@ export function useAstroidEvent<K extends WebhookEventName>(
 }
 
 export { Astroid } from '@astroid/client';
-
-/* -------------------------------------------------------------------------- */
-/*                          realtime-polling hooks                             */
-/* -------------------------------------------------------------------------- */
-
-export {
-  useAgentLogs,
-  agentLogKeys,
-  type UseAgentLogsOptions,
-} from './hooks/useAgentLogs.js';
-
-export {
-  useAgentStatus,
-  agentStatusKeys,
-  type UseAgentStatusOptions,
-} from './hooks/useAgentStatus.js';

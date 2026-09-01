@@ -15,7 +15,7 @@ function jsonResponse(data: unknown, status = 200): Response {
 }
 
 /** Build a `PolicyResource` backed by the given fetch mock. */
-function clientWith(
+function client(
   fetchImpl: typeof fetch,
 ): { resource: PolicyResource; fetch: ReturnType<typeof vi.fn> } {
   const fetchMock = vi.fn(fetchImpl);
@@ -59,7 +59,7 @@ const SIM_RESULT: PolicySimulationResult = {
 
 describe('PolicyResource — CRUD with mocked API responses', () => {
   it('create POSTs the input to /policies and returns the policy', async () => {
-    const { resource, fetch } = clientWith(async () => jsonResponse({ data: POLICY }));
+    const { resource, fetch } = client(async () => jsonResponse({ data: POLICY }));
 
     const created = await resource.create(CREATE_INPUT);
 
@@ -71,7 +71,7 @@ describe('PolicyResource — CRUD with mocked API responses', () => {
   });
 
   it('get fetches a single policy by id', async () => {
-    const { resource, fetch } = clientWith(async () => jsonResponse({ data: POLICY }));
+    const { resource, fetch } = client(async () => jsonResponse({ data: POLICY }));
 
     const policy = await resource.get('pol_1');
 
@@ -80,7 +80,7 @@ describe('PolicyResource — CRUD with mocked API responses', () => {
   });
 
   it('list returns a paginated set of policies', async () => {
-    const { resource } = clientWith(async () =>
+    const { resource } = client(async () =>
       jsonResponse({
         data: [POLICY],
         meta: { page: 1, limit: 1, total: 1, totalPages: 1 },
@@ -94,7 +94,7 @@ describe('PolicyResource — CRUD with mocked API responses', () => {
   });
 
   it('update PATCHes the policy and returns the updated record', async () => {
-    const { resource, fetch } = clientWith(async () =>
+    const { resource, fetch } = client(async () =>
       jsonResponse({ data: { ...POLICY, enabled: false } }),
     );
 
@@ -107,7 +107,7 @@ describe('PolicyResource — CRUD with mocked API responses', () => {
   });
 
   it('delete issues a DELETE and resolves to void', async () => {
-    const { resource, fetch } = clientWith(async () => new Response(null, { status: 204 }));
+    const { resource, fetch } = client(async () => new Response(null, { status: 204 }));
 
     await expect(resource.delete('pol_1')).resolves.toBeUndefined();
     const [url, init] = fetch.mock.calls[0]!;
@@ -116,9 +116,9 @@ describe('PolicyResource — CRUD with mocked API responses', () => {
   });
 });
 
-describe('PolicyResource — pre-flight simulation', () => {
+describe('PolicyResource — pre-flight simulation and dry-run helper', () => {
   it('simulate POSTs the request payload and returns the result', async () => {
-    const { resource, fetch } = clientWith(async () => jsonResponse({ data: SIM_RESULT }));
+    const { resource, fetch } = client(async () => jsonResponse({ data: SIM_RESULT }));
 
     const input = {
       walletId: 'w_1',
@@ -136,13 +136,122 @@ describe('PolicyResource — pre-flight simulation', () => {
     expect(JSON.parse(String((init as RequestInit).body))).toEqual(input);
   });
 
+  it('simulatePolicy performs dry-run check against active spending policies', async () => {
+    const { resource, fetch } = client(async () => jsonResponse({ data: SIM_RESULT }));
+
+    const input = {
+      walletId: 'w_1',
+      asset: 'USDC',
+      amount: '100',
+      recipientAddress: 'GABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUVW',
+    };
+
+    const result = await resource.simulatePolicy(input);
+
+    expect(result).toEqual(SIM_RESULT);
+    const [url, init] = fetch.mock.calls[0]!;
+    expect(String(url)).toContain('/policies/simulate');
+    expect((init as RequestInit).method).toBe('POST');
+    expect(JSON.parse(String((init as RequestInit).body))).toEqual(input);
+  });
+
   it('propagates network failures as a structured NetworkError', async () => {
-    const { resource } = clientWith(async () => {
+    const { resource } = client(async () => {
       throw new TypeError('Failed to fetch');
     });
 
     await expect(resource.simulate({ walletId: 'w_1', asset: 'XLM', amount: '1' })).rejects.toBeInstanceOf(
       NetworkError,
     );
+  });
+});
+
+describe('PolicyResource — simulateTransaction wrapper (list + local evaluate)', () => {
+  const BLOCKING_POLICY: Policy = {
+    ...POLICY,
+    id: 'pol_max',
+    name: 'Max 500 USDC',
+    type: 'MAX_AMOUNT',
+    configuration: { maxAmount: 500 },
+  };
+
+  it('throws when neither agentId nor walletId is provided', async () => {
+    const { resource } = client(async () => jsonResponse({ data: [] }));
+
+    await expect(
+      resource.simulateTransaction({ transaction: { asset: 'XLM', amount: '1' } }),
+    ).rejects.toThrow('agentId` or `walletId`');
+  });
+
+  it('fetches active policies for the wallet and evaluates locally (allowed)', async () => {
+    const { resource, fetch } = client(async () =>
+      jsonResponse({ data: [BLOCKING_POLICY], meta: { page: 1, limit: 10, total: 1, totalPages: 1 } }),
+    );
+
+    const report = await resource.simulateTransaction({
+      walletId: 'w_1',
+      transaction: { asset: 'USDC', amount: '150' },
+    });
+
+    expect(report.passed).toBe(true);
+    expect(report.violations).toEqual([]);
+    const [url, init] = fetch.mock.calls[0]!;
+    expect(String(url)).toContain('/policies');
+    expect(String(url)).toContain('enabled=true');
+    expect(String(url)).toContain('walletId=w_1');
+  });
+
+  it('blocks a transaction that breaches a fetched max-amount policy', async () => {
+    const { resource, fetch } = client(async () =>
+      jsonResponse({ data: [BLOCKING_POLICY], meta: { page: 1, limit: 10, total: 1, totalPages: 1 } }),
+    );
+
+    const report = await resource.simulateTransaction({
+      walletId: 'w_1',
+      transaction: { asset: 'USDC', amount: '750.50' },
+    });
+
+    expect(report.passed).toBe(false);
+    expect(report.violations).toHaveLength(1);
+    expect(report.violations[0]).toMatchObject({
+      policyId: 'pol_max',
+      policyType: 'MAX_AMOUNT',
+      limit: 500,
+      actual: 750.5,
+    });
+    expect(report.violations[0].message).toContain('exceeds the maximum');
+  });
+
+  it('skips disabled policies during the local evaluation', async () => {
+    const { resource, fetch } = client(async () =>
+      jsonResponse({
+        data: [{ ...BLOCKING_POLICY, enabled: false }],
+        meta: { page: 1, limit: 10, total: 1, totalPages: 1 },
+      }),
+    );
+
+    const report = await resource.simulateTransaction({
+      walletId: 'w_1',
+      transaction: { asset: 'USDC', amount: '9999' },
+    });
+
+    expect(report.passed).toBe(true);
+    expect(fetch.mock.calls).toHaveLength(1);
+  });
+
+  it('scopes by agentId when given instead of walletId', async () => {
+    const { resource, fetch } = client(async () =>
+      jsonResponse({ data: [], meta: { page: 1, limit: 10, total: 0, totalPages: 0 } }),
+    );
+
+    const report = await resource.simulateTransaction({
+      agentId: 'ag_1',
+      transaction: { asset: 'XLM', amount: '5' },
+    });
+
+    expect(report.passed).toBe(true);
+    const url = String(fetch.mock.calls[0]![0]);
+    expect(url).toContain('agentId=ag_1');
+    expect(url).not.toContain('walletId');
   });
 });

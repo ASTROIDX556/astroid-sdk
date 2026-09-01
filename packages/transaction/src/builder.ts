@@ -18,12 +18,11 @@ import { Account, Asset, Memo, Networks, Operation, TransactionBuilder } from '@
 import type { FeeBumpTransaction, Transaction, xdr } from '@stellar/stellar-base';
 import { ValidationError } from '@astroid/errors';
 
+import { assertValidMemoText, assertValidPositiveAmount, assertValidStellarPublicKey } from './validate.js';
+
 /* -------------------------------------------------------------------------- */
 /* Public types                                                                */
 /* -------------------------------------------------------------------------- */
-
-/** Stellar public key (`G…`), the destination/source account format. */
-const STELLAR_PUBLIC_KEY_PATTERN = /^G[A-Z2-7]{55}$/;
 
 /** Known Stellar network passphrases accepted by the builders. */
 const KNOWN_PASSPHRASES = new Set<string>([
@@ -73,28 +72,6 @@ function requireField(value: unknown, field: string): asserts value is string {
   }
 }
 
-/** Throw a `ValidationError` unless `value` is a positive finite amount. */
-function assertPositiveAmount(value: string | number, field: string): void {
-  const numeric = typeof value === 'number' ? value : Number(value);
-  if (!Number.isFinite(numeric) || numeric <= 0) {
-    throw new ValidationError(`${field} must be a positive finite amount.`, {
-      code: 'INVALID_AMOUNT',
-      details: { field },
-    });
-  }
-}
-
-/** Throw a `ValidationError` unless `address` looks like a Stellar public key. */
-function assertPublicKey(address: string, field: string): void {
-  requireField(address, field);
-  if (!STELLAR_PUBLIC_KEY_PATTERN.test(address.trim())) {
-    throw new ValidationError(`${field} must be a valid Stellar public key (G…).`, {
-      code: 'INVALID_ADDRESS',
-      details: { field },
-    });
-  }
-}
-
 /** Throw a `ValidationError` unless the network passphrase is non-empty. */
 function assertPassphrase(networkPassphrase: string): void {
   requireField(networkPassphrase, 'networkPassphrase');
@@ -131,7 +108,7 @@ export function parseAsset(asset: string): Asset {
   }
   const code = trimmed.slice(0, separator);
   const issuer = trimmed.slice(separator + 1);
-  assertPublicKey(issuer, 'asset issuer');
+  assertValidStellarPublicKey(issuer, 'asset issuer');
   return new Asset(code, issuer);
 }
 
@@ -162,11 +139,7 @@ function createBuilder(options: BuildTransactionOptions): TransactionBuilder {
     networkPassphrase,
   });
   if (options.memoText) {
-    if (new TextEncoder().encode(options.memoText).byteLength > 28) {
-      throw new ValidationError('Standard text memo must be 28 bytes or fewer.', {
-        code: 'INVALID_MEMO',
-      });
-    }
+    assertValidMemoText(options.memoText);
     builder = builder.addMemo(Memo.text(options.memoText));
   }
   builder = builder.setTimeout(options.timeout ?? 300);
@@ -225,8 +198,8 @@ export function buildTransaction(
  */
 export function buildPaymentTransaction(options: PaymentTransactionOptions): Transaction {
   const { destination, amount } = options;
-  assertPublicKey(destination, 'destination');
-  assertPositiveAmount(amount, 'amount');
+  assertValidStellarPublicKey(destination, 'destination');
+  assertValidPositiveAmount(amount, 'amount');
 
   const asset = parseAsset(options.asset);
   return buildTransaction(options, [
