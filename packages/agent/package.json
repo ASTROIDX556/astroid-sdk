@@ -1,22 +1,15 @@
 {
   "name": "@astroid/agent",
   "version": "0.1.0",
-  "description": "Agent resource for the Astroid SDK: create, update, pause, resume, delete and activity.",
+  "description": "Agent resource methods for Astroid SDK",
   "license": "MIT",
-  "type": "module",
-  "main": "./dist/index.cjs",
-  "module": "./dist/index.js",
+  "author": "Astroid",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
-    }
-  },
-  "files": ["dist"],
-  "sideEffects": false,
-  "publishConfig": { "access": "public" },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
@@ -24,12 +17,15 @@
   },
   "dependencies": {
     "@astroid/core": "workspace:*",
-    "@astroid/types": "workspace:*",
-    "@astroid/errors": "workspace:*"
+    "@astroid/errors": "workspace:*",
+    "@astroid/types": "workspace:*"
   },
   "devDependencies": {
-    "tsup": "8.3.5",
+    "@types/node": "22.10.5",
     "typescript": "5.7.3",
     "vitest": "2.1.8"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

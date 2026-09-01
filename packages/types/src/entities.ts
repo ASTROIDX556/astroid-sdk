@@ -180,6 +180,27 @@ export interface BudgetHistoryEntry {
   createdAt: IsoDateTime;
 }
 
+/** Aggregated summary metrics for a budget, returned by `budgets.metrics`. */
+export interface BudgetMetrics {
+  budgetId: string;
+  /** Utilization as a fraction `0–1` (e.g. `0.8` = 80%). */
+  utilization: number;
+  /** Utilization as a percentage. */
+  percent: number;
+  /** Amount spent in the active window. */
+  spent: DecimalString;
+  /** Amount remaining in the active window. */
+  remaining: DecimalString;
+  /** The window limit. */
+  limit: DecimalString;
+  /** Alert level: `ok`, `warn`, `critical`, or `exceeded`. */
+  alertLevel: 'ok' | 'warn' | 'critical' | 'exceeded';
+  /** Whether any configured threshold was crossed. */
+  thresholdExceeded: boolean;
+  /** Number of window periods remaining before exhaustion (null when no burn). */
+  periodsUntilExhaustion: number | null;
+}
+
 /** 7. Transaction — a financial movement and its governance metadata. */
 export interface Transaction {
   id: string;
@@ -351,4 +372,49 @@ export interface AgentActivity {
   transactionId?: string | null;
   metadata: Record<string, unknown>;
   createdAt: IsoDateTime;
+}
+
+/** A single log entry from an agent's execution history. */
+export interface AgentLog {
+  id: string;
+  agentId: string;
+  level: AgentLogLevel;
+  message: string;
+  source?: string | null;
+  transactionId?: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: IsoDateTime;
+}
+
+/** Log level for agent execution logs. */
+export const AgentLogLevel = {
+  DEBUG: 'DEBUG',
+  INFO: 'INFO',
+  WARN: 'WARN',
+  ERROR: 'ERROR',
+} as const;
+export type AgentLogLevel = (typeof AgentLogLevel)[keyof typeof AgentLogLevel];
+
+/** Real-time operational status metrics for an agent. */
+export interface AgentStatusMetrics {
+  agentId: string;
+  status: AgentStatus;
+  /** Whether the agent is currently executing a task. */
+  isActive: boolean;
+  /** Total tasks completed since the agent was last resumed. */
+  tasksCompleted: number;
+  /** Tasks currently in progress. */
+  tasksInProgress: number;
+  /** Total spending in the current period, as a decimal string. */
+  currentSpend: DecimalString;
+  /** Budget limit remaining, as a decimal string. */
+  budgetRemaining: DecimalString;
+  /** ISO-8601 timestamp of the agent's last activity. */
+  lastActivityAt: IsoDateTime;
+  /** Uptime in seconds since the agent was last started. */
+  uptimeSeconds: number;
+  /** Error count in the current period. */
+  errorCount: number;
+  metadata: Record<string, unknown>;
+  updatedAt: IsoDateTime;
 }

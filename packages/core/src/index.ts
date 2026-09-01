@@ -9,6 +9,7 @@
  */
 
 export { HttpClient, SDK_VERSION } from './http-client.js';
+export { AstroidTimeoutError } from './timeout-error.js';
 export {
   resolveConfig,
   DEFAULT_BASE_URL,
@@ -16,6 +17,10 @@ export {
   type ResolvedConfig,
   type AuthConfig,
   type RetryConfig,
+  type RateLimitConfig,
+  type TelemetryHooks,
+  type TelemetryRequestInfo,
+  type TelemetryResponseInfo,
 } from './config.js';
 export {
   MiddlewareStack,
@@ -28,7 +33,7 @@ export {
   type ErrorPayload,
   type Middleware,
 } from './http-types.js';
-export { Resource, type ListRequestOptions } from './resource.js';
+export { Resource, type ListRequestOptions, type RequestOptionsExtras } from './resource.js';
 export { buildUrl, buildQueryString } from './url.js';
 export { backoffDelay, isRetryableStatus, sleep } from './backoff.js';
 export { paginate, collect, type PageFetcher } from './pagination.js';
@@ -49,4 +54,3 @@ export {
   type LogSink,
   type RetryMiddlewareOptions,
 } from './middleware.js';
-

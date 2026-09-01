@@ -31,6 +31,11 @@ export interface RequestOptions {
   signal?: AbortSignal;
   /** Free-form context available to middleware (never sent). */
   context?: Record<string, unknown>;
+  /**
+   * Optional caller-supplied correlation / request ID. When omitted the
+   * correlation middleware generates a UUID v4 automatically.
+   */
+  correlationId?: string;
 }
 
 /** A fully-prepared request as seen by middleware and the transport. */

@@ -1,24 +1,26 @@
-/**
- * `@astroid/budget` — recurring and one-time spending-budget resource.
- *
- * A budget caps spend over a period (daily/weekly/monthly/…) and tracks
- * consumption. Agents draw against budgets; this resource manages them and
- * exposes the running consumption history.
- *
- * @packageDocumentation
- */
+export * from './calculator.js';
 
+// `metrics.ts` and `validation.ts` both export a `SpendRequest` alias for the
+// same shape; re-export explicitly to avoid a duplicate-export ambiguity.
 export {
-  checkBudgetLimit,
-  type BudgetValidationResult,
+  calculateUtilization,
+  isThresholdExceeded,
+  estimateBurnRate,
   type SpendRequest,
-} from './validation.js';
+  type UtilizationResult,
+  type ThresholdResult,
+  type BurnRateResult,
+} from './metrics.js';
+export { checkBudgetLimit, type BudgetValidationResult } from './validation.js';
 
 import { Resource } from '@astroid/core';
 import type {
   Budget,
   BudgetHistoryEntry,
   BudgetPeriod,
+  BudgetSimulationInput,
+  BudgetSimulationResult,
+  BudgetUtilization,
   ConsumeBudgetInput,
   CreateBudgetInput,
   Paginated,
@@ -102,6 +104,61 @@ export class BudgetResource extends Resource {
     return this.listData<BudgetHistoryEntry>(
       `/budgets/${encodeURIComponent(budgetId)}/history`,
       { ...params },
+    );
+  }
+
+  /**
+   * Fetch a single budget by id.
+   *
+   * This is the fully-qualified alias of {@link BudgetResource.get} exposed for
+   * callers who prefer a `getBudget`-style resource API; behaviour is identical.
+   */
+  async getBudget(budgetId: string): Promise<Budget> {
+    return this.getData<Budget>(`/budgets/${encodeURIComponent(budgetId)}`);
+  }
+
+  /**
+   * List budgets, with optional period/scope filters and pagination.
+   *
+   * This is the fully-qualified alias of {@link BudgetResource.list} exposed for
+   * callers who prefer a `listBudgets`-style resource API; behaviour is identical.
+   */
+  async listBudgets(params: BudgetListParams = {}): Promise<Paginated<Budget>> {
+    return this.listData<Budget>('/budgets', { ...params });
+  }
+
+  /**
+   * Simulate a prospective spend draw against a budget **without committing it**.
+   *
+   * The API evaluates the request against the budget's active window, currency,
+   * and remaining allowance and returns a {@link BudgetSimulationResult}. This is
+   * the enforcement path agents / wallets use before executing a transaction.
+   *
+   * @param budgetId The budget to simulate against.
+   * @param input    The prospective draw (`asset` + `amount`).
+   * @returns        Whether the draw would be allowed and, if not, why.
+   */
+  async simulateBudgetCheck(
+    budgetId: string,
+    input: BudgetSimulationInput,
+  ): Promise<BudgetSimulationResult> {
+    const res = await this.client.post<BudgetSimulationResult>(
+      `/budgets/${encodeURIComponent(budgetId)}/simulate`,
+      input,
+    );
+    return res.data;
+  }
+
+  /**
+   * Retrieve the current utilization snapshot for a budget.
+   *
+   * @param budgetId The budget to inspect.
+   * @returns        Limit, spending, headroom, and the 0..1 utilization ratio
+   *                 for the active window (see {@link BudgetUtilization}).
+   */
+  async utilization(budgetId: string): Promise<BudgetUtilization> {
+    return this.getData<BudgetUtilization>(
+      `/budgets/${encodeURIComponent(budgetId)}/utilization`,
     );
   }
 }
