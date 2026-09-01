@@ -7,7 +7,7 @@
  * const astroid = new Astroid({ apiKey: process.env.ASTROID_API_KEY! });
  *
  * // Resource namespaces:
- * const wallet = await astroid.wallets.create({ name: 'Ops', walletType: 'CUSTODIAL' });
+ * const wallet = await astroid.wallets.create({ label: 'Ops', walletType: 'CUSTODIAL' });
  *
  * // AI-native intent:
  * const result = await astroid.ai.requestPayment({
@@ -27,9 +27,16 @@
 import {
   HttpClient,
   SDK_VERSION,
-  type AstroidClientConfig,
+  type AstroidClientConfig as CoreClientConfig,
   type Middleware,
+  type QueryValue,
 } from '@astroid/core';
+import type { PaginationParams } from '@astroid/types';
+import { serializePaginationParams } from './pagination.js';
+import { createCorrelationMiddleware } from './middleware/correlation.js';
+import { createRateLimiterMiddleware } from './middleware/rate-limiter.js';
+import { createRetryMiddleware as createRetryMw } from './middleware/retry.js';
+import { createErrorParserMiddleware } from './error-parser-middleware.js';
 import { AgentResource } from '@astroid/agent';
 import { AnalyticsResource } from '@astroid/analytics';
 import { AuthResource, SessionManager, createSessionMiddleware } from '@astroid/auth';
@@ -47,6 +54,20 @@ import type {
   WebhookEventEnvelope,
   WebhookEventName,
 } from '@astroid/types';
+import { createErrorTranslatorMiddleware } from './middleware/error.js';
+
+/**
+ * Configuration accepted by `new Astroid({ ... })`.
+ *
+ * Extends the core client config with shorthand retry options
+ * (`retries` / `retryDelay`) for convenience.
+ */
+export interface AstroidClientConfig extends CoreClientConfig {
+  /** Maximum number of retries after the first attempt (shorthand for `retry.maxRetries`). */
+  retries?: number;
+  /** Base retry delay in ms (shorthand for `retry.baseDelayMs`). */
+  retryDelay?: number;
+}
 
 /** The AI-native namespace: express intents, not low-level transfers. */
 export class AiResource {
@@ -165,11 +186,18 @@ export class Astroid {
   private readonly plugins: AstroidPlugin[] = [];
 
   constructor(config: AstroidClientConfig | HttpClient) {
-    this.http = config instanceof HttpClient ? config : new HttpClient(config);
+    this.http = config instanceof HttpClient ? config : new HttpClient(normalizeConfig(config));
 
     const authConfig = this.http.config.auth;
+
+    // If accessToken is a dynamic function, extract it as a token provider.
+    const dynamicTokenProvider =
+      !(config instanceof HttpClient) && typeof config.accessToken === 'function'
+        ? config.accessToken
+        : undefined;
+
     this.sessionManager = new SessionManager({
-      accessToken: authConfig.accessToken,
+      accessToken: typeof authConfig.accessToken === 'string' ? authConfig.accessToken : undefined,
       refreshToken: authConfig.refreshToken,
       onTokenUpdate: authConfig.onTokenUpdate,
     });
@@ -185,12 +213,17 @@ export class Astroid {
     this.webhooks = new WebhookResource(this.http);
     this.ai = new AiResource(this.http);
 
+    // Structured error translation: map Horizon and API error payloads to typed domain exceptions
+    // (e.g. op_low_reserve → InsufficientFundsError, POLICY_VIOLATION → PolicyViolationError).
+    // Installed by default so consumers get high-fidelity errors without manual middleware wiring.
+    this.use(createErrorTranslatorMiddleware());
+
     this.use(
       createSessionMiddleware(this.sessionManager, async (refreshToken: string) => {
         const res = await this.http.post<AuthTokens>('/auth/refresh', { refreshToken });
         this.setAccessToken(res.data.accessToken);
         return res.data;
-      })
+      }),
     );
 
     this.http.set401Handler(async () => {
@@ -208,6 +241,37 @@ export class Astroid {
         return false;
       }
     });
+
+    // Wire up the dynamic token provider (called before every request;
+    // the HttpClient deduplicates concurrent calls automatically).
+    if (dynamicTokenProvider) {
+      this.http.setTokenProvider(dynamicTokenProvider);
+    }
+
+    const clientConfig = config instanceof HttpClient ? undefined : config;
+
+    // Retry middleware: override or augment the HttpClient's built-in retry
+    // loop with a client-level middleware so consumers can pass onRetry
+    // callbacks, custom shouldRetryStatus predicates, or retryAllMethods.
+    // Only installed when retry is not explicitly disabled.
+    if (clientConfig?.retry !== false) {
+      const retryOpts = typeof clientConfig?.retry === 'object' ? clientConfig.retry : {};
+      this.http.use(createRetryMw(retryOpts));
+    }
+
+    // Token-bucket rate limiting: throttle and queue outbound requests when
+    // configured so agents never trip API gateway rate limits mid-workflow.
+    if (clientConfig?.rateLimit) {
+      this.http.use(createRateLimiterMiddleware(clientConfig.rateLimit));
+    }
+
+    // Correlation ID + telemetry: every outbound request carries a
+    // X-Astroid-Correlation-ID header and fires onRequest/onResponse hooks.
+    this.http.use(createCorrelationMiddleware(clientConfig?.telemetry));
+
+    // Auto-register the error parser middleware so all responses are routed
+    // through the rich error mapping layer.
+    this.http.use(createErrorParserMiddleware());
   }
 
   /** Register a request/response middleware. Returns `this` for chaining. */
@@ -277,9 +341,30 @@ export class Astroid {
   setAccessToken(accessToken: string | undefined): void {
     this.http.setAccessToken(accessToken);
   }
+
+  /**
+   * Merge pagination parameters with arbitrary query parameters into a single
+   * serialisable record, ready to pass as the `query` option of any request.
+   */
+  buildQuery(params: PaginationParams & Record<string, QueryValue>): Record<string, QueryValue> {
+    return { ...serializePaginationParams(params), ...params };
+  }
 }
 
 export default Astroid;
+
+/** Normalise the shorthand `retries` / `retryDelay` options into core retry config. */
+function normalizeConfig(config: AstroidClientConfig): CoreClientConfig {
+  if (config.retries === undefined) return config;
+  return {
+    ...config,
+    retry: {
+      maxRetries: config.retries,
+      baseDelayMs: config.retryDelay ?? 250,
+      maxDelayMs: 8000,
+    },
+  };
+}
 
 // Re-export the resource classes and their param types so consumers can name
 // them without reaching into individual packages.
@@ -297,10 +382,7 @@ export { WalletResource, type WalletListParams } from '@astroid/wallet';
 export { AgentResource, type AgentListParams } from '@astroid/agent';
 export { PolicyResource, type PolicyListParams } from '@astroid/policy';
 export { BudgetResource, type BudgetListParams } from '@astroid/budget';
-export {
-  TransactionResource,
-  type ProposalListParams,
-} from '@astroid/transaction';
+export { TransactionResource, type ProposalListParams } from '@astroid/transaction';
 export { NotificationResource } from '@astroid/notification';
 export { AnalyticsResource } from '@astroid/analytics';
 export {
@@ -311,16 +393,8 @@ export {
 } from '@astroid/webhook';
 
 // Convenience re-exports of the most-used types and errors.
-export {
-  createRetryMiddleware,
-  retryMiddleware,
-  backoffDelay,
-  isRetryableStatus,
-  type AstroidClientConfig,
-  type Middleware,
-  type RetryConfig,
-  type RetryMiddlewareOptions,
-} from '@astroid/core';
+export { verifyWebhookSignature } from './webhooks.js';
+export type { AstroidClientConfig, Middleware } from '@astroid/core';
 export * from '@astroid/types';
 export {
   AstroidError,
@@ -337,4 +411,40 @@ export {
   ServerError,
   isAstroidError,
 } from '@astroid/errors';
+export {
+  InsufficientFundsError,
+  AstroidPolicyViolationError,
+  AstroidInsufficientFundsError,
+  AstroidApiError,
+  AstroidValidationError,
+  AstroidNetworkError,
+} from '@astroid/errors';
+export {
+  createErrorTranslatorMiddleware,
+  errorTranslatorMiddleware,
+  errorMiddleware,
+  translateErrorBody,
+} from './middleware/error.js';
+export {
+  createCorrelationMiddleware,
+  correlationMiddleware,
+  CORRELATION_ID_HEADER,
+  REQUEST_ID_HEADER,
+} from './middleware/correlation.js';
 
+// Re-export telemetry types for consumers
+export {
+  type TelemetryHooks,
+  type TelemetryRequestInfo,
+  type TelemetryResponseInfo,
+} from '@astroid/core';
+
+// Error response parser — re-exports so consumers can parse raw responses
+// without reaching into internal modules.
+export {
+  StellarHorizonError,
+  parseErrorResponse,
+  parseErrorBody,
+  type ParsedError,
+} from './errors.js';
+export { createErrorParserMiddleware } from './error-parser-middleware.js';

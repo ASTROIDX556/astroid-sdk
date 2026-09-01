@@ -31,6 +31,8 @@ export {
   type TransactionLike,
 } from './signing.js';
 
+export { SecureKeystore, type EncryptedPayload } from './keystore.js';
+
 /** Filters accepted by {@link WalletResource.list}. */
 export interface WalletListParams extends PaginationParams {
   status?: WalletStatus;
@@ -119,3 +121,6 @@ export class WalletResource extends Resource {
     return res.data;
   }
 }
+
+export * from './multisig.js';
+

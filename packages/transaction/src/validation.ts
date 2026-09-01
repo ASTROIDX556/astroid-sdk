@@ -126,7 +126,9 @@ function getWrappedXdr(input: Exclude<TransactionValidationInput, string>): stri
   return undefined;
 }
 
-export function validateTransaction(input: TransactionValidationInput): TransactionValidationResult {
+export function validateTransaction(
+  input: TransactionValidationInput,
+): TransactionValidationResult {
   const errors: TransactionValidationError[] = [];
 
   if (typeof input === 'string') {
