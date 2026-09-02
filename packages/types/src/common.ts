@@ -85,6 +85,22 @@ export interface CursorPaginationParams {
   order?: 'asc' | 'desc';
 }
 
+/** Standard offset-based pagination request parameters. */
+export interface PaginationParams {
+  /** 1-based page number. */
+  page?: number;
+  /** Number of items per page. */
+  limit?: number;
+  /** Opaque cursor for keyset pagination (when provided, overrides `page`). */
+  cursor?: string;
+  /** Field to sort results by. */
+  sort?: string;
+  /** Sort direction. */
+  order?: 'asc' | 'desc';
+  /** Free-text search term. */
+  search?: string;
+}
+
 /** A normalized page of results for cursor-based pagination. */
 export interface CursorPaginated<T> {
   /** The items on this page. */
@@ -102,63 +118,6 @@ export interface ResponseMeta {
   total?: number;
   [key: string]: unknown;
 }
-
-/** Standard API error payload structure. */
-export interface ApiError {
-  code: string;
-  message: string;
-  details?: Record<string, unknown>;
-}
-
-/**
- * Machine-readable error codes returned by the Astroid API.
- *
- * Mirrors the backend error catalogue exactly so the SDK's error classes can
- * branch on a stable value rather than a message string.
- */
-export const ApiErrorCode = {
-  /** Missing or invalid credentials. */
-  AUTHENTICATION_ERROR: 'AUTHENTICATION_ERROR',
-  /** Request was not authenticated. */
-  UNAUTHORIZED: 'UNAUTHORIZED',
-  /** The supplied API key is invalid or revoked. */
-  INVALID_API_KEY: 'INVALID_API_KEY',
-  /** The access token has expired. */
-  TOKEN_EXPIRED: 'TOKEN_EXPIRED',
-  /** Authenticated but not permitted to perform this action. */
-  FORBIDDEN: 'FORBIDDEN',
-  /** The request failed schema or business validation. */
-  VALIDATION_ERROR: 'VALIDATION_ERROR',
-  /** The request was malformed. */
-  BAD_REQUEST: 'BAD_REQUEST',
-  /** The requested resource does not exist. */
-  NOT_FOUND: 'NOT_FOUND',
-  /** The request conflicts with the current resource state. */
-  CONFLICT: 'CONFLICT',
-  /** A transaction violates one or more spending policies. */
-  POLICY_VIOLATION: 'POLICY_VIOLATION',
-  /** The transaction's risk score exceeds the configured threshold. */
-  RISK_THRESHOLD_EXCEEDED: 'RISK_THRESHOLD_EXCEEDED',
-  /** The transaction would exceed an available budget. */
-  BUDGET_EXCEEDED: 'BUDGET_EXCEEDED',
-  /** The source account lacks sufficient funds. */
-  INSUFFICIENT_FUNDS: 'INSUFFICIENT_FUNDS',
-  /** The wallet is frozen and cannot transact. */
-  WALLET_FROZEN: 'WALLET_FROZEN',
-  /** The action requires human approval before it can execute. */
-  APPROVAL_REQUIRED: 'APPROVAL_REQUIRED',
-  /** Rate limit exceeded. */
-  RATE_LIMITED: 'RATE_LIMITED',
-  /** A network-level failure occurred before a response was received. */
-  NETWORK_ERROR: 'NETWORK_ERROR',
-  /** The request timed out. */
-  TIMEOUT: 'TIMEOUT',
-  /** An unexpected server error occurred. */
-  INTERNAL_ERROR: 'INTERNAL_ERROR',
-  /** The service is temporarily unavailable. */
-  SERVICE_UNAVAILABLE: 'SERVICE_UNAVAILABLE',
-} as const;
-export type ApiErrorCode = (typeof ApiErrorCode)[keyof typeof ApiErrorCode];
 
 /** A successful API response envelope. */
 export interface ApiSuccessResponse<T> {

@@ -11,6 +11,21 @@ import { NotificationService } from '@astroid/notification';
 import { AnalyticsService } from '@astroid/analytics';
 import { WebhookService } from '@astroid/webhook';
 import { parseAstroidError } from './errors.js';
+import {
+  AuthenticationError,
+  AuthorizationError,
+  ValidationError,
+  NotFoundError,
+  ConflictError,
+  PolicyViolationError,
+  InsufficientFundsError,
+  BudgetExceededError,
+  ApprovalRequiredError,
+  RateLimitError,
+  ServerError,
+  StellarHorizonError,
+} from './errors.js';
+import { createErrorParserMiddleware } from './error-parser-middleware.js';
 
 export class Astroid {
   readonly httpClient: HttpClient;
@@ -129,4 +144,23 @@ export class Astroid {
   }
 }
 
-export { parseAstroidError, AstroidHorizonError, AstroidPolicyViolationError } from './errors.js';
+export {
+  parseAstroidError,
+  parseErrorBody,
+  parseErrorResponse,
+  AstroidHorizonError,
+  AstroidPolicyViolationError,
+  StellarHorizonError,
+  AuthenticationError,
+  AuthorizationError,
+  ValidationError,
+  NotFoundError,
+  ConflictError,
+  PolicyViolationError,
+  InsufficientFundsError,
+  BudgetExceededError,
+  ApprovalRequiredError,
+  RateLimitError,
+  ServerError,
+} from './errors.js';
+export { createErrorParserMiddleware } from './error-parser-middleware.js';
