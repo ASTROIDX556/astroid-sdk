@@ -9,7 +9,9 @@
  */
 
 import type { DecimalString, IsoDateTime } from './entities.js';
-import type { Budget, BudgetPeriod } from './entities.js';
+import type { Budget } from './entities.js';
+import type { BudgetPeriod } from './enums.js';
+import type { PaginationParams } from './common.js';
 
 /** A prospective spend draw to simulate against a budget. */
 export interface BudgetSimulationInput {
@@ -36,6 +38,9 @@ export interface BudgetSimulationResult {
   /** The active window end the simulation was evaluated against (ISO-8601 UTC). */
   windowEnd: IsoDateTime;
 }
+
+/** Health of a budget's current allocation, bucketed by utilisation. */
+export type BudgetAllocationState = 'healthy' | 'warning' | 'critical' | 'exhausted';
 
 /** A utilization snapshot for a single budget. */
 export interface BudgetUtilization {
