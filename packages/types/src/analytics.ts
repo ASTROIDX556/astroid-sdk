@@ -24,14 +24,14 @@ export interface AnalyticsQuery {
 export interface AnalyticsQueryParams extends AnalyticsQuery, PaginationParams {}
 
 /**
- * Analytics list queries: the shared {@link AnalyticsQuery} filters plus
- * standard pagination controls (`page`, `limit`, `sort`, `order`, `search`).
+ * Analytics list queries: the shared analytics filters plus standard
+ * pagination controls (`page`, `limit`, `order`, `cursor`).
  *
  * Applied to the tabular analytics endpoints (per-agent and per-budget rows) so
  * clients can page through large historical result sets without pulling the
  * full payload into memory.
  */
-export interface AnalyticsListParams extends AnalyticsQuery, PaginationParams {}
+export type AnalyticsListParams = AnalyticsQueryParams;
 
 /** A single (timestamp, value) point in a time series. */
 export interface TimeSeriesPoint {
@@ -63,7 +63,7 @@ export interface VolumeSummary {
 }
 
 export interface AnalyticsMetricsResponse {
-  points: TimeSeriesMetricPoint[];
+  points: TimeSeriesPoint[];
   summary: VolumeSummary;
 }
 

@@ -45,6 +45,18 @@ export interface ApiError {
   details?: Record<string, unknown>;
 }
 
+/** Standard pagination request parameters. */
+export interface PaginationParams {
+  /** 1-based page number (offset pagination). */
+  page?: number;
+  /** Opaque cursor for keyset pagination. */
+  cursor?: string;
+  /** Maximum number of items to return per page. */
+  limit?: number;
+  /** Sort direction. */
+  order?: 'asc' | 'desc';
+}
+
 /** Full pagination metadata attached to a list response. */
 export interface PaginationMeta {
   /** The current 1-based page number. */
@@ -113,9 +125,18 @@ export interface CursorPaginated<T> {
 
 /** Standard metadata returned with API responses. */
 export interface ResponseMeta {
+  /** Opaque cursor for resuming keyset pagination. */
   cursor?: string;
-  hasMore?: boolean;
+  /** Cursor to pass back for the next page, or `null` when the result set is exhausted. */
+  nextCursor?: string | null;
+  /** The current 1-based page number (offset pagination). */
+  page?: number;
+  /** The page size used for this response. */
+  limit?: number;
+  /** Total number of matching items across all pages. */
   total?: number;
+  /** Whether more pages follow this one. */
+  hasMore?: boolean;
   [key: string]: unknown;
 }
 
