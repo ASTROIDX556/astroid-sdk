@@ -34,16 +34,13 @@ export interface RetryConfig {
   backoffFactor: number;
 }
 
-export interface AuthConfig {
-  apiKey?: string;
-  accessToken?: string | (() => Promise<string>);
-}
-
 export interface AstroidClientConfig {
   baseUrl: string;
   apiVersion?: string;
   apiKey?: string;
   accessToken?: string | (() => Promise<string>);
+  refreshToken?: string;
+  onTokenUpdate?: (tokens: AuthTokens) => void | Promise<void>;
   headers?: Record<string, string>;
   timeoutMs?: number;
   retry?: Partial<RetryConfig> | boolean;
@@ -89,22 +86,14 @@ export function resolveConfig(config: AstroidClientConfig): ResolvedConfig {
     apiVersion: config.apiVersion ?? 'v1',
     auth: {
       apiKey: config.apiKey,
-      accessToken: config.accessToken,
-    },
-    headers: config.headers ?? {},
-    timeoutMs: config.timeoutMs ?? 30000,
-    retry,
-    headers: { ...(config.headers ?? {}) },
-    auth: {
-      apiKey: config.apiKey,
       accessToken: typeof config.accessToken === 'function' ? undefined : config.accessToken,
       refreshToken: config.refreshToken,
       onTokenUpdate: config.onTokenUpdate,
       tokenProvider: typeof config.accessToken === 'function' ? config.accessToken : undefined,
     },
-    fetch: fetchImpl,
-    network: config.network,
-    enableOfflineQueue: config.enableOfflineQueue ?? false,
-    rateLimit: config.rateLimit,
+    headers: { ...(config.headers ?? {}) },
+    timeoutMs: config.timeoutMs ?? 30000,
+    retry,
+    fetch: config.fetch ?? globalThis.fetch,
   };
 }

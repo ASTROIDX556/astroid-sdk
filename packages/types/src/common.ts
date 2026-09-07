@@ -97,6 +97,22 @@ export interface CursorPaginationParams {
   order?: 'asc' | 'desc';
 }
 
+/** Standard offset-based pagination request parameters. */
+export interface PaginationParams {
+  /** 1-based page number. */
+  page?: number;
+  /** Number of items per page. */
+  limit?: number;
+  /** Opaque cursor for keyset pagination (when provided, overrides `page`). */
+  cursor?: string;
+  /** Field to sort results by. */
+  sort?: string;
+  /** Sort direction. */
+  order?: 'asc' | 'desc';
+  /** Free-text search term. */
+  search?: string;
+}
+
 /** A normalized page of results for cursor-based pagination. */
 export interface CursorPaginated<T> {
   /** The items on this page. */
