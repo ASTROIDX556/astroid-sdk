@@ -27,7 +27,7 @@ import type {
   BudgetHistoryQueryParams,
   BudgetMetrics,
   BudgetSimulationRequest,
-  BudgetSimulationResult,
+  BudgetCheckResult,
   ConsumeBudgetInput,
   CreateBudgetInput,
   DecimalString,
@@ -283,8 +283,8 @@ export class BudgetClient {
   async simulateBudgetCheck(
     budgetId: string,
     request: BudgetSimulationRequest,
-  ): Promise<BudgetSimulationResult> {
-    return this.http.post<BudgetSimulationResult>(
+  ): Promise<BudgetCheckResult> {
+    return this.http.post<BudgetCheckResult>(
       `${BASE_PATH}/${encodeURIComponent(budgetId)}/simulate`,
       request,
     );

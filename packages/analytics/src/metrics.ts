@@ -1,5 +1,10 @@
 import type { HttpClient } from '@astroid/core';
-import type { AnalyticsQueryParams, AnalyticsMetricsResponse, PaginationParams, VolumeSummary } from '@astroid/types';
+import type {
+  AnalyticsMetricsResponse,
+  AnalyticsOverview,
+  AnalyticsQueryParams,
+  VolumeSummary,
+} from '@astroid/types';
 
 /**
  * Serialize analytics query parameters — including pagination — into a

@@ -41,6 +41,8 @@ const budget: Budget = {
   period: 'MONTHLY',
   periodStart: '2026-08-01T00:00:00.000Z',
   limitAmount: '1000.00',
+  spent: '0.00',
+  remaining: '1000.00',
   enabled: true,
   rollover: false,
   createdAt: '2026-08-01T00:00:00.000Z',
@@ -143,6 +145,8 @@ describe('BudgetResource', () => {
       spent: '400.00',
       remaining: '600.00',
       utilization: 0.4,
+      percent: 40,
+      state: 'healthy',
     };
     handler.mockResolvedValueOnce(utilization);
     const resource = new BudgetResource(client);

@@ -80,7 +80,7 @@ describe('AgentResource event endpoints', () => {
       status: 'ACTIVE' as const,
       createdAt: '2026-08-29T10:00:00.000Z',
     };
-    http.post.mockResolvedValue(subscription);
+    http.post.mockResolvedValue({ data: subscription });
     const result = await resource.subscribe('agt_1', {
       eventTypes: ['agent.budget_exhausted'],
       includeHistory: true,
@@ -93,7 +93,7 @@ describe('AgentResource event endpoints', () => {
   });
 
   it('subscribe() defaults to an empty options payload', async () => {
-    http.post.mockResolvedValue({});
+    http.post.mockResolvedValue({ data: {} });
     await resource.subscribe('agt_1');
     expect(http.post).toHaveBeenCalledWith('/v1/agents/agt_1/events/subscriptions', {});
   });

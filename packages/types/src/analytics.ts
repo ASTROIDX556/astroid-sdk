@@ -1,58 +1,74 @@
-import type { PaginationParams } from './common.js';
+/**
+ * Typed analytics result objects, ready to bind directly to charts.
+ * Correspond to the `GET /analytics/*` endpoints (PRD Doc 5).
+ *
+ * @module
+ */
 
+import type { PaginationParams } from './common.js';
+import type { DecimalString } from './entities.js';
+import type { RiskBand } from './enums.js';
+
+/** Bucket granularity for a time-series report. */
 export type Timeframe = 'hour' | 'day' | 'week' | 'month' | 'year' | string;
 
 /**
  * Shared analytics query filters: a time window plus optional scoping to a
- * particular asset, wallet, or agent.
+ * particular asset, wallet, or agent. Both the `startDate`/`endDate` and the
+ * shorthand `from`/`to` spellings are accepted.
  */
-export interface AnalyticsQuery {
+export interface AnalyticsQueryParams extends PaginationParams {
   /** Inclusive start of the reporting window (ISO-8601). */
   startDate?: string;
   /** Exclusive end of the reporting window (ISO-8601). */
   endDate?: string;
+  /** Shorthand alias for {@link startDate}. */
+  from?: string;
+  /** Shorthand alias for {@link endDate}. */
+  to?: string;
   /** Bucket granularity for the report. */
   timeframe?: Timeframe;
   /** Filter results to a single asset code (e.g. `USDC`, `XLM`). */
   asset?: string;
+  /** Filter results to a single currency. */
+  currency?: string;
   /** Filter results to a single wallet. */
   walletId?: string;
   /** Filter results to a single agent. */
   agentId?: string;
 }
 
-export interface AnalyticsQueryParams extends AnalyticsQuery, PaginationParams {}
+/** Shared analytics query filters (alias of {@link AnalyticsQueryParams}). */
+export type AnalyticsQuery = AnalyticsQueryParams;
 
 /**
  * Analytics list queries: the shared analytics filters plus standard
- * pagination controls (`page`, `limit`, `order`, `cursor`).
- *
- * Applied to the tabular analytics endpoints (per-agent and per-budget rows) so
- * clients can page through large historical result sets without pulling the
- * full payload into memory.
+ * pagination controls. Applied to the tabular analytics endpoints (per-agent
+ * and per-budget rows) so clients can page through large historical result
+ * sets without pulling the full payload into memory.
  */
-export type AnalyticsListParams = AnalyticsQueryParams;
+export interface AnalyticsListParams extends AnalyticsQueryParams, PaginationParams {
+  /** Field to sort the rows by. */
+  sort?: string;
+}
 
-/** A single (timestamp, value) point in a time series. */
+/** A single (timestamp, value) point in a chart-ready time series. */
 export interface TimeSeriesPoint {
   date: string;
   value: number;
 }
 
-/** A bucketed metric point returned by the analytics time-series endpoint. */
+/** A single point in a transaction-metrics time series. */
 export interface TimeSeriesMetricPoint {
-  /** ISO-8601 timestamp of the bucket start. */
   timestamp: string;
-  /** Total transaction volume in the bucket, as a decimal string. */
   volume: string;
-  /** Total fees in the bucket, as a decimal string. */
-  fees: string;
-  /** Number of transactions in the bucket. */
+  fee: string;
   count: number;
-  /** Success rate as a value `0`–`1` in the bucket. */
-  successRate: number;
+  successCount: number;
+  failureCount: number;
 }
 
+/** Aggregate volume totals for a reporting window. */
 export interface VolumeSummary {
   timeframe: string;
   totalVolume: string;
@@ -62,8 +78,9 @@ export interface VolumeSummary {
   averageLatencyMs: number;
 }
 
+/** `GET /analytics/metrics` — a metrics time series plus its summary. */
 export interface AnalyticsMetricsResponse {
-  points: TimeSeriesPoint[];
+  points: TimeSeriesMetricPoint[];
   summary: VolumeSummary;
 }
 
@@ -84,4 +101,53 @@ export interface AnalyticsOverview {
   totalFees: string;
   /** Success rate as a percentage `0`–`100`. */
   successRate: number;
+}
+
+/** `GET /analytics/spending` and `GET /analytics/cashflow`. */
+export interface CashflowReport {
+  currency: string;
+  inflow: TimeSeriesPoint[];
+  outflow: TimeSeriesPoint[];
+  net: TimeSeriesPoint[];
+  totalInflow: DecimalString;
+  totalOutflow: DecimalString;
+}
+
+/** `GET /analytics/risk`. */
+export interface RiskReport {
+  distribution: Record<RiskBand, number>;
+  averageScore: number;
+  highRiskTransactions: number;
+  trend: TimeSeriesPoint[];
+}
+
+/** One agent's line in the agent-performance report. */
+export interface AgentSpendingRow {
+  agentId: string;
+  agentName: string;
+  totalSpent: DecimalString;
+  transactionCount: number;
+  averageRisk: number;
+}
+
+/** `GET /analytics/agents`. */
+export interface AgentAnalytics {
+  currency: string;
+  agents: AgentSpendingRow[];
+}
+
+/** One budget's line in the budget-utilization report. */
+export interface BudgetUtilizationRow {
+  budgetId: string;
+  budgetName: string;
+  limit: DecimalString;
+  spent: DecimalString;
+  remaining: DecimalString;
+  utilization: number;
+}
+
+/** `GET /analytics/budgets`. */
+export interface BudgetAnalytics {
+  currency: string;
+  budgets: BudgetUtilizationRow[];
 }

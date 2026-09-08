@@ -91,12 +91,10 @@ function getCrypto(): Crypto {
   // Prefer globalThis.crypto (available in browsers and Node >=19 via webcrypto)
   const g = globalThis as unknown as { crypto?: Crypto };
   if (g.crypto?.subtle && typeof g.crypto.getRandomValues === 'function') return g.crypto;
-  // Fallback to Node's webcrypto
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  // Fallback to Node's webcrypto. Use a dynamic require so `node:crypto` is
+  // never bundled into browser builds.
   try {
-    // Use dynamic require to avoid bundling node:crypto in browsers
-    // @ts-ignore
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const nodeCrypto = require('node:crypto') as { webcrypto: Crypto };
     if (nodeCrypto.webcrypto?.subtle) return nodeCrypto.webcrypto as unknown as Crypto;
   } catch {

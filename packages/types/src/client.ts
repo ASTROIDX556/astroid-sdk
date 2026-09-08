@@ -1,6 +1,6 @@
 export interface ClientPlugin {
   name: string;
-  install(client: any): void;
+  install(client: unknown): void;
 }
 
 export type EventName = string;

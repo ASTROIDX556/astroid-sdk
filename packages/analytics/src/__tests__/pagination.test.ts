@@ -104,6 +104,6 @@ describe('AnalyticsResource pagination', () => {
       },
     ]);
     expect(result.data).toEqual([budgetRow]);
-    expect(result.data[0].utilization).toBe(0.4);
+    expect(result.data[0]!.utilization).toBe(0.4);
   });
 });

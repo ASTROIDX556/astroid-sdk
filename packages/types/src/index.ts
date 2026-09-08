@@ -6,6 +6,8 @@ export * from './policy.js';
 export * from './analytics.js';
 export * from './agent-events.js';
 export * from './webhooks.js';
+export * from './budget.js';
+export * from './ai.js';
 
 // Agent resource DTOs and helpers. `AgentEntity`/`Agent`, `AgentStatus` and
 // `AgentRole` originate in `./entities.js` and `./enums.js`, so re-export only
