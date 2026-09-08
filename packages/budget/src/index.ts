@@ -34,6 +34,8 @@ export interface BudgetListParams extends PaginationParams {
   enabled?: boolean;
   agentId?: string;
   walletId?: string;
+  /** Field to sort the returned budgets by. */
+  sort?: string;
 }
 
 /**

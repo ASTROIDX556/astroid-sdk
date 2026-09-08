@@ -185,7 +185,8 @@ export class TimeSeriesResource {
   async getMetrics(params: TimeSeriesQueryParams): Promise<AnalyticsMetricsResponse> {
     validateTimeSeriesQuery(params);
     const path = buildTimeSeriesPath(params);
-    return this.client.get<AnalyticsMetricsResponse>(path);
+    const res = await this.client.get<AnalyticsMetricsResponse>(path);
+    return res.data;
   }
 }
 

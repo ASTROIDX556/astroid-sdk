@@ -45,7 +45,7 @@ const MOCK_RESPONSE: AnalyticsMetricsResponse = {
 };
 
 function createMockClient(response: AnalyticsMetricsResponse = MOCK_RESPONSE) {
-  const mockGet = vi.fn().mockResolvedValue(response);
+  const mockGet = vi.fn().mockResolvedValue({ data: response });
   const client = { get: mockGet } as unknown as HttpClient;
   return { client, mockGet };
 }

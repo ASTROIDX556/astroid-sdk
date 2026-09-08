@@ -42,6 +42,26 @@ export interface BudgetSimulationResult {
 /** Health of a budget's current allocation, bucketed by utilisation. */
 export type BudgetAllocationState = 'healthy' | 'warning' | 'critical' | 'exhausted';
 
+/** A point-in-time view of how much of a budget's allocation is consumed. */
+export interface BudgetAllocationStatus {
+  /** The budget this status describes. */
+  budgetId: string;
+  /** The active-window limit. */
+  limit: DecimalString;
+  /** Amount consumed in the active window. */
+  spent: DecimalString;
+  /** `limit - spent`, clamped at 0. */
+  remaining: DecimalString;
+  /** Fraction of the limit consumed, `0`–`1` (clamped). */
+  utilization: number;
+  /** {@link utilization} as a percentage, `0`–`100`, rounded to 2 dp. */
+  percent: number;
+  /** Bucketed health derived from {@link percent} and the configured thresholds. */
+  state: BudgetAllocationState;
+  /** Whether a prospective spend (when supplied) would push spending past the limit. */
+  wouldExceed?: boolean;
+}
+
 /** A utilization snapshot for a single budget. */
 export interface BudgetUtilization {
   budgetId: string;
@@ -88,8 +108,8 @@ export interface BudgetSimulationRequest {
   transactionId?: string;
 }
 
-/** The outcome of simulating a spend against a budget. */
-export interface BudgetSimulationResult {
+/** The outcome of a policy/budget check simulation (`simulateBudgetCheck`). */
+export interface BudgetCheckResult {
   budgetId: string;
   /** Whether the spend is allowed under the budget's limits. */
   allowed: boolean;
