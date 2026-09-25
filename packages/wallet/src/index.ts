@@ -75,9 +75,39 @@ export class WalletResource extends Resource {
     return this.listData<Wallet>('/wallets', { ...params });
   }
 
-  /** Iterate every wallet across all pages. */
+  /** Iterate every wallet across all pages (page-number pagination). */
   iterate(params: WalletListParams = {}): AsyncGenerator<Wallet, void, void> {
     return this.iterateData<Wallet>('/wallets', { ...params });
+  }
+
+  /**
+   * Lazily iterate every wallet across all pages using cursor (keyset)
+   * pagination.
+   *
+   * Where {@link WalletResource.iterate} walks 1-based page numbers, this follows
+   * the opaque `meta.nextCursor` each response returns, which is the standard
+   * pagination contract for Astroid list endpoints. Only one page is held in
+   * memory at a time and the next page is requested lazily as the consumer
+   * advances the generator.
+   *
+   * @param params Optional status/type/agent/network filters, page size (`limit`)
+   *               and sort `order`. Pass a previously captured `cursor` to resume.
+   * @returns An async generator yielding every matching wallet in order.
+   *
+   * @example
+   * ```ts
+   * for await (const wallet of astroid.wallets.iterateByCursor({ status: 'ACTIVE', limit: 100 })) {
+   *   console.log(wallet.id);
+   * }
+   *
+   * // Resume later from a cursor captured on a previous run:
+   * for await (const wallet of astroid.wallets.iterateByCursor({ cursor: savedCursor })) {
+   *   // ...
+   * }
+   * ```
+   */
+  iterateByCursor(params: WalletListParams = {}): AsyncGenerator<Wallet, void, void> {
+    return this.iterateCursorData<Wallet>('/wallets', { ...params });
   }
 
   /** Update a wallet's mutable fields (label, status, metadata). */
