@@ -9,4 +9,5 @@ export * from './validator.js';
 export * from './fee-estimation.js';
 export * from './format.js';
 export * from './validate.js';
+export * from './budget-delegation.js';
 export { TransactionsResource, TransactionResource, type ProposalListParams } from './resource.js';
