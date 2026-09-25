@@ -19,7 +19,7 @@
  * @module
  */
 
-import type { PaginatedResponse, ResponseMeta } from '@astroid/types';
+import type { ResponseMeta } from '@astroid/types';
 
 /**
  * A function that fetches a single page given an optional cursor.
