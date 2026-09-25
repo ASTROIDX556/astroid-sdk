@@ -7,6 +7,7 @@ import type {
   AgentLog,
   AgentStatusMetrics,
   CreateAgentParams,
+  CursorPaginationParams,
   ListAgentEventsParams,
   ListAgentsParams,
   Paginated,
@@ -20,6 +21,15 @@ export { validateCreateAgentParams, isValidCreateAgentParams } from './validatio
 
 /** Filters accepted by {@link AgentResource.list}. */
 export type AgentListParams = ListAgentsParams;
+
+/**
+ * Filters accepted by {@link AgentResource.iterateByCursor}.
+ *
+ * The same filters as {@link AgentListParams}, but keyset-paginated: the
+ * page-number field is dropped in favour of the opaque `cursor` (and optional
+ * `order`) understood by every Astroid list endpoint.
+ */
+export type AgentCursorListParams = Omit<AgentListParams, 'page'> & CursorPaginationParams;
 
 /**
  * Resource methods for managing AI agents on Astroid.
@@ -64,6 +74,36 @@ export class AgentResource extends Resource {
    */
   iterate(params: AgentListParams = {}): AsyncGenerator<Agent, void, void> {
     return this.iterateData<Agent>('/agents', { ...params });
+  }
+
+  /**
+   * Lazily iterate every agent across all pages using cursor (keyset)
+   * pagination.
+   *
+   * Where {@link AgentResource.iterate} walks 1-based page numbers, this follows
+   * the opaque `meta.nextCursor` each response returns, so it keeps working on
+   * endpoints that only expose keyset pagination. Only one page is held in memory
+   * at a time and the next page is requested lazily as the consumer advances the
+   * generator.
+   *
+   * @param params Optional filters, page size (`limit`) and sort `order`. Pass a
+   *               previously captured `cursor` to resume from a saved position.
+   * @returns An async generator yielding every matching agent in order.
+   *
+   * @example
+   * ```ts
+   * for await (const agent of astroid.agents.iterateByCursor({ status: 'ACTIVE', limit: 100 })) {
+   *   console.log(agent.id);
+   * }
+   *
+   * // Resume later from a cursor captured on a previous run:
+   * for await (const agent of astroid.agents.iterateByCursor({ cursor: savedCursor })) {
+   *   // ...
+   * }
+   * ```
+   */
+  iterateByCursor(params: AgentCursorListParams = {}): AsyncGenerator<Agent, void, void> {
+    return this.iterateCursorData<Agent>('/agents', { ...params });
   }
 
   /**
