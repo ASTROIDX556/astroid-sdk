@@ -46,7 +46,24 @@ export function useAstroidClient(): Astroid {
 }
 
 /**
- * Query key factory for TanStack Query caching and invalidation.
+ * Centralized query key factory for TanStack Query caching and invalidation.
+ *
+ * All keys are prefixed with `'astroid'` and namespaced by resource domain.
+ * Keys are stable (`as const`) so TanStack Query's structural equality
+ * comparison works correctly for cache lookups and invalidation.
+ *
+ * @example
+ * ```ts
+ * // Exact key for a single wallet detail:
+ * queryKeys.wallets.detail('wal_abc123')
+ * // => ['astroid', 'wallets', 'detail', 'wal_abc123']
+ *
+ * // Invalidate all wallet queries:
+ * queryClient.invalidateQueries({ queryKey: queryKeys.wallets.all });
+ *
+ * // Invalidate just the wallet list:
+ * queryClient.invalidateQueries({ queryKey: queryKeys.wallets.list() });
+ * ```
  */
 export const queryKeys = {
   wallets: {
@@ -62,8 +79,76 @@ export const queryKeys = {
   },
   policies: {
     all: ['astroid', 'policies'] as const,
+    list: (params?: PaginationParams) => ['astroid', 'policies', 'list', params ?? {}] as const,
+    detail: (id: string) => ['astroid', 'policies', 'detail', id] as const,
+  },
+  budgets: {
+    all: ['astroid', 'budgets'] as const,
+    list: (params?: PaginationParams) => ['astroid', 'budgets', 'list', params ?? {}] as const,
+    detail: (id: string) => ['astroid', 'budgets', 'detail', id] as const,
+    utilization: (id: string) => ['astroid', 'budgets', 'detail', id, 'utilization'] as const,
   },
 } as const;
+
+/**
+ * Invalidation helpers for typed cache invalidation by resource domain.
+ *
+ * These helpers provide a clean API for invalidating queries by resource type
+ * or specific entity ID, without requiring callers to know the key structure.
+ *
+ * @example
+ * ```ts
+ * // After a mutation, invalidate the agents list:
+ * await invalidateQueries.agents(queryClient);
+ *
+ * // Invalidate a specific agent's detail:
+ * await invalidateQueries.agent(queryClient, 'agent_abc123');
+ * ```
+ */
+export const invalidateQueries = {
+  /** Invalidate all queries for a specific resource domain. */
+  all: (queryClient: ReturnType<typeof import('@tanstack/react-query').useQueryClient>, domain: 'wallets' | 'agents' | 'policies' | 'budgets') => {
+    return queryClient.invalidateQueries({ queryKey: queryKeys[domain].all });
+  },
+  /** Invalidate the list query for a specific resource domain. */
+  wallets: (queryClient: ReturnType<typeof import('@tanstack/react-query').useQueryClient>, params?: PaginationParams) => {
+    return queryClient.invalidateQueries({ queryKey: queryKeys.wallets.list(params) });
+  },
+  agents: (queryClient: ReturnType<typeof import('@tanstack/react-query').useQueryClient>, params?: PaginationParams) => {
+    return queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(params) });
+  },
+  policies: (queryClient: ReturnType<typeof import('@tanstack/react-query').useQueryClient>, params?: PaginationParams) => {
+    return queryClient.invalidateQueries({ queryKey: queryKeys.policies.list(params) });
+  },
+  budgets: (queryClient: ReturnType<typeof import('@tanstack/react-query').useQueryClient>, params?: PaginationParams) => {
+    return queryClient.invalidateQueries({ queryKey: queryKeys.budgets.list(params) });
+  },
+  /** Invalidate a specific wallet's detail and related queries. */
+  wallet: (queryClient: ReturnType<typeof import('@tanstack/react-query').useQueryClient>, id: string) => {
+    return Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.wallets.detail(id) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.wallets.balance(id) }),
+    ]);
+  },
+  /** Invalidate a specific agent's detail and related queries. */
+  agent: (queryClient: ReturnType<typeof import('@tanstack/react-query').useQueryClient>, id: string) => {
+    return Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(id) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.all }),
+    ]);
+  },
+  /** Invalidate a specific policy's detail. */
+  policy: (queryClient: ReturnType<typeof import('@tanstack/react-query').useQueryClient>, id: string) => {
+    return queryClient.invalidateQueries({ queryKey: queryKeys.policies.detail(id) });
+  },
+  /** Invalidate a specific budget's detail and utilization. */
+  budget: (queryClient: ReturnType<typeof import('@tanstack/react-query').useQueryClient>, id: string) => {
+    return Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.detail(id) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.utilization(id) }),
+    ]);
+  },
+};
 
 /**
  * Fetch a paginated list of agents.
