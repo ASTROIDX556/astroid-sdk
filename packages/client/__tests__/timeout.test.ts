@@ -60,4 +60,64 @@ describe('Client Timeout and AbortSignal Support', () => {
 
     await expect(client.wallets.get('w_1')).rejects.toBeInstanceOf(AstroidTimeoutError);
   });
+
+  it('supports per-request timeout override via options.timeoutMs', async () => {
+    const fetchMock = vi.fn().mockImplementation(
+      () => new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Slow')), 100);
+      })
+    );
+
+    const client = new HttpClient({
+      baseUrl: 'https://api.test',
+      timeout: 5000, // default 5s
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+
+    // Override to 10ms for this specific request
+    await expect(client.get('/wallets/w_1', { timeoutMs: 10 })).rejects.toBeInstanceOf(AstroidTimeoutError);
+  });
+
+  it('verifies timeout cancellation with mock fetch that respects AbortSignal', async () => {
+    // Mock fetch that respects AbortSignal and rejects when aborted
+    const fetchMock = vi.fn().mockImplementation(
+      (_url, init) => new Promise((_, reject) => {
+        const signal = init?.signal as AbortSignal | undefined;
+        if (signal?.aborted) {
+          return reject(new DOMException('Aborted', 'AbortError'));
+        }
+        signal?.addEventListener('abort', () => {
+          reject(new DOMException('Aborted', 'AbortError'));
+        });
+      })
+    );
+
+    const client = new HttpClient({
+      baseUrl: 'https://api.test',
+      timeout: 50,
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+
+    await expect(client.get('/test')).rejects.toBeInstanceOf(AstroidTimeoutError);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it('does not throw timeout when response arrives before timeout', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ success: true, data: { data: 'ok' } }),
+        { status: 200, headers: { 'content-type': 'application/json' } }
+      )
+    );
+
+    const client = new HttpClient({
+      baseUrl: 'https://api.test',
+      timeout: 5000,
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+
+    const response = await client.get('/test');
+    expect(response.data).toEqual({ data: 'ok' });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
 });

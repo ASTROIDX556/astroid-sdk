@@ -35,10 +35,12 @@ function renderInProviders(
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
-  const client = options.client ?? new Astroid({
-    apiKey: 'sk_test_hooks',
-    baseUrl: 'https://api.test',
-  });
+  const client =
+    options.client ??
+    new Astroid({
+      apiKey: 'sk_test_hooks',
+      baseUrl: 'https://api.test',
+    });
 
   act(() => {
     root.render(
@@ -185,12 +187,15 @@ describe('useSimulatePolicy', () => {
       risk: {
         score: 75,
         band: 'HIGH' as const,
-        factors: [{ factor: 'amount cap', score: 75, description: 'Exceeds daily limit policy PF_123.' }],
+        factors: [
+          { factor: 'amount cap', score: 75, description: 'Exceeds daily limit policy PF_123.' },
+        ],
       },
       budgetImpact: [],
       explanation: 'Exceeds daily limit policy PF_123.',
     };
-    (client.policies as { simulate: typeof client.policies.simulate }).simulate = async () => simulated;
+    (client.policies as { simulate: typeof client.policies.simulate }).simulate = async () =>
+      simulated;
 
     let result: string | null = null;
     function TestComponent() {
@@ -203,10 +208,7 @@ describe('useSimulatePolicy', () => {
       return null;
     }
 
-    const { unmount } = renderInProviders(
-      createElement(TestComponent),
-      { client },
-    );
+    const { unmount } = renderInProviders(createElement(TestComponent), { client });
     unmount();
     expect(result).toBe('wired');
   });

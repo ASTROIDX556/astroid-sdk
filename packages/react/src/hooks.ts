@@ -1,5 +1,10 @@
 import { useContext } from 'react';
-import { useMutation, useQuery, type UseMutationResult, type UseQueryResult } from '@tanstack/react-query';
+import {
+  useMutation,
+  useQuery,
+  type UseMutationResult,
+  type UseQueryResult,
+} from '@tanstack/react-query';
 import { AstroidClientContext } from './provider.js';
 import type { Astroid } from '@astroid/client';
 import type {

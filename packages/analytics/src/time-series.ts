@@ -13,10 +13,7 @@
  */
 
 import type { HttpClient } from '@astroid/core';
-import type {
-  AnalyticsMetricsResponse,
-  Timeframe,
-} from '@astroid/types';
+import type { AnalyticsMetricsResponse, Timeframe } from '@astroid/types';
 
 /* -------------------------------------------------------------------------- */
 /* Public types                                                                */

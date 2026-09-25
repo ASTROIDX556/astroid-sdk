@@ -374,9 +374,9 @@ describe('Astroid client — retry on 429', () => {
   });
 
   it('throws RateLimitError after exhausting retries on persistent 429', async () => {
-    const mockFetch = vi.fn().mockImplementation(async () =>
-      errorResponse(429, 'RATE_LIMITED', 'Too Many Requests'),
-    );
+    const mockFetch = vi
+      .fn()
+      .mockImplementation(async () => errorResponse(429, 'RATE_LIMITED', 'Too Many Requests'));
 
     const client = new Astroid({
       ...BASE_CONFIG,
@@ -395,9 +395,9 @@ describe('Astroid client — retry on 429', () => {
 
 describe('Astroid client — non-retryable errors', () => {
   it('does not retry on 400 (Bad Request)', async () => {
-    const mockFetch = vi.fn().mockImplementation(async () =>
-      errorResponse(400, 'VALIDATION_ERROR', 'Bad Request'),
-    );
+    const mockFetch = vi
+      .fn()
+      .mockImplementation(async () => errorResponse(400, 'VALIDATION_ERROR', 'Bad Request'));
 
     const client = new Astroid({
       ...BASE_CONFIG,
@@ -410,9 +410,9 @@ describe('Astroid client — non-retryable errors', () => {
   });
 
   it('does not retry on 404 (Not Found)', async () => {
-    const mockFetch = vi.fn().mockImplementation(async () =>
-      errorResponse(404, 'NOT_FOUND', 'Wallet not found'),
-    );
+    const mockFetch = vi
+      .fn()
+      .mockImplementation(async () => errorResponse(404, 'NOT_FOUND', 'Wallet not found'));
 
     const client = new Astroid({
       ...BASE_CONFIG,
@@ -425,9 +425,9 @@ describe('Astroid client — non-retryable errors', () => {
   });
 
   it('does not retry on 422 (Unprocessable Entity)', async () => {
-    const mockFetch = vi.fn().mockImplementation(async () =>
-      errorResponse(422, 'VALIDATION_ERROR', 'Unprocessable'),
-    );
+    const mockFetch = vi
+      .fn()
+      .mockImplementation(async () => errorResponse(422, 'VALIDATION_ERROR', 'Unprocessable'));
 
     const client = new Astroid({
       ...BASE_CONFIG,
@@ -471,9 +471,9 @@ describe('Astroid client — network-error retries', () => {
 
 describe('Astroid client — retry disabled', () => {
   it('does not retry when retry: false is set in config', async () => {
-    const mockFetch = vi.fn().mockImplementation(async () =>
-      errorResponse(503, 'SERVER_ERROR', 'Service Unavailable'),
-    );
+    const mockFetch = vi
+      .fn()
+      .mockImplementation(async () => errorResponse(503, 'SERVER_ERROR', 'Service Unavailable'));
 
     const client = new Astroid({
       apiKey: 'sk_test_no_retry',

@@ -60,15 +60,15 @@ export class AstroidError extends Error {
 
   /** A plain, serialisable representation (safe to log — no secrets). */
   toJSON(): Record<string, unknown> {
-  return {
-    name: this.name,
-    message: this.message,
-    code: this.code,
-    status: this.status,
-    requestId: this.requestId,
-    details: this.details,
-    stack: this.stack,
-  };
+    return {
+      name: this.name,
+      message: this.message,
+      code: this.code,
+      status: this.status,
+      requestId: this.requestId,
+      details: this.details,
+      stack: this.stack,
+    };
   }
 }
 
@@ -179,7 +179,11 @@ export function errorClassForCode(code: string): typeof AstroidError {
       return ServerError;
     default:
       // Also support direct Horizon codes that may leak as API codes
-      if (code === 'op_underfunded' || code === 'op_low_reserve' || code === 'tx_insufficient_balance') {
+      if (
+        code === 'op_underfunded' ||
+        code === 'op_low_reserve' ||
+        code === 'tx_insufficient_balance'
+      ) {
         return InsufficientFundsError;
       }
       return AstroidError;
@@ -222,7 +226,10 @@ export interface NormalizeErrorContext {
  * err instanceof PolicyViolationError; // true
  * ```
  */
-export function fromApiError(apiError: ApiError, context: NormalizeErrorContext = {}): AstroidError {
+export function fromApiError(
+  apiError: ApiError,
+  context: NormalizeErrorContext = {},
+): AstroidError {
   const ErrorClass = errorClassForCode(apiError.code);
   const details = { ...(apiError.details ?? {}), ...(context.details ?? {}) };
   return new ErrorClass(apiError.message, {

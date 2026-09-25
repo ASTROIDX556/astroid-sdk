@@ -33,6 +33,26 @@ export {
   type JsonExportOptions,
 } from './exporter.js';
 
+export {
+  buildAnalyticsQuery,
+  buildAnalyticsPath,
+  validateAnalyticsQuery,
+  AnalyticsQueryError,
+  getDateRangeFromPreset,
+  applyTimeWindowPreset,
+  buildOverviewQuery,
+  buildCashflowQuery,
+  buildSpendingQuery,
+  buildRiskQuery,
+  buildAgentsQuery,
+  buildBudgetsQuery,
+  buildListAgentsQuery,
+  buildListBudgetsQuery,
+  type AnalyticsQueryOptions,
+  type AnalyticsGroupBy,
+  type TimeWindowPreset,
+} from './query.js';
+
 /**
  * The `analytics` namespace on the Astroid client.
  *

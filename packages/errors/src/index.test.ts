@@ -141,7 +141,11 @@ describe('@astroid/errors', () => {
 
     it('builds a ValidationError from VALIDATION_ERROR code', () => {
       const err = fromApiError(
-        { code: 'VALIDATION_ERROR', message: 'Invalid input', details: { fields: { email: ['required'] } } },
+        {
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid input',
+          details: { fields: { email: ['required'] } },
+        },
         { status: 422 },
       );
       expect(err).toBeInstanceOf(ValidationError);
@@ -191,10 +195,7 @@ describe('@astroid/errors', () => {
     });
 
     it('builds a base AstroidError for unknown codes', () => {
-      const err = fromApiError(
-        { code: 'CUSTOM_CODE', message: 'Custom' },
-        { status: 418 },
-      );
+      const err = fromApiError({ code: 'CUSTOM_CODE', message: 'Custom' }, { status: 418 });
       expect(err).toBeInstanceOf(AstroidError);
       expect(err).not.toBeInstanceOf(ValidationError);
     });
@@ -258,7 +259,11 @@ describe('@astroid/errors', () => {
   /* ------------------------------------------------------------------------ */
 
   describe('fromErrorResponse', () => {
-    function makeResponse(body: unknown, status: number, headers?: Record<string, string>): Response {
+    function makeResponse(
+      body: unknown,
+      status: number,
+      headers?: Record<string, string>,
+    ): Response {
       return new Response(JSON.stringify(body), {
         status,
         headers: { 'content-type': 'application/json', ...headers },
@@ -266,11 +271,9 @@ describe('@astroid/errors', () => {
     }
 
     it('parses a standard API error envelope', async () => {
-      const res = makeResponse(
-        { error: { code: 'NOT_FOUND', message: 'Wallet not found' } },
-        404,
-        { 'x-request-id': 'req_123' },
-      );
+      const res = makeResponse({ error: { code: 'NOT_FOUND', message: 'Wallet not found' } }, 404, {
+        'x-request-id': 'req_123',
+      });
 
       await expect(fromErrorResponse(res)).rejects.toThrow(NotFoundError);
       try {
@@ -326,11 +329,9 @@ describe('@astroid/errors', () => {
     });
 
     it('preserves requestId from response headers', async () => {
-      const res = makeResponse(
-        { error: { code: 'CONFLICT', message: 'Already exists' } },
-        409,
-        { 'x-request-id': 'req_xyz' },
-      );
+      const res = makeResponse({ error: { code: 'CONFLICT', message: 'Already exists' } }, 409, {
+        'x-request-id': 'req_xyz',
+      });
       try {
         await fromErrorResponse(res);
       } catch (err) {
@@ -390,11 +391,17 @@ describe('@astroid/errors', () => {
     });
 
     it('sets name to the subclass name', () => {
-      expect(new AuthenticationError('a', { code: 'AUTHENTICATION_ERROR' }).name).toBe('AuthenticationError');
+      expect(new AuthenticationError('a', { code: 'AUTHENTICATION_ERROR' }).name).toBe(
+        'AuthenticationError',
+      );
       expect(new RateLimitError('r', { code: 'RATE_LIMITED' }).name).toBe('RateLimitError');
-      expect(new PolicyViolationError('p', { code: 'POLICY_VIOLATION' }).name).toBe('PolicyViolationError');
+      expect(new PolicyViolationError('p', { code: 'POLICY_VIOLATION' }).name).toBe(
+        'PolicyViolationError',
+      );
       expect(new NotFoundError('n', { code: 'NOT_FOUND' }).name).toBe('NotFoundError');
-      expect(new InsufficientFundsError('i', { code: 'INSUFFICIENT_FUNDS' }).name).toBe('InsufficientFundsError');
+      expect(new InsufficientFundsError('i', { code: 'INSUFFICIENT_FUNDS' }).name).toBe(
+        'InsufficientFundsError',
+      );
       expect(new ServerError('s', { code: 'INTERNAL_ERROR' }).name).toBe('ServerError');
     });
   });

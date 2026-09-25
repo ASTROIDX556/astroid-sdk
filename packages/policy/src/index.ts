@@ -25,7 +25,9 @@ export class PolicyResource extends Resource {
   /**
    * Create a new spending policy.
    */
-  async create(input: Omit<Policy, 'id' | 'organizationId' | 'createdAt' | 'updatedAt'>): Promise<Policy> {
+  async create(
+    input: Omit<Policy, 'id' | 'organizationId' | 'createdAt' | 'updatedAt'>,
+  ): Promise<Policy> {
     const res = await this.client.post<Policy>('/policies', input);
     return res.data;
   }
@@ -47,7 +49,10 @@ export class PolicyResource extends Resource {
   /**
    * Update an existing policy.
    */
-  async update(id: string, input: Partial<Omit<Policy, 'id' | 'organizationId' | 'createdAt' | 'updatedAt'>>): Promise<Policy> {
+  async update(
+    id: string,
+    input: Partial<Omit<Policy, 'id' | 'organizationId' | 'createdAt' | 'updatedAt'>>,
+  ): Promise<Policy> {
     const res = await this.client.patch<Policy>(`/policies/${encodeURIComponent(id)}`, input);
     return res.data;
   }
@@ -99,7 +104,9 @@ export class PolicyResource extends Resource {
     const { agentId, walletId, transaction } = options;
 
     if (!agentId && !walletId) {
-      throw new Error('simulateTransaction requires an `agentId` or `walletId` to scope the policy check.');
+      throw new Error(
+        'simulateTransaction requires an `agentId` or `walletId` to scope the policy check.',
+      );
     }
 
     const params: PolicyListParams & { walletId?: string } = { enabled: true };

@@ -137,7 +137,8 @@ export function useTransfer(): UseMutationResult<Transaction, Error, TransferVar
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ walletId, input }: TransferVariables) => astroid.wallets.transfer(walletId, input),
+    mutationFn: ({ walletId, input }: TransferVariables) =>
+      astroid.wallets.transfer(walletId, input),
     onSuccess: (_data, { walletId }) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.wallets.balance(walletId) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.wallets.detail(walletId) });
