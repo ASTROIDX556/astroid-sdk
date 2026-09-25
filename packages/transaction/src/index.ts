@@ -1,4 +1,5 @@
 export * from './builder.js';
+export * from './feeBump.js';
 export * from './decoder.js';
 export * from './simulation.js';
 export * from './submit.js';
