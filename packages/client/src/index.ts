@@ -368,7 +368,7 @@ export {
   type SessionManagerConfig,
 } from '@astroid/auth';
 export { WalletResource, type WalletListParams } from '@astroid/wallet';
-export { AgentResource, type AgentListParams } from '@astroid/agent';
+export { AgentResource, type AgentListParams, type AgentCursorListParams } from '@astroid/agent';
 export { PolicyResource, type PolicyListParams } from '@astroid/policy';
 export { BudgetResource, type BudgetListParams } from '@astroid/budget';
 export { TransactionResource, type ProposalListParams } from '@astroid/transaction';
@@ -450,3 +450,13 @@ export {
   type ParsedError,
 } from './errors.js';
 export { createErrorParserMiddleware } from './error-parser-middleware.js';
+
+// Shared auto-pagination helpers — cursor (keyset) iteration for any list endpoint.
+export {
+  paginateCursor,
+  normalizeCursorPage,
+  MAX_CURSOR_PAGES,
+  type CursorPage,
+  type CursorPageFetcher,
+  type PaginateCursorOptions,
+} from './pagination.js';
