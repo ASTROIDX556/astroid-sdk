@@ -22,6 +22,11 @@ export {
   type TransferVariables,
   type UseWalletBalanceOptions,
 } from './hooks/useWallets.js';
+export {
+  useAgentWalletBalance,
+  agentWalletBalanceKeys,
+  type UseAgentWalletBalanceOptions,
+} from './hooks/useAgentWalletBalance.js';
 
 /**
  * Retrieve the active {@link Astroid} client instance from the React context.

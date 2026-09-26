@@ -1,127 +1,123 @@
-# feat(client): configurable retry with exponential backoff & jitter
+# feat(policy, budget, transaction, react): simulation, utilization, payment & wallet-balance APIs
 
-Makes `@astroid/client` resilient to transient network failures and rate limits
-by aligning the SDK's already-built retry pipeline with the exact policy
-required by the issue: retry on `429` and **all** `5xx`, never on any other
-`4xx`, with a default of **3** retries and exponential full-jitter backoff.
+Completes four agent-safety issues across the SDK in one PR:
 
-Closes #262
+- **`@astroid/policy`** — pre-flight policy simulation (`simulate` / `simulatePolicy`)
+  with strongly-typed request/response DTOs and fetch-mocked tests covering both
+  approved **and** rejected evaluations.
+- **`@astroid/budget`** — allocation & utilization query methods
+  (`getBudget`, `listBudgets`, `getBudgetUtilization`) with exported DTOs and
+  success/error tests.
+- **`@astroid/transaction`** — the `buildPaymentTransaction` helper (native XLM
+  and issued assets) with `PaymentTransactionOptions` and payload/validation
+  tests in the canonical location.
+- **`@astroid/react`** — the `useAgentWalletBalance` TanStack Query hook with
+  loading/error/data states, disabled-on-`undefined`, and a dedicated test suite.
+
+Closes #280
+Closes #281
+Closes #282
+Closes #283
 
 ---
 
 ## Background
 
-`@astroid/client` sends every request through the shared `HttpClient` in
-`@astroid/core`, which already owns the retry loop (`HttpClient.request`):
-it classifies each response, computes a backoff delay, sleeps, and re-attempts
-up to the configured limit. Policy is supplied by `backoffDelay`,
-`isRetryableStatus`, `RetryConfig`, and the opt-in `createRetryMiddleware`.
+Autonomous agents on Stellar must be able to evaluate a proposed transfer
+against active safety policies, inspect live budget headroom, assemble a
+ready-to-sign payment envelope, and render balances in a React dashboard — all
+without first spending network fees on a doomed transaction. These four issues
+fill the remaining gaps in that developer loop, following the repository's
+**thin-client** convention: resource packages forward parameters over REST and
+never encode business decisions (the backend owns policy, risk and budget
+authority).
 
-This PR does **not** add a second, parallel retry stack. It corrects the two
-places where that pipeline diverged from the issue's requirements and hardens
-the client-level tests around them.
-
-### Gap 1 — default retry count was 2, issue requires 3
-
-`DEFAULT_RETRY.maxRetries` (`packages/core/src/config.ts`) and
-`DEFAULT_MAX_RETRIES` (`packages/client/src/middleware/retry.ts`) were both `2`.
-Because retries are **enabled by default**, a fresh
-`new Astroid({ apiKey })` made only two retry attempts.
-
-### Gap 2 — non-`429` 4xx statuses were retried
-
-`isRetryableStatus` used a fixed allow-list
-`{408, 425, 429, 500, 502, 503, 504}`. `408 Request Timeout` and `425 Too Early`
-are 4xx client errors, and the issue is explicit: *retry on 5xx and 429, but
-never retry on 4xx client errors (except 429)*. The allow-list also meant
-legitimate 5xx statuses such as `501` and `505` were never retried.
-
----
+All four packages already had a partial surface on `main`. This PR closes the
+specific gaps against each issue's acceptance criteria and adds the missing
+tests, rather than duplicating what already existed.
 
 ## Changes
 
-### `packages/core/src/backoff.ts` — retry predicate
+### `@astroid/policy` — simulation types & rejected-path coverage (#280)
 
-Replaces the allow-list with an explicit, documented rule:
+- `PolicySimulationRequest` and `PolicySimulationResult` are exported from
+  `@astroid/types` (re-exported package-wide), with
+  `PolicyViolationDetail`, `PolicyRiskAssessment` and `PolicyBudgetImpact`
+  shapes.
+- `PolicyResource.simulate` POSTs the request to `/policies/simulate`;
+  `PolicyResource.simulatePolicy` is the dry-run alias, and the exported
+  `simulatePolicy(policies, tx)` engine evaluates a decoded transaction locally
+  against fetched active rules.
+- **Added** a fetch-mocked test proving a **rejected** simulation
+  (`allowed: false`) round-trips its violations, limit/actual values, and
+  required approvals — the file previously only asserted the approved path.
 
-```ts
-export function isRetryableStatus(status: number): boolean {
-  return status === 429 || (status >= 500 && status < 600);
-}
-```
+### `@astroid/budget` — allocation & utilization queries (#281)
 
-- `429 Too Many Requests` → retried (rate-limit window reopens).
-- **Every** `5xx` → retried (server-side failure, including `501`, `505`, …).
-- Every other `4xx` → never retried (client error: bad request, auth,
-  validation, not-found, `408`, `425`, …).
-- Full-jitter exponential backoff in `backoffDelay` is unchanged:
-  `floor(random() * min(baseDelayMs * 2 ** (attempt - 1), maxDelayMs))`.
+- **Added** `BudgetResource.getBudgetUtilization(budgetId)` (alias of the
+  existing `utilization`) and `BudgetClient.getBudgetUtilization(budgetId, {
+  signal })`, both against `GET /budgets/:id/utilization`.
+- `getBudget` / `listBudgets` remain the fully-qualified resource aliases.
+- **Added** explicit DTO re-exports from `@astroid/budget`
+  (`Budget`, `BudgetUtilization`, `BudgetAllocationStatus`,
+  `BudgetAllocationThresholds`, `BudgetSimulationResult`, `BudgetMetrics`, …)
+  so consumers need no second import.
+- **Added** unit tests for successful utilization retrieval, id encoding +
+  abort-signal forwarding, and error propagation.
 
-### `packages/core/src/config.ts` — default retries
+### `@astroid/transaction` — payment builder & validation (#282)
 
-- `DEFAULT_RETRY.maxRetries`: `2` → **`3`**; `RetryConfig` doc updated.
-- `baseDelayMs` remains `250` (configurable), `maxDelayMs` remains `8000`.
+- `buildPaymentTransaction(options)` constructs an **unsigned** single-payment
+  Stellar transaction for native `XLM` or `CODE:ISSUER` assets, validating the
+  destination (`G…` + checksum), positive finite amount, asset issuer and
+  network passphrase up front via structured `ValidationError`s from
+  `@astroid/errors`.
+- **Added** `src/__tests__/transaction.test.ts` covering payload generation
+  (source, destination, asset code/issuer, 7-dp amount, memo, zero signatures)
+  and every rejection path (invalid/missing destination, zero/negative amount,
+  issuer-less non-native asset, unknown passphrase).
 
-### `packages/core/src/middleware.ts` — middleware default
+### `@astroid/react` — `useAgentWalletBalance` (#283)
 
-- `createRetryMiddleware()` default `maxRetries`: `2` → **`3`**.
-
-### `packages/client/src/middleware/retry.ts` — client middleware
-
-- `DEFAULT_MAX_RETRIES`: `2` → **`3`**.
-- `@default` JSDoc and the retryable-status documentation updated to describe
-  `429` + any `5xx` rather than the old hard-coded list.
-
-### `packages/client/src/middleware/error.ts` — doc accuracy
-
-- The error-translator comment no longer lists `408` among the statuses the
-  retry loop owns (`429`, `5xx`).
-
----
-
-## Tests
-
-All added/extended in the client package (`vitest` + mocked `fetch`).
-
-`packages/client/src/__tests__/retry.test.ts`
-- Default retry config is now asserted as `{ maxRetries: 3, baseDelayMs: 250,
-  maxDelayMs: 8000 }`.
-- New: `408` and `425` are **not** retried (exactly one `fetch` call).
-- New: `new Astroid({ apiKey })` resolves to `retry.maxRetries === 3` with a
-  `250ms` base delay when no retry config is supplied.
-- Existing coverage retained: `502 → 200` recovery, `503`/`504` retries,
-  `maxRetries` exhaustion throwing `ServerError`, `429` retry + `Retry-After`
-  honouring, `400`/`404`/`422` non-retryal, network-error retry,
-  `retry: false` disabling retries, and `onRetry` instrumentation.
-
-`packages/client/src/retry.test.ts`
-- Extends the predicate test to cover `501`/`505` (retryable) and
-  `408`/`422`/`425` (non-retryable).
-
----
+- **Added** `useAgentWalletBalance(walletId, options)` in
+  `packages/react/src/hooks/useAgentWalletBalance.ts`, built on `useQuery` and
+  the `AstroidProvider` client context. It accepts `enabled`, `refetchInterval`
+  and `staleTime`, disables itself when `walletId` is `undefined`, and exposes
+  a typed `UseQueryResult<WalletBalance, Error>`.
+- Exported from both `@astroid/react`'s `index.ts` and `hooks.ts`, together
+  with the `agentWalletBalanceKeys` query-key factory.
+- **Added** `src/__tests__/useAgentWalletBalance.test.tsx` (Testing Library +
+  mock QueryClient) asserting data/loading state, disabled-on-`undefined`,
+  the `enabled` flag, option acceptance, and error state.
 
 ## Acceptance criteria
 
-- [x] Client automatically retries failed requests matching retryable statuses
-      (`429` and all `5xx`), enabled by default.
-- [x] Exponential backoff increases between attempts with full jitter applied.
-- [x] Non-retryable errors (`400`, `401`, `403`, `404`, `408`, `422`, `425`)
-      throw immediately without retrying.
-- [x] Configurable `maxRetries` (default **3**) and base backoff delay.
-- [x] Comprehensive unit tests in the client package using `vitest` and mocked
-      `fetch`, including a `502 Bad Gateway` followed by a `200 OK`.
-
----
+- [x] `PolicySimulationRequest` / `PolicySimulationResult` exported; simulation
+      method implemented; fetch-mocked tests for **approved and rejected**
+      responses.
+- [x] Budget `getBudget`, `listBudgets` and `getBudgetUtilization` methods;
+      DTO types exported from `@astroid/types` and `@astroid/budget`; tests
+      cover successful retrieval and error handling.
+- [x] `buildPaymentTransaction` + `PaymentTransactionOptions` with tests for
+      correct payload generation and input validation.
+- [x] `useAgentWalletBalance` exported with loading/error/data handling and a
+      test file; query disables when the wallet id is missing.
+- [x] `pnpm build`, `pnpm typecheck`, `pnpm test` and `pnpm lint` all pass.
 
 ## Validation
 
-| package | command | result |
+| scope | command | result |
 | --- | --- | --- |
-| `@astroid/client` | `pnpm test` | 221 passed (15 files) |
-| `@astroid/client` | `pnpm typecheck` | pass |
+| workspace | `pnpm build` | 16/16 packages build |
+| workspace | `pnpm typecheck` | 16/16 packages pass, zero errors |
+| workspace | `pnpm lint` | clean |
+| `@astroid/policy` | `pnpm --filter @astroid/policy test` | 82 passed (3 files) |
+| `@astroid/budget` | `pnpm --filter @astroid/budget test` | 95 passed (7 files) |
+| `@astroid/transaction` | `pnpm --filter @astroid/transaction test` | 155 passed (14 files) |
+| `@astroid/react` | `pnpm --filter @astroid/react test` | 76 passed (9 files) |
 | workspace | `pnpm test` | all packages pass |
-| workspace | `pnpm typecheck` | 16/16 packages pass |
 
-The retry mechanism itself was originally introduced in #186/#196/#171; this PR
-brings its defaults and status policy in line with #262 and adds the tests that
-pin that behaviour.
+Manual checks: simulation request bodies are asserted to serialize to the exact
+JSON payloads sent to `/policies/simulate` and `/budgets/:id/utilization`; the
+payment builder is asserted to produce an unsigned envelope with the expected
+destination/asset/amount decoded from its XDR.
