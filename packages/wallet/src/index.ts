@@ -39,6 +39,8 @@ export interface WalletListParams extends PaginationParams {
   walletType?: string;
   agentId?: string;
   network?: string;
+  /** Filter by the wallet's Stellar public address (G…). */
+  stellarAddress?: string;
 }
 
 /**
@@ -68,6 +70,17 @@ export class WalletResource extends Resource {
   /** Fetch a single wallet by id. */
   async get(walletId: string): Promise<Wallet> {
     return this.getData<Wallet>(`/wallets/${encodeURIComponent(walletId)}`);
+  }
+
+  /**
+   * Look up a single wallet by its Stellar public address (`G…`).
+   *
+   * Uses the list endpoint's `stellarAddress` filter and returns the first
+   * match, or `undefined` when no wallet is bound to the address.
+   */
+  async getByAddress(stellarAddress: string): Promise<Wallet | undefined> {
+    const res = await this.list({ stellarAddress, limit: 1 });
+    return res.data[0];
   }
 
   /** List wallets, with optional status/type/agent filters and pagination. */

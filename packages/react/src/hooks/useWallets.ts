@@ -6,6 +6,7 @@ import {
   type UseQueryResult,
 } from '@tanstack/react-query';
 import { queryKeys, useAstroidClient } from '../hooks.js';
+import { walletBalancesKeys } from './useWalletBalances.js';
 import type {
   CreateWalletInput,
   ImportWalletInput,
@@ -186,6 +187,8 @@ export function useTransfer(
       if (invalidateOnSuccess) {
         void queryClient.invalidateQueries({ queryKey: queryKeys.wallets.balance(variables.walletId) });
         void queryClient.invalidateQueries({ queryKey: queryKeys.wallets.detail(variables.walletId) });
+        // Keep the multi-asset balance sync (issue #252) fresh after transfers.
+        void queryClient.invalidateQueries({ queryKey: walletBalancesKeys.byId(variables.walletId) });
       }
       if (customInvalidate) {
         const keys = typeof customInvalidate === 'function' ? customInvalidate(data, variables) : customInvalidate;
@@ -297,6 +300,10 @@ export function useWalletMutation(
           });
           void queryClient.invalidateQueries({
             queryKey: queryKeys.wallets.balance(variables.walletId),
+          });
+          // Keep the multi-asset balance sync (issue #252) fresh after mutations.
+          void queryClient.invalidateQueries({
+            queryKey: walletBalancesKeys.byId(variables.walletId),
           });
         }
       }
