@@ -22,12 +22,19 @@ export function backoffDelay(
   return Math.floor(random() * capped);
 }
 
-/** HTTP statuses that are safe to retry. */
-const RETRYABLE_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
-
-/** Whether a response status warrants a retry. */
+/**
+ * Whether an HTTP status warrants a retry.
+ *
+ * Only transient server-side conditions are retryable:
+ * - `429 Too Many Requests` — a rate-limit window that will reopen.
+ * - Any `5xx` — the server failed to fulfil an otherwise valid request.
+ *
+ * Every other `4xx` is a client error (bad request, auth, validation, …):
+ * retrying it cannot succeed and only burns the caller's latency budget and
+ * the API's rate limit, so those statuses are never retried.
+ */
 export function isRetryableStatus(status: number): boolean {
-  return RETRYABLE_STATUSES.has(status);
+  return status === 429 || (status >= 500 && status < 600);
 }
 
 /** Sleep for `ms`, resolving early (rejecting) if the signal aborts. */

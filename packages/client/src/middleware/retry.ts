@@ -17,8 +17,8 @@
  *   `Retry-After` header (seconds) and waits at least that long before the
  *   next attempt, capped at `maxDelayMs`.
  * - **Configurable retry predicate**: the default retryable status set
- *   (`408 / 425 / 429 / 500 / 502 / 503 / 504`) can be replaced per-instance
- *   with a custom `shouldRetryStatus` function.
+ *   (`429` and any `5xx`) can be replaced per-instance with a custom
+ *   `shouldRetryStatus` function.
  * - **Visibility via `onRetry` callback**: consumers can log, trace, or
  *   surface retry events without instrumenting low-level transports.
  *
@@ -82,7 +82,7 @@ export type { RetryConfig, RetryMiddlewareOptions };
 export interface RetryMiddlewareConfig extends RetryMiddlewareOptions {
   /**
    * Maximum number of retry attempts after the initial request.
-   * @default 2
+   * @default 3
    */
   maxRetries?: number;
 
@@ -114,8 +114,8 @@ export interface RetryMiddlewareConfig extends RetryMiddlewareOptions {
 
   /**
    * Custom predicate deciding whether a given HTTP status code is retryable.
-   * Defaults to the SDK-wide {@link isRetryableStatus} (`408`, `425`, `429`,
-   * `500`, `502`, `503`, `504`).
+   * Defaults to the SDK-wide {@link isRetryableStatus}: `429` and any `5xx`
+   * (all other `4xx` client errors are never retried).
    */
   shouldRetryStatus?: (status: number) => boolean;
 
@@ -132,7 +132,7 @@ export interface RetryMiddlewareConfig extends RetryMiddlewareOptions {
 /* Defaults                                                                    */
 /* -------------------------------------------------------------------------- */
 
-const DEFAULT_MAX_RETRIES = 2;
+const DEFAULT_MAX_RETRIES = 3;
 const DEFAULT_BASE_DELAY_MS = 250;
 const DEFAULT_MAX_DELAY_MS = 8_000;
 

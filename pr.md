@@ -1,115 +1,127 @@
-# feat: budget resources, transaction validation, and agent DTOs
+# feat(client): configurable retry with exponential backoff & jitter
 
-Implements four tracked issues across `@astroid/types`, `@astroid/transaction`,
-and `@astroid/budget`.
+Makes `@astroid/client` resilient to transient network failures and rate limits
+by aligning the SDK's already-built retry pipeline with the exact policy
+required by the issue: retry on `429` and **all** `5xx`, never on any other
+`4xx`, with a default of **3** retries and exponential full-jitter backoff.
 
-Closes #55
-Closes #51
-Closes #60
-Closes #50
+Closes #262
 
 ---
 
-## #55 — Core types and DTO definitions for agent resource management
+## Background
 
-- **New `packages/types/src/agent.ts`**
-  - `AgentEntity` (alias of the `Agent` model), `AgentMetadata`, `AgentInitialBudget`
-  - `CreateAgentDto` / `UpdateAgentDto`, with `CreateAgentParams` / `UpdateAgentParams`
-    aliases so `@astroid/agent` and `@astroid/react` compile against one name set
-  - `ListAgentsParams`; `AgentStatus` / `AgentRole` re-exported from `./enums.ts`
-  - Runtime helpers: `isAgentStatus`, `isAgentRole`, `isAgentEntity`,
-    `parseAgentEntity`, `normalizeCreateAgentDto`, `AGENT_STATUS_VALUES`,
-    `AGENT_ROLE_VALUES`
-  - Full TSDoc on every export; strict types, no `any`
-- **New `packages/types/src/agent.test.ts`** — type-level and runtime
-  serialization/guard tests
-- **Fixes that unblocked the package build/typecheck**
-  - `policy.ts` re-declared `Policy` and `PolicyType` (already defined in
-    `entities.ts` / `enums.ts`), which made `export *` ambiguous and failed the
-    DTS build — removed the duplicates, kept the simulation types
-  - `common.ts` was missing exports that the workspace already imports:
-    `ApiErrorCode`, `ApiSuccessResponse` / `ApiErrorResponse` / `ApiResponse`,
-    and the `PaginationMeta` / `Paginated` / `CursorPaginationParams` /
-    `CursorPaginated` shapes
-- **New `packages/types/src/budget.ts`** — allocation + alert types shared with
-  `@astroid/budget` (see #60 / #50)
+`@astroid/client` sends every request through the shared `HttpClient` in
+`@astroid/core`, which already owns the retry loop (`HttpClient.request`):
+it classifies each response, computes a backoff delay, sleeps, and re-attempts
+up to the configured limit. Policy is supplied by `backoffDelay`,
+`isRetryableStatus`, `RetryConfig`, and the opt-in `createRetryMiddleware`.
 
-## #51 — Automatic transaction payload validation helpers
+This PR does **not** add a second, parallel retry stack. It corrects the two
+places where that pipeline diverged from the issue's requirements and hardens
+the client-level tests around them.
 
-- **New `packages/transaction/src/validator.ts`** — pure functions, no network,
-  no signing, input never mutated
-  - `validateTransactionEnvelope(input, options?)` accepts a base64 XDR envelope
-    (including fee-bump envelopes) **or** a `TransactionJson` object and returns a
-    structured `TransactionValidationReport` (`valid`, `issues`, `errors`,
-    `warnings`, `normalized`)
-  - Checks against Astroid protocol requirements: missing / malformed source
-    account, fee below the network minimum, **excessive fee bids**
-    (`MAX_TOTAL_FEE_STROOPS`), operation count bounds, memo type/value
-    (`MEMO_TEXT` ≤ 28 bytes, uint64 `MEMO_ID`, 32-byte `MEMO_HASH` / `MEMO_RETURN`),
-    and time-bounds (inverted window, expired window → warning)
-  - `assertValidTransactionEnvelope()` throws `TransactionEnvelopeValidationError`
-    with the full report attached on `.report`
-  - `sanitizeTransactionJson()` returns a cleaned copy (trimmed source, integer
-    stroop fee, normalized/ truncated memo, zeroed time bounds removed)
-  - Exported from `packages/transaction/src/index.ts`
-- **New `packages/transaction/src/__tests__/validator.test.ts`** — 20 tests
-  covering valid and invalid XDR and JSON payloads
-- **Incidental fixes** to pre-existing `tsc` errors that blocked the package
-  typecheck: `errors.ts` (optional-options / `details` typing), `simulation.ts`
-  (unused import, `FeeBumpTransaction` union), `submit.ts` (unused parameter)
+### Gap 1 — default retry count was 2, issue requires 3
 
-## #60 — Budget resource methods and allocation tracking
+`DEFAULT_RETRY.maxRetries` (`packages/core/src/config.ts`) and
+`DEFAULT_MAX_RETRIES` (`packages/client/src/middleware/retry.ts`) were both `2`.
+Because retries are **enabled by default**, a fresh
+`new Astroid({ apiKey })` made only two retry attempts.
 
-- **New `packages/budget/src/budget.ts`**
-  - `BudgetClient` over a minimal injected `BudgetHttpClient` transport
-    (satisfied by `@astroid/client`; keeps the dependency graph acyclic and makes
-    every method unit-testable with a mock)
-  - `create`, `get`, `list`, `update`, `delete`, `consume`, `metrics`
-  - `history(budgetId, params?)` — cursor **or** offset pagination plus
-    `from` / `to` / `transactionId` / `minAmount` / `maxAmount` filters
-  - `allocationStatus(budgetId, options?)` — fetches the budget and derives a
-    `BudgetAllocationStatus`; `prospectiveSpend` reports `wouldExceed`
-  - Pure helpers: `deriveAllocationStatus`, `classifyAllocation`,
-    `isAllocationExhausted`, `toBudgetQuery`
-- **New `packages/budget/src/__tests__/budget.test.ts`** — 16 tests, mocked HTTP
+### Gap 2 — non-`429` 4xx statuses were retried
 
-## #50 — Budget threshold alert subscription hooks
+`isRetryableStatus` used a fixed allow-list
+`{408, 425, 429, 500, 502, 503, 504}`. `408 Request Timeout` and `425 Too Early`
+are 4xx client errors, and the issue is explicit: *retry on 5xx and 429, but
+never retry on 4xx client errors (except 429)*. The allow-list also meant
+legitimate 5xx statuses such as `501` and `505` were never retried.
 
-- **New `packages/budget/src/alerts.ts`**
-  - `createBudgetAlert`, `listBudgetAlerts`, `getBudgetAlert`,
-    `updateBudgetAlert`, `deleteBudgetAlert` (each takes the `BudgetHttpClient`
-    transport)
-  - `BudgetAlertValidationError`, `isValidBudgetAlertChannel`,
-    `assertValidThresholdPercent`, `BUDGET_ALERT_THRESHOLDS` (`[50, 80, 100]`)
-  - Alert config types (`BudgetAlert`, `BudgetAlertChannel`,
-    `CreateBudgetAlertInput`, `UpdateBudgetAlertInput`, `ListBudgetAlertsParams`)
-    live in `@astroid/types` and are re-exported here
-- **New `packages/budget/src/__tests__/alerts.test.ts`** — 13 tests, mocked HTTP
-- `packages/budget/src/index.ts` now re-exports `budget.ts` / `alerts.ts` and
-  resolves a pre-existing duplicate `SpendRequest` export
+---
+
+## Changes
+
+### `packages/core/src/backoff.ts` — retry predicate
+
+Replaces the allow-list with an explicit, documented rule:
+
+```ts
+export function isRetryableStatus(status: number): boolean {
+  return status === 429 || (status >= 500 && status < 600);
+}
+```
+
+- `429 Too Many Requests` → retried (rate-limit window reopens).
+- **Every** `5xx` → retried (server-side failure, including `501`, `505`, …).
+- Every other `4xx` → never retried (client error: bad request, auth,
+  validation, not-found, `408`, `425`, …).
+- Full-jitter exponential backoff in `backoffDelay` is unchanged:
+  `floor(random() * min(baseDelayMs * 2 ** (attempt - 1), maxDelayMs))`.
+
+### `packages/core/src/config.ts` — default retries
+
+- `DEFAULT_RETRY.maxRetries`: `2` → **`3`**; `RetryConfig` doc updated.
+- `baseDelayMs` remains `250` (configurable), `maxDelayMs` remains `8000`.
+
+### `packages/core/src/middleware.ts` — middleware default
+
+- `createRetryMiddleware()` default `maxRetries`: `2` → **`3`**.
+
+### `packages/client/src/middleware/retry.ts` — client middleware
+
+- `DEFAULT_MAX_RETRIES`: `2` → **`3`**.
+- `@default` JSDoc and the retryable-status documentation updated to describe
+  `429` + any `5xx` rather than the old hard-coded list.
+
+### `packages/client/src/middleware/error.ts` — doc accuracy
+
+- The error-translator comment no longer lists `408` among the statuses the
+  retry loop owns (`429`, `5xx`).
+
+---
+
+## Tests
+
+All added/extended in the client package (`vitest` + mocked `fetch`).
+
+`packages/client/src/__tests__/retry.test.ts`
+- Default retry config is now asserted as `{ maxRetries: 3, baseDelayMs: 250,
+  maxDelayMs: 8000 }`.
+- New: `408` and `425` are **not** retried (exactly one `fetch` call).
+- New: `new Astroid({ apiKey })` resolves to `retry.maxRetries === 3` with a
+  `250ms` base delay when no retry config is supplied.
+- Existing coverage retained: `502 → 200` recovery, `503`/`504` retries,
+  `maxRetries` exhaustion throwing `ServerError`, `429` retry + `Retry-After`
+  honouring, `400`/`404`/`422` non-retryal, network-error retry,
+  `retry: false` disabling retries, and `onRetry` instrumentation.
+
+`packages/client/src/retry.test.ts`
+- Extends the predicate test to cover `501`/`505` (retryable) and
+  `408`/`422`/`425` (non-retryable).
+
+---
+
+## Acceptance criteria
+
+- [x] Client automatically retries failed requests matching retryable statuses
+      (`429` and all `5xx`), enabled by default.
+- [x] Exponential backoff increases between attempts with full jitter applied.
+- [x] Non-retryable errors (`400`, `401`, `403`, `404`, `408`, `422`, `425`)
+      throw immediately without retrying.
+- [x] Configurable `maxRetries` (default **3**) and base backoff delay.
+- [x] Comprehensive unit tests in the client package using `vitest` and mocked
+      `fetch`, including a `502 Bad Gateway` followed by a `200 OK`.
 
 ---
 
 ## Validation
 
-| package | `typecheck` | `build` | `test` |
-| --- | --- | --- | --- |
-| `@astroid/types` | pass | pass | 12 / 12 |
-| `@astroid/transaction` | pass | pass | 65 pass, 4 pre-existing failures |
-| `@astroid/budget` | pass | pass | 81 / 81 |
+| package | command | result |
+| --- | --- | --- |
+| `@astroid/client` | `pnpm test` | 221 passed (15 files) |
+| `@astroid/client` | `pnpm typecheck` | pass |
+| workspace | `pnpm test` | all packages pass |
+| workspace | `pnpm typecheck` | 16/16 packages pass |
 
-The 4 `@astroid/transaction` failures pre-date this branch (`fee-estimation`
-assertions, `error-normalization`, and `submit.test.ts` which resolves
-`@astroid/core`). Verified against a clean tree; this branch net-fixes one
-previously failing `simulation` test.
-
-## Out of scope / known issue
-
-`pnpm build` and `pnpm typecheck` at the repo root still fail because
-`@astroid/core` is a partially-merged rewrite: `index.ts` / `resource.ts` /
-`middleware.ts` / `pagination.ts` / `offline-queue.ts` expect a transport layer
-(`QueryValue`, `AstroidResponse`, `RequestOptions`, `PreparedRequest`,
-`RawResponse`, `ErrorPayload`, `Middleware`, `MiddlewareStack`, `SDK_VERSION`,
-`buildUrl`) that `http-types.ts` / `http-client.ts` / `url.ts` do not provide.
-This blocks `client`, `agent`, `wallet`, `policy`, `analytics`, `auth`,
-`webhook`, `notification`, `react`, and `cli`, and needs a dedicated fix.
+The retry mechanism itself was originally introduced in #186/#196/#171; this PR
+brings its defaults and status policy in line with #262 and adds the tests that
+pin that behaviour.
