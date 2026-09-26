@@ -12,6 +12,8 @@
 export interface AstroidErrorOptions {
   code: string;
   status?: number;
+  /** Explicit HTTP status; defaults to `status` when omitted (issue #279). */
+  statusCode?: number;
   requestId?: string;
   details?: Record<string, unknown>;
   cause?: unknown;
@@ -39,6 +41,13 @@ export class AstroidError extends Error {
   readonly code: string;
   /** HTTP status code, when the error originated from an HTTP response. */
   readonly status: number | undefined;
+  /**
+   * HTTP status code of the failed response that produced this error.
+   *
+   * Alias of {@link status} provided for issue #279 parity — consumers can
+   * read either property; both always carry the same value.
+   */
+  readonly statusCode: number | undefined;
   /** The API request id, for correlating with backend logs. */
   readonly requestId: string | undefined;
   /** Structured, machine-readable detail. */
@@ -49,6 +58,7 @@ export class AstroidError extends Error {
     this.name = new.target.name;
     this.code = options.code;
     this.status = options.status;
+    this.statusCode = options.statusCode ?? options.status;
     this.requestId = options.requestId;
     this.details = options.details;
     // Restore prototype chain for reliable `instanceof` across transpile targets.
@@ -67,6 +77,7 @@ export class AstroidError extends Error {
       message: this.message,
       code: this.code,
       status: this.status,
+      statusCode: this.statusCode,
       requestId: this.requestId,
       details: this.details,
       stack: this.stack,
