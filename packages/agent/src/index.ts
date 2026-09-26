@@ -18,6 +18,7 @@ import { validateCreateAgentParams } from './validation.js';
 
 export { AstroidValidationError } from './errors.js';
 export { validateCreateAgentParams, isValidCreateAgentParams } from './validation.js';
+export { AgentClient } from './client.js';
 
 /** Filters accepted by {@link AgentResource.list}. */
 export type AgentListParams = ListAgentsParams;
