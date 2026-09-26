@@ -57,15 +57,6 @@ import type {
   PaginationParams,
   UpdateBudgetInput,
 } from '@astroid/types';
-import {
-  assertValidThresholdPercent,
-  isValidBudgetAlertChannel,
-  BudgetAlertValidationError,
-  type BudgetAlert,
-  type CreateBudgetAlertInput,
-  type ListBudgetAlertsParams,
-  type UpdateBudgetAlertInput,
-} from './alerts.js';
 
 /** Filters accepted by {@link BudgetResource.list}. */
 export interface BudgetListParams extends PaginationParams {
@@ -233,3 +224,7 @@ export type {
   BudgetSimulationResult,
   BudgetUtilization,
 } from '@astroid/types';
+
+/** Alias of {@link BudgetResource} matching the `*sResource` client naming. */
+export const BudgetsResource = BudgetResource;
+
