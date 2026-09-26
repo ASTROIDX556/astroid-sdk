@@ -25,8 +25,16 @@ function makeClient() {
       const data = await handler('post', path, undefined, body);
       return { data };
     }),
-    patch: vi.fn(),
-    delete: vi.fn(),
+    patch: vi.fn(async (path: string, body?: unknown) => {
+      calls.push({ method: 'patch', path, body });
+      const data = await handler('patch', path, undefined, body);
+      return { data };
+    }),
+    delete: vi.fn(async (path: string) => {
+      calls.push({ method: 'delete', path });
+      const data = await handler('delete', path);
+      return { data };
+    }),
   } as unknown as HttpClient;
 
   return { client, calls, handler };
@@ -158,5 +166,30 @@ describe('BudgetResource', () => {
     ]);
     expect(result.utilization).toBe(0.4);
     expect(result.remaining).toBe('600.00');
+  });
+
+  it('getBudgetUtilization is an alias of utilization', async () => {
+    const { client, calls, handler } = makeClient();
+    const utilization: BudgetUtilization = {
+      budgetId: BUDGET_ID,
+      period: 'MONTHLY',
+      periodStart: '2026-08-01T00:00:00.000Z',
+      periodEnd: '2026-09-01T00:00:00.000Z',
+      limit: '1000.00',
+      spent: '400.00',
+      remaining: '600.00',
+      utilization: 0.4,
+      percent: 40,
+      state: 'healthy',
+    };
+    handler.mockResolvedValueOnce(utilization);
+    const resource = new BudgetResource(client);
+
+    const result = await resource.getBudgetUtilization(BUDGET_ID);
+
+    expect(calls).toEqual([
+      { method: 'get', path: `/budgets/${BUDGET_ID}/utilization`, query: undefined },
+    ]);
+    expect(result).toEqual(utilization);
   });
 });

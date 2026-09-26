@@ -19,7 +19,22 @@ export {
   type WalletMutationResult,
   type TransferVariables,
   type UseWalletBalanceOptions,
+  type WalletMutationOptions,
+  type UseTransferOptions,
+  type UseWalletMutationOptions,
 } from './hooks.js';
+export {
+  useWalletBalances,
+  useInvalidateWalletBalances,
+  walletBalancesKeys,
+  type UseWalletBalancesOptions,
+  type UseWalletBalancesResult,
+} from './hooks/useWalletBalances.js';
 export { useAgentLogs, agentLogKeys, type UseAgentLogsOptions } from './hooks/useAgentLogs.js';
 export { useAgentStatus, agentStatusKeys, type UseAgentStatusOptions } from './hooks/useAgentStatus.js';
 export { useAgentMetrics, type UseAgentMetricsOptions, type AgentMetricsData, type UseAgentMetricsResult } from './hooks/useAgentMetrics.js';
+export {
+  useAgentWalletBalance,
+  agentWalletBalanceKeys,
+  type UseAgentWalletBalanceOptions,
+} from './hooks/useAgentWalletBalance.js';

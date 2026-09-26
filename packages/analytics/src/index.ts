@@ -11,6 +11,8 @@
 import { Resource } from '@astroid/core';
 import type {
   AgentAnalytics,
+  AgentMetricsParams,
+  AgentMetricsReport,
   AgentSpendingRow,
   AnalyticsListParams,
   AnalyticsOverview,
@@ -20,6 +22,10 @@ import type {
   CashflowReport,
   Paginated,
   RiskReport,
+  SpendingSummaryParams,
+  SpendingSummaryReport,
+  TransactionVolumeParams,
+  TransactionVolumeReport,
 } from '@astroid/types';
 
 export {
@@ -32,6 +38,19 @@ export {
   type CsvExportOptions,
   type JsonExportOptions,
 } from './exporter.js';
+
+// Publicly re-export the metrics aggregation DTOs (issue #86) so consumers can
+// name them without reaching into `@astroid/types`.
+export type {
+  MetricsInterval,
+  AgentMetricsParams,
+  AgentMetricsReport,
+  AgentMetricsRow,
+  SpendingSummaryParams,
+  SpendingSummaryReport,
+  TransactionVolumeParams,
+  TransactionVolumeReport,
+} from '@astroid/types';
 
 /**
  * The `analytics` namespace on the Astroid client.
@@ -91,5 +110,42 @@ export class AnalyticsResource extends Resource {
    */
   async listBudgets(query: AnalyticsListParams = {}): Promise<Paginated<BudgetUtilizationRow>> {
     return this.listData<BudgetUtilizationRow>('/analytics/budgets', { ...query });
+  }
+
+  /* ------------------------- metrics aggregation ------------------------- */
+
+  /**
+   * Per-agent metrics (transaction count, volume, average risk) over a time
+   * window, bucketed by `interval`.
+   *
+   * Query parameters are serialised into the URL query string; `undefined`
+   * fields are omitted.
+   *
+   * @example
+   * ```ts
+   * const report = await astroid.analytics.getAgentMetrics({
+   *   startDate: '2026-01-01T00:00:00.000Z',
+   *   endDate: '2026-02-01T00:00:00.000Z',
+   *   interval: 'day',
+   * });
+   * ```
+   */
+  async getAgentMetrics(query: AgentMetricsParams = {}): Promise<AgentMetricsReport> {
+    return this.getData<AgentMetricsReport>('/analytics/agents/metrics', { ...query });
+  }
+
+  /**
+   * Aggregated spending summary (total spent, transaction count, trend) over a
+   * time window, bucketed by `interval`.
+   */
+  async getSpendingSummary(query: SpendingSummaryParams = {}): Promise<SpendingSummaryReport> {
+    return this.getData<SpendingSummaryReport>('/analytics/spending/summary', { ...query });
+  }
+
+  /**
+   * Transaction volume and counts over a time window, bucketed by `interval`.
+   */
+  async getTransactionVolume(query: TransactionVolumeParams = {}): Promise<TransactionVolumeReport> {
+    return this.getData<TransactionVolumeReport>('/analytics/volume', { ...query });
   }
 }

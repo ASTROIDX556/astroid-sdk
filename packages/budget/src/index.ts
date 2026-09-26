@@ -13,6 +13,36 @@ export {
 } from './metrics.js';
 export { checkBudgetLimit, type BudgetValidationResult } from './validation.js';
 
+export {
+  assertValidThresholdPercent,
+  createBudgetAlert,
+  deleteBudgetAlert,
+  getBudgetAlert,
+  isValidBudgetAlertChannel,
+  listBudgetAlerts,
+  updateBudgetAlert,
+  BudgetAlertValidationError,
+  BUDGET_ALERT_THRESHOLDS,
+  type BudgetAlert,
+  type BudgetAlertChannel,
+  type CreateBudgetAlertInput,
+  type UpdateBudgetAlertInput,
+  type ListBudgetAlertsParams,
+} from './alerts.js';
+export {
+  BudgetClient,
+  classifyAllocation,
+  deriveAllocationStatus,
+  isAllocationExhausted,
+  toBudgetQuery,
+  DEFAULT_ALLOCATION_THRESHOLDS,
+  type BudgetHttpClient,
+  type BudgetQuery,
+  type BudgetRequestOptions,
+  type DeriveAllocationOptions,
+  type ListBudgetsParams,
+} from './budget.js';
+
 import { Resource } from '@astroid/core';
 import type {
   Budget,
@@ -163,4 +193,38 @@ export class BudgetResource extends Resource {
       `/budgets/${encodeURIComponent(budgetId)}/utilization`,
     );
   }
+
+  /**
+   * Retrieve the current utilization snapshot for a budget.
+   *
+   * This is the fully-qualified alias of {@link BudgetResource.utilization}
+   * exposed for callers who prefer a `getBudgetUtilization`-style resource API;
+   * behaviour is identical.
+   *
+   * @param budgetId The budget to inspect.
+   * @returns        Limit, spending, headroom, and the 0..1 utilization ratio
+   *                 for the active window (see {@link BudgetUtilization}).
+   */
+  async getBudgetUtilization(budgetId: string): Promise<BudgetUtilization> {
+    return this.utilization(budgetId);
+  }
 }
+
+/**
+ * Budget DTOs re-exported from `@astroid/types` so consumers of
+ * `@astroid/budget` can use the resource return types without a second import.
+ */
+export type {
+  Budget,
+  BudgetAllocationState,
+  BudgetAllocationStatus,
+  BudgetAllocationThresholds,
+  BudgetCheckResult,
+  BudgetMetrics,
+  BudgetSimulationResult,
+  BudgetUtilization,
+} from '@astroid/types';
+
+/** Alias of {@link BudgetResource} matching the `*sResource` client naming. */
+export const BudgetsResource = BudgetResource;
+
