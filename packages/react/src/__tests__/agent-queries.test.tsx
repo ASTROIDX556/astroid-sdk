@@ -15,7 +15,7 @@
  * The client methods are mocked via the shared harness; no live API is contacted.
  */
 
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, type vi } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { useAgent, useAgents } from '../hooks.js';
 import { queryKeys } from '../hooks.js';
