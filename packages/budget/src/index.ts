@@ -163,4 +163,34 @@ export class BudgetResource extends Resource {
       `/budgets/${encodeURIComponent(budgetId)}/utilization`,
     );
   }
+
+  /**
+   * Retrieve the current utilization snapshot for a budget.
+   *
+   * This is the fully-qualified alias of {@link BudgetResource.utilization}
+   * exposed for callers who prefer a `getBudgetUtilization`-style resource API;
+   * behaviour is identical.
+   *
+   * @param budgetId The budget to inspect.
+   * @returns        Limit, spending, headroom, and the 0..1 utilization ratio
+   *                 for the active window (see {@link BudgetUtilization}).
+   */
+  async getBudgetUtilization(budgetId: string): Promise<BudgetUtilization> {
+    return this.utilization(budgetId);
+  }
 }
+
+/**
+ * Budget DTOs re-exported from `@astroid/types` so consumers of
+ * `@astroid/budget` can use the resource return types without a second import.
+ */
+export type {
+  Budget,
+  BudgetAllocationState,
+  BudgetAllocationStatus,
+  BudgetAllocationThresholds,
+  BudgetCheckResult,
+  BudgetMetrics,
+  BudgetSimulationResult,
+  BudgetUtilization,
+} from '@astroid/types';
