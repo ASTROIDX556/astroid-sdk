@@ -30,7 +30,6 @@ import type {
   BudgetSimulationRequest,
   BudgetUtilization,
   BudgetCheckResult,
-  BudgetUtilization,
   ConsumeBudgetInput,
   CreateBudgetAlertInput,
   CreateBudgetInput,
@@ -370,34 +369,6 @@ export class BudgetClient {
   }
 
   /**
-   * Fetch a budget's utilization snapshot from the API.
-   *
-   * Unlike {@link allocationStatus}, which derives the snapshot locally from a
-   * fetched budget, this returns the server-computed
-   * {@link BudgetUtilization} for the active window in a single request.
-   *
-   * @param budgetId The budget to inspect.
-   * @param options  Optional abort signal for the request.
-   * @returns        The active-window limit, spending, headroom and `0..1`
-   *                 utilization ratio.
-   *
-   * @example
-   * ```ts
-   * const util = await budgets.getBudgetUtilization('bud_1');
-   * console.log(`${util.percent}% of ${util.limit} ${util.period} budget used`);
-   * ```
-   */
-  async getBudgetUtilization(
-    budgetId: string,
-    options?: { signal?: AbortSignal },
-  ): Promise<BudgetUtilization> {
-    return this.http.get<BudgetUtilization>(
-      `${BASE_PATH}/${encodeURIComponent(budgetId)}/utilization`,
-      options?.signal ? { signal: options.signal } : {},
-    );
-  }
-
-  /**
    * Check how much of a budget's allocation is consumed locally.
    *
    * Fetches the budget and derives a {@link BudgetAllocationStatus} locally. Pass
@@ -450,6 +421,9 @@ export class BudgetClient {
     }
 
     return utilization;
+  }
+
+  /**
    * Create a budget threshold alert subscription.
    *
    * @param budgetId The budget to attach the alert to.
