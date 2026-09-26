@@ -37,6 +37,13 @@ import { createCorrelationMiddleware } from './middleware/correlation.js';
 import { createRateLimiterMiddleware } from './middleware/rate-limiter.js';
 import { createLoggingMiddleware, type LoggingMiddlewareOptions } from './middleware/logging.js';
 import { createErrorParserMiddleware } from './error-parser-middleware.js';
+import {
+  createDebugLogger,
+  createInterceptorMiddleware,
+  type DebugLoggerOptions,
+  type RequestInterceptor,
+  type ResponseInterceptor,
+} from './interceptors.js';
 import { AgentResource } from '@astroid/agent';
 import { AnalyticsResource } from '@astroid/analytics';
 import { AuthResource, SessionManager, createSessionMiddleware } from '@astroid/auth';
@@ -55,6 +62,7 @@ import type {
   WebhookEventName,
 } from '@astroid/types';
 import { createErrorTranslatorMiddleware } from './middleware/error.js';
+import { createTokenRefreshInterceptor } from './token-refresh.js';
 
 /**
  * Configuration accepted by `new Astroid({ ... })`.
@@ -69,6 +77,24 @@ export interface AstroidClientConfig extends CoreClientConfig {
   retryDelay?: number;
   /** Request/response logging hooks with automatic header redaction. */
   logging?: LoggingMiddlewareOptions;
+  /**
+   * Request interceptors executed, in order, before each request is dispatched.
+   * Each interceptor receives a mutable {@link RequestConfig} and may return a
+   * replacement config to rewrite the URL, method, headers, or body.
+   */
+  requestInterceptors?: RequestInterceptor[];
+  /**
+   * Response interceptors executed, in order, as each response is received.
+   * Each interceptor receives a mutable {@link ResponseConfig} and may return a
+   * replacement config to transform the response.
+   */
+  responseInterceptors?: ResponseInterceptor[];
+  /**
+   * Enable the built-in debug logger. Pass `true` for defaults or a
+   * {@link DebugLoggerOptions} object to tune the log sink, body inclusion, and
+   * header redaction.
+   */
+  debug?: boolean | DebugLoggerOptions;
   /**
    * Custom correlation/tracing headers applied to every outbound request
    * (issue #255). Shorthand for the core `tracingHeaders` option: use this to
@@ -229,29 +255,25 @@ export class Astroid {
     // Installed by default so consumers get high-fidelity errors without manual middleware wiring.
     this.use(createErrorTranslatorMiddleware());
 
+    // Token refresh interceptor (issue #103): a single-flight refresh shared
+    // by all concurrent 401s, plus a middleware that queues requests issued
+    // while a refresh is in flight so they don't race it with a stale token.
+    const refreshTokens = async (refreshToken: string): Promise<AuthTokens> => {
+      const res = await this.http.post<AuthTokens>('/auth/refresh', { refreshToken });
+      this.setAccessToken(res.data.accessToken);
+      return res.data;
+    };
+
     this.use(
-      createSessionMiddleware(this.sessionManager, async (refreshToken: string) => {
-        const res = await this.http.post<AuthTokens>('/auth/refresh', { refreshToken });
-        this.setAccessToken(res.data.accessToken);
-        return res.data;
-      }),
+      createSessionMiddleware(this.sessionManager, refreshTokens),
     );
 
-    this.http.set401Handler(async () => {
-      if (!this.sessionManager.getRefreshToken()) {
-        return false;
-      }
-      try {
-        await this.sessionManager.refreshSession(async (refreshToken: string) => {
-          const res = await this.http.post<AuthTokens>('/auth/refresh', { refreshToken });
-          this.setAccessToken(res.data.accessToken);
-          return res.data;
-        });
-        return true;
-      } catch {
-        return false;
-      }
+    const tokenRefresh = createTokenRefreshInterceptor({
+      sessionManager: this.sessionManager,
+      refresh: refreshTokens,
     });
+    this.use(tokenRefresh.middleware);
+    this.http.set401Handler(tokenRefresh.handleUnauthorized);
 
     // Wire up the dynamic token provider (called before every request;
     // the HttpClient deduplicates concurrent calls automatically).
@@ -275,6 +297,27 @@ export class Astroid {
     // Request/response logging with header redaction (opt-in via config).
     if (clientConfig?.logging) {
       this.http.use(createLoggingMiddleware(clientConfig.logging));
+    }
+
+    // Pluggable request/response interceptors. When `debug` is enabled the
+    // built-in debug logger interceptors are appended so callers get visibility
+    // without wiring them by hand.
+    const debugInterceptors =
+      clientConfig?.debug === true
+        ? createDebugLogger()
+        : clientConfig?.debug && typeof clientConfig.debug === 'object'
+          ? createDebugLogger(clientConfig.debug)
+          : undefined;
+    const requestInterceptors = [
+      ...(clientConfig?.requestInterceptors ?? []),
+      ...(debugInterceptors ? [debugInterceptors.requestInterceptor] : []),
+    ];
+    const responseInterceptors = [
+      ...(clientConfig?.responseInterceptors ?? []),
+      ...(debugInterceptors ? [debugInterceptors.responseInterceptor] : []),
+    ];
+    if (requestInterceptors.length > 0 || responseInterceptors.length > 0) {
+      this.http.use(createInterceptorMiddleware({ requestInterceptors, responseInterceptors }));
     }
 
     // Auto-register the error parser middleware so all responses are routed
@@ -421,6 +464,7 @@ export {
   AstroidError,
   AuthenticationError,
   AuthorizationError,
+  ForbiddenError,
   ValidationError,
   NotFoundError,
   ConflictError,
@@ -429,6 +473,7 @@ export {
   ApprovalRequiredError,
   RateLimitError,
   NetworkError,
+  InternalServerError,
   ServerError,
   isAstroidError,
 } from '@astroid/errors';
@@ -439,6 +484,20 @@ export {
   AstroidApiError,
   AstroidValidationError,
   AstroidNetworkError,
+} from '@astroid/errors';
+// Centralized Stellar domain errors and mapping (issue #253).
+export {
+  InsufficientBalanceError,
+  TrustlineMissingError,
+  StellarAuthError,
+  SequenceConflictError,
+  TransactionExpiredError,
+  StellarMalformedError,
+  StellarNetworkError,
+  mapStellarError,
+  extractStellarResultCodes,
+  errorClassForStellarCode,
+  isStellarError,
 } from '@astroid/errors';
 export {
   createErrorTranslatorMiddleware,
@@ -472,7 +531,30 @@ export {
 } from './errors.js';
 export { createErrorParserMiddleware } from './error-parser-middleware.js';
 
-// Shared auto-pagination helpers — cursor (keyset) iteration for any list endpoint.
+// Pluggable request/response interceptors and the built-in debug logger.
+export {
+  createInterceptorMiddleware,
+  createDebugLogger,
+  redactDebugHeaders,
+  type RequestConfig,
+  type ResponseConfig,
+  type RequestInterceptor,
+  type ResponseInterceptor,
+  type InterceptorOptions,
+  type DebugLogger,
+  type DebugLoggerOptions,
+} from './interceptors.js';
+
+// Token refresh interceptor — single-flight refresh + request queueing.
+export {
+  createTokenRefreshInterceptor,
+  type TokenRefreshInterceptor,
+  type TokenRefreshInterceptorOptions,
+  type UnauthorizedHandler,
+} from './token-refresh.js';
+
+// Shared auto-pagination helpers — cursor (keyset) iteration for any list
+// endpoint, plus query-parameter builders for standalone list requests.
 export {
   paginateCursor,
   normalizeCursorPage,
@@ -480,4 +562,10 @@ export {
   type CursorPage,
   type CursorPageFetcher,
   type PaginateCursorOptions,
+} from './pagination.js';
+export {
+  buildPaginationQuery,
+  buildPaginationQueryString,
+  serializePaginationParams,
+  unwrapPaginatedResponse,
 } from './pagination.js';

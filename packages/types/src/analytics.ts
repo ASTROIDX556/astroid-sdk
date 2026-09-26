@@ -151,3 +151,104 @@ export interface BudgetAnalytics {
   currency: string;
   budgets: BudgetUtilizationRow[];
 }
+
+/* -------------------------------------------------------------------------- */
+/* Metrics aggregation query DTOs (issue #86)                                  */
+/* -------------------------------------------------------------------------- */
+
+/** Bucket granularity accepted by the metrics aggregation endpoints. */
+export type MetricsInterval = 'hour' | 'day' | 'week' | 'month';
+
+/**
+ * Query DTO for `GET /analytics/agents/metrics`.
+ *
+ * Time range filters (`startDate`/`endDate`) plus an `interval` bucket
+ * granularity, optionally scoped to a single agent or wallet. `undefined`
+ * fields are omitted from the query string during serialisation.
+ */
+export interface AgentMetricsParams {
+  /** Inclusive start of the reporting window (ISO-8601). */
+  startDate?: string;
+  /** Exclusive end of the reporting window (ISO-8601). */
+  endDate?: string;
+  /** Bucket granularity for the report. */
+  interval?: MetricsInterval;
+  /** Filter results to a single agent. */
+  agentId?: string;
+  /** Filter results to a single wallet. */
+  walletId?: string;
+}
+
+/**
+ * Query DTO for `GET /analytics/spending/summary`.
+ *
+ * Aggregated spending totals over a time window, bucketed by `interval`.
+ */
+export interface SpendingSummaryParams {
+  /** Inclusive start of the reporting window (ISO-8601). */
+  startDate?: string;
+  /** Exclusive end of the reporting window (ISO-8601). */
+  endDate?: string;
+  /** Bucket granularity for the report. */
+  interval?: MetricsInterval;
+  /** Filter results to a single currency (e.g. `USD`). */
+  currency?: string;
+  /** Filter results to a single wallet. */
+  walletId?: string;
+}
+
+/**
+ * Query DTO for `GET /analytics/volume`.
+ *
+ * Transaction volume and counts over a time window, bucketed by `interval`.
+ */
+export interface TransactionVolumeParams {
+  /** Inclusive start of the reporting window (ISO-8601). */
+  startDate?: string;
+  /** Exclusive end of the reporting window (ISO-8601). */
+  endDate?: string;
+  /** Bucket granularity for the report. */
+  interval?: MetricsInterval;
+  /** Filter results to a single asset code (e.g. `USDC`, `XLM`). */
+  asset?: string;
+  /** Filter results to a single wallet. */
+  walletId?: string;
+}
+
+/** One agent's aggregated metrics row. */
+export interface AgentMetricsRow {
+  agentId: string;
+  agentName: string;
+  transactionCount: number;
+  totalVolume: DecimalString;
+  averageRisk: number;
+}
+
+/** `GET /analytics/agents/metrics` — per-agent metrics over a time window. */
+export interface AgentMetricsReport {
+  interval: MetricsInterval;
+  startDate?: string;
+  endDate?: string;
+  agents: AgentMetricsRow[];
+}
+
+/** `GET /analytics/spending/summary` — aggregated spending over a time window. */
+export interface SpendingSummaryReport {
+  interval: MetricsInterval;
+  startDate?: string;
+  endDate?: string;
+  currency: string;
+  totalSpent: DecimalString;
+  transactionCount: number;
+  trend: TimeSeriesPoint[];
+}
+
+/** `GET /analytics/volume` — transaction volume over a time window. */
+export interface TransactionVolumeReport {
+  interval: MetricsInterval;
+  startDate?: string;
+  endDate?: string;
+  totalVolume: DecimalString;
+  transactionCount: number;
+  points: TimeSeriesPoint[];
+}

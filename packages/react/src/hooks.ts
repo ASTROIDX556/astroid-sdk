@@ -21,6 +21,9 @@ export {
   type WalletMutationResult,
   type TransferVariables,
   type UseWalletBalanceOptions,
+  type WalletMutationOptions,
+  type UseTransferOptions,
+  type UseWalletMutationOptions,
 } from './hooks/useWallets.js';
 export {
   useWalletBalances,

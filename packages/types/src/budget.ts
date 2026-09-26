@@ -193,6 +193,18 @@ export interface ListBudgetAlertsParams extends PaginationParams {
   channel?: BudgetAlertChannel;
 }
 
+/** Alias for {@link BudgetAlert}. */
+export type BudgetThresholdAlert = BudgetAlert;
+
+/** Alias for {@link CreateBudgetAlertInput}. */
+export type CreateBudgetThresholdAlertInput = CreateBudgetAlertInput;
+
+/** Alias for {@link UpdateBudgetAlertInput}. */
+export type UpdateBudgetThresholdAlertInput = UpdateBudgetAlertInput;
+
+/** Alias for {@link ListBudgetAlertsParams}. */
+export type ListBudgetThresholdAlertsParams = ListBudgetAlertsParams;
+
 /* -------------------------------------------------------------------------- */
 /* Budget history queries                                                      */
 /* -------------------------------------------------------------------------- */
