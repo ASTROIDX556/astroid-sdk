@@ -62,6 +62,7 @@ import type {
   WebhookEventName,
 } from '@astroid/types';
 import { createErrorTranslatorMiddleware } from './middleware/error.js';
+import { createTokenRefreshInterceptor } from './token-refresh.js';
 
 /**
  * Configuration accepted by `new Astroid({ ... })`.
@@ -254,29 +255,25 @@ export class Astroid {
     // Installed by default so consumers get high-fidelity errors without manual middleware wiring.
     this.use(createErrorTranslatorMiddleware());
 
+    // Token refresh interceptor (issue #103): a single-flight refresh shared
+    // by all concurrent 401s, plus a middleware that queues requests issued
+    // while a refresh is in flight so they don't race it with a stale token.
+    const refreshTokens = async (refreshToken: string): Promise<AuthTokens> => {
+      const res = await this.http.post<AuthTokens>('/auth/refresh', { refreshToken });
+      this.setAccessToken(res.data.accessToken);
+      return res.data;
+    };
+
     this.use(
-      createSessionMiddleware(this.sessionManager, async (refreshToken: string) => {
-        const res = await this.http.post<AuthTokens>('/auth/refresh', { refreshToken });
-        this.setAccessToken(res.data.accessToken);
-        return res.data;
-      }),
+      createSessionMiddleware(this.sessionManager, refreshTokens),
     );
 
-    this.http.set401Handler(async () => {
-      if (!this.sessionManager.getRefreshToken()) {
-        return false;
-      }
-      try {
-        await this.sessionManager.refreshSession(async (refreshToken: string) => {
-          const res = await this.http.post<AuthTokens>('/auth/refresh', { refreshToken });
-          this.setAccessToken(res.data.accessToken);
-          return res.data;
-        });
-        return true;
-      } catch {
-        return false;
-      }
+    const tokenRefresh = createTokenRefreshInterceptor({
+      sessionManager: this.sessionManager,
+      refresh: refreshTokens,
     });
+    this.use(tokenRefresh.middleware);
+    this.http.set401Handler(tokenRefresh.handleUnauthorized);
 
     // Wire up the dynamic token provider (called before every request;
     // the HttpClient deduplicates concurrent calls automatically).
@@ -486,6 +483,20 @@ export {
   AstroidValidationError,
   AstroidNetworkError,
 } from '@astroid/errors';
+// Centralized Stellar domain errors and mapping (issue #253).
+export {
+  InsufficientBalanceError,
+  TrustlineMissingError,
+  StellarAuthError,
+  SequenceConflictError,
+  TransactionExpiredError,
+  StellarMalformedError,
+  StellarNetworkError,
+  mapStellarError,
+  extractStellarResultCodes,
+  errorClassForStellarCode,
+  isStellarError,
+} from '@astroid/errors';
 export {
   createErrorTranslatorMiddleware,
   errorTranslatorMiddleware,
@@ -518,22 +529,15 @@ export {
 } from './errors.js';
 export { createErrorParserMiddleware } from './error-parser-middleware.js';
 
-// Pluggable request/response interceptors and the built-in debug logger.
+// Token refresh interceptor — single-flight refresh + request queueing.
 export {
-  createInterceptorMiddleware,
-  createDebugLogger,
-  redactDebugHeaders,
-  type RequestConfig,
-  type ResponseConfig,
-  type RequestInterceptor,
-  type ResponseInterceptor,
-  type InterceptorOptions,
-  type DebugLogger,
-  type DebugLoggerOptions,
-} from './interceptors.js';
+  createTokenRefreshInterceptor,
+  type TokenRefreshInterceptor,
+  type TokenRefreshInterceptorOptions,
+  type UnauthorizedHandler,
+} from './token-refresh.js';
 
-// Shared auto-pagination helpers — cursor (keyset) iteration for any list
-// endpoint, plus query-parameter builders for standalone list requests.
+// Shared auto-pagination helpers — cursor (keyset) iteration for any list endpoint.
 export {
   paginateCursor,
   normalizeCursorPage,
