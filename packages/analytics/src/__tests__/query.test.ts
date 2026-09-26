@@ -16,6 +16,8 @@ import {
   buildListBudgetsQuery,
   type AnalyticsQueryOptions,
   type TimeWindowPreset,
+  type Timeframe,
+  type AnalyticsGroupBy,
 } from '../query.js';
 
 /* -------------------------------------------------------------------------- */

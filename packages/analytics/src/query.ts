@@ -18,6 +18,9 @@ import type { Timeframe } from '@astroid/types';
 /** Supported grouping dimensions for analytics aggregation. */
 export type AnalyticsGroupBy = 'asset' | 'agent' | 'wallet' | 'budget' | 'day' | 'week' | 'month';
 
+/** Timeframe bucket granularity for analytics reports. */
+export type { Timeframe };
+
 /** Supported time window presets for quick date range selection. */
 export type TimeWindowPreset =
   | 'last_hour'
@@ -434,5 +437,3 @@ export function buildListBudgetsQuery(params: AnalyticsQueryOptions): string {
 /* -------------------------------------------------------------------------- */
 /* Re-export types from @astroid/types for convenience                         */
 /* -------------------------------------------------------------------------- */
-
-export type { Timeframe } from '@astroid/types';
