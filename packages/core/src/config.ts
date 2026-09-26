@@ -126,6 +126,14 @@ export interface AstroidClientConfig extends AuthConfig {
   rateLimit?: RateLimitConfig;
   /** Request/response telemetry hooks for logging and monitoring. */
   telemetry?: TelemetryHooks;
+  /**
+   * Static tracing headers merged into every outbound request.
+   *
+   * Use this for organization-wide correlation (e.g. a fixed tenant or deployment
+   * correlation id). Per-request `options.headers`, `options.correlationId` and
+   * `options.requestId` take precedence over these values (issue #255).
+   */
+  tracingHeaders?: Record<string, string>;
 }
 
 /** Fully-resolved configuration with all defaults applied. */
@@ -141,6 +149,8 @@ export interface ResolvedConfig {
   enableOfflineQueue: boolean;
   /** Token-bucket rate limiting options, when configured. See {@link RateLimitConfig}. */
   rateLimit?: RateLimitConfig;
+  /** Static tracing headers merged into every request. See {@link AstroidClientConfig.tracingHeaders}. */
+  tracingHeaders?: Record<string, string>;
 }
 
 /** The default public API base URL. */
@@ -188,5 +198,6 @@ export function resolveConfig(config: AstroidClientConfig): ResolvedConfig {
     network: config.network,
     enableOfflineQueue: config.enableOfflineQueue ?? false,
     rateLimit: config.rateLimit,
+    tracingHeaders: config.tracingHeaders,
   };
 }
