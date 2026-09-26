@@ -37,6 +37,13 @@ import { createCorrelationMiddleware } from './middleware/correlation.js';
 import { createRateLimiterMiddleware } from './middleware/rate-limiter.js';
 import { createLoggingMiddleware, type LoggingMiddlewareOptions } from './middleware/logging.js';
 import { createErrorParserMiddleware } from './error-parser-middleware.js';
+import {
+  createDebugLogger,
+  createInterceptorMiddleware,
+  type DebugLoggerOptions,
+  type RequestInterceptor,
+  type ResponseInterceptor,
+} from './interceptors.js';
 import { AgentResource } from '@astroid/agent';
 import { AnalyticsResource } from '@astroid/analytics';
 import { AuthResource, SessionManager, createSessionMiddleware } from '@astroid/auth';
@@ -70,6 +77,24 @@ export interface AstroidClientConfig extends CoreClientConfig {
   retryDelay?: number;
   /** Request/response logging hooks with automatic header redaction. */
   logging?: LoggingMiddlewareOptions;
+  /**
+   * Request interceptors executed, in order, before each request is dispatched.
+   * Each interceptor receives a mutable {@link RequestConfig} and may return a
+   * replacement config to rewrite the URL, method, headers, or body.
+   */
+  requestInterceptors?: RequestInterceptor[];
+  /**
+   * Response interceptors executed, in order, as each response is received.
+   * Each interceptor receives a mutable {@link ResponseConfig} and may return a
+   * replacement config to transform the response.
+   */
+  responseInterceptors?: ResponseInterceptor[];
+  /**
+   * Enable the built-in debug logger. Pass `true` for defaults or a
+   * {@link DebugLoggerOptions} object to tune the log sink, body inclusion, and
+   * header redaction.
+   */
+  debug?: boolean | DebugLoggerOptions;
   /**
    * Custom correlation/tracing headers applied to every outbound request
    * (issue #255). Shorthand for the core `tracingHeaders` option: use this to
@@ -272,6 +297,27 @@ export class Astroid {
     // Request/response logging with header redaction (opt-in via config).
     if (clientConfig?.logging) {
       this.http.use(createLoggingMiddleware(clientConfig.logging));
+    }
+
+    // Pluggable request/response interceptors. When `debug` is enabled the
+    // built-in debug logger interceptors are appended so callers get visibility
+    // without wiring them by hand.
+    const debugInterceptors =
+      clientConfig?.debug === true
+        ? createDebugLogger()
+        : clientConfig?.debug && typeof clientConfig.debug === 'object'
+          ? createDebugLogger(clientConfig.debug)
+          : undefined;
+    const requestInterceptors = [
+      ...(clientConfig?.requestInterceptors ?? []),
+      ...(debugInterceptors ? [debugInterceptors.requestInterceptor] : []),
+    ];
+    const responseInterceptors = [
+      ...(clientConfig?.responseInterceptors ?? []),
+      ...(debugInterceptors ? [debugInterceptors.responseInterceptor] : []),
+    ];
+    if (requestInterceptors.length > 0 || responseInterceptors.length > 0) {
+      this.http.use(createInterceptorMiddleware({ requestInterceptors, responseInterceptors }));
     }
 
     // Auto-register the error parser middleware so all responses are routed
@@ -485,6 +531,20 @@ export {
 } from './errors.js';
 export { createErrorParserMiddleware } from './error-parser-middleware.js';
 
+// Pluggable request/response interceptors and the built-in debug logger.
+export {
+  createInterceptorMiddleware,
+  createDebugLogger,
+  redactDebugHeaders,
+  type RequestConfig,
+  type ResponseConfig,
+  type RequestInterceptor,
+  type ResponseInterceptor,
+  type InterceptorOptions,
+  type DebugLogger,
+  type DebugLoggerOptions,
+} from './interceptors.js';
+
 // Token refresh interceptor — single-flight refresh + request queueing.
 export {
   createTokenRefreshInterceptor,
@@ -493,7 +553,8 @@ export {
   type UnauthorizedHandler,
 } from './token-refresh.js';
 
-// Shared auto-pagination helpers — cursor (keyset) iteration for any list endpoint.
+// Shared auto-pagination helpers — cursor (keyset) iteration for any list
+// endpoint, plus query-parameter builders for standalone list requests.
 export {
   paginateCursor,
   normalizeCursorPage,
@@ -501,4 +562,10 @@ export {
   type CursorPage,
   type CursorPageFetcher,
   type PaginateCursorOptions,
+} from './pagination.js';
+export {
+  buildPaginationQuery,
+  buildPaginationQueryString,
+  serializePaginationParams,
+  unwrapPaginatedResponse,
 } from './pagination.js';

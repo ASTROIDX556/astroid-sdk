@@ -1,123 +1,199 @@
-# feat(policy, budget, transaction, react): simulation, utilization, payment & wallet-balance APIs
+# feat: paginated React hook factory, HTTP interceptors & pagination helpers
 
-Completes four agent-safety issues across the SDK in one PR:
-
-- **`@astroid/policy`** — pre-flight policy simulation (`simulate` / `simulatePolicy`)
-  with strongly-typed request/response DTOs and fetch-mocked tests covering both
-  approved **and** rejected evaluations.
-- **`@astroid/budget`** — allocation & utilization query methods
-  (`getBudget`, `listBudgets`, `getBudgetUtilization`) with exported DTOs and
-  success/error tests.
-- **`@astroid/transaction`** — the `buildPaymentTransaction` helper (native XLM
-  and issued assets) with `PaymentTransactionOptions` and payload/validation
-  tests in the canonical location.
-- **`@astroid/react`** — the `useAgentWalletBalance` TanStack Query hook with
-  loading/error/data states, disabled-on-`undefined`, and a dedicated test suite.
-
-Closes #280
-Closes #281
-Closes #282
-Closes #283
+Closes #70
+Closes #270
+Closes #273
+Closes #278
 
 ---
 
-## Background
+## Overview
 
-Autonomous agents on Stellar must be able to evaluate a proposed transfer
-against active safety policies, inspect live budget headroom, assemble a
-ready-to-sign payment envelope, and render balances in a React dashboard — all
-without first spending network fees on a doomed transaction. These four issues
-fill the remaining gaps in that developer loop, following the repository's
-**thin-client** convention: resource packages forward parameters over REST and
-never encode business decisions (the backend owns policy, risk and budget
-authority).
+This PR lands the reusable list/pagination infrastructure for the SDK and the
+React data layer built on top of it. It touches three workspace packages:
 
-All four packages already had a partial surface on `main`. This PR closes the
-specific gaps against each issue's acceptance criteria and adds the missing
-tests, rather than duplicating what already existed.
+| Package | What changed |
+| --- | --- |
+| `@astroid/react` | New generic infinite/paginated query hook + hook factory |
+| `@astroid/client` | Pluggable request/response interceptors, built-in debug logger, pagination query builders |
+| `@astroid/types` | Cursor pagination metadata now exposes a `prevCursor` |
 
-## Changes
+All four issues target the same theme — clean, typed pagination navigation —
+and are implemented together so the pieces compose (pagination types → client
+query builders → React hooks).
 
-### `@astroid/policy` — simulation types & rejected-path coverage (#280)
+---
 
-- `PolicySimulationRequest` and `PolicySimulationResult` are exported from
-  `@astroid/types` (re-exported package-wide), with
-  `PolicyViolationDetail`, `PolicyRiskAssessment` and `PolicyBudgetImpact`
-  shapes.
-- `PolicyResource.simulate` POSTs the request to `/policies/simulate`;
-  `PolicyResource.simulatePolicy` is the dry-run alias, and the exported
-  `simulatePolicy(policies, tx)` engine evaluates a decoded transaction locally
-  against fetched active rules.
-- **Added** a fetch-mocked test proving a **rejected** simulation
-  (`allowed: false`) round-trips its violations, limit/actual values, and
-  required approvals — the file previously only asserted the approved path.
+## Issue #70 — React query hook factory for paginated resource lists (`@astroid/react`)
 
-### `@astroid/budget` — allocation & utilization queries (#281)
+New module `packages/react/src/hooks/usePaginatedResource.ts`.
 
-- **Added** `BudgetResource.getBudgetUtilization(budgetId)` (alias of the
-  existing `utilization`) and `BudgetClient.getBudgetUtilization(budgetId, {
-  signal })`, both against `GET /budgets/:id/utilization`.
-- `getBudget` / `listBudgets` remain the fully-qualified resource aliases.
-- **Added** explicit DTO re-exports from `@astroid/budget`
-  (`Budget`, `BudgetUtilization`, `BudgetAllocationStatus`,
-  `BudgetAllocationThresholds`, `BudgetSimulationResult`, `BudgetMetrics`, …)
-  so consumers need no second import.
-- **Added** unit tests for successful utilization retrieval, id encoding +
-  abort-signal forwarding, and error propagation.
+- **`useInfiniteResource<TItem, TParams>(config, options)`** — a generic
+  TanStack Query hook for cursor-paginated list endpoints. It owns query-key
+  management (appending resolved params), page state, and next-page fetching,
+  with full type inference over `TItem` and `TParams`.
+- **`createPaginatedResourceHook(config)`** — the hook factory. Bind a
+  `PaginatedResourceConfig` (query key + page fetcher + defaults) once and get
+  back a reusable hook, so components pass only per-instance options.
+- **Caching & stale time** — `staleTime` can be set per-resource or per
+  instance; `gcTime`, `retry`, `enabled`, `refetchOnWindowFocus`,
+  `initialCursor`, and `limit` are exposed. Query keys include the resolved
+  params so different filters cache independently.
+- **States surfaced cleanly** — `isLoading`, `isError`, `error`,
+  `isFetchingNextPage`, `hasNextPage`, plus `fetchNextPage()` / `refetch()`
+  and a flattened `items` array (and raw `pages`, `total`).
+- **Custom cursors** — `getNextPageParam` defaults to following
+  `meta.nextCursor` while `meta.hasMore !== false`, but can be overridden.
+- Exported from `packages/react/src/index.ts` alongside the existing provider,
+  resource, and mutation hooks.
 
-### `@astroid/transaction` — payment builder & validation (#282)
+```tsx
+import { createPaginatedResourceHook } from '@astroid/react';
 
-- `buildPaymentTransaction(options)` constructs an **unsigned** single-payment
-  Stellar transaction for native `XLM` or `CODE:ISSUER` assets, validating the
-  destination (`G…` + checksum), positive finite amount, asset issuer and
-  network passphrase up front via structured `ValidationError`s from
-  `@astroid/errors`.
-- **Added** `src/__tests__/transaction.test.ts` covering payload generation
-  (source, destination, asset code/issuer, 7-dp amount, memo, zero signatures)
-  and every rejection path (invalid/missing destination, zero/negative amount,
-  issuer-less non-native asset, unknown passphrase).
+const useWalletsPage = createPaginatedResourceHook({
+  queryKey: ['astroid', 'wallets', 'list'],
+  fetchPage: (params) => astroid.wallets.list(params),
+  staleTime: 30_000,
+});
 
-### `@astroid/react` — `useAgentWalletBalance` (#283)
+const { items, isLoading, error, hasNextPage, isFetchingNextPage, fetchNextPage } =
+  useWalletsPage();
+```
 
-- **Added** `useAgentWalletBalance(walletId, options)` in
-  `packages/react/src/hooks/useAgentWalletBalance.ts`, built on `useQuery` and
-  the `AstroidProvider` client context. It accepts `enabled`, `refetchInterval`
-  and `staleTime`, disables itself when `walletId` is `undefined`, and exposes
-  a typed `UseQueryResult<WalletBalance, Error>`.
-- Exported from both `@astroid/react`'s `index.ts` and `hooks.ts`, together
-  with the `agentWalletBalanceKeys` query-key factory.
-- **Added** `src/__tests__/useAgentWalletBalance.test.tsx` (Testing Library +
-  mock QueryClient) asserting data/loading state, disabled-on-`undefined`,
-  the `enabled` flag, option acceptance, and error state.
+**Acceptance criteria**
+- [x] Implemented a paginated query hook factory in `packages/react`.
+- [x] Exported the new hooks alongside existing provider/resource hooks.
+- [x] Unit tests use `@testing-library/react` and `QueryClient` wrappers.
+- [x] `pnpm build`, `pnpm lint`, `pnpm typecheck` all pass.
 
-## Acceptance criteria
+---
 
-- [x] `PolicySimulationRequest` / `PolicySimulationResult` exported; simulation
-      method implemented; fetch-mocked tests for **approved and rejected**
-      responses.
-- [x] Budget `getBudget`, `listBudgets` and `getBudgetUtilization` methods;
-      DTO types exported from `@astroid/types` and `@astroid/budget`; tests
-      cover successful retrieval and error handling.
-- [x] `buildPaymentTransaction` + `PaymentTransactionOptions` with tests for
-      correct payload generation and input validation.
-- [x] `useAgentWalletBalance` exported with loading/error/data handling and a
-      test file; query disables when the wallet id is missing.
-- [x] `pnpm build`, `pnpm typecheck`, `pnpm test` and `pnpm lint` all pass.
+## Issue #270 — Request/response logging interceptor support (`@astroid/client`)
+
+New module `packages/client/src/interceptors.ts`, wired into `AstroidClientConfig`
+and the `Astroid` constructor.
+
+- **`requestInterceptors` / `responseInterceptors`** arrays on the client
+  config. Request interceptors run in array order before dispatch; response
+  interceptors run in array order as responses arrive.
+- **Lightweight, async-friendly signatures**:
+  - `RequestInterceptor = (config: RequestConfig) => RequestConfig | void | Promise<...>`
+  - `ResponseInterceptor = (response: ResponseConfig) => ResponseConfig | void | Promise<...>`
+  - `RequestConfig` exposes `url`, `method`, `headers`, `body` (decoded), and
+    the original `options`; `ResponseConfig` exposes `status`, `headers`,
+    `body`, `requestId`, and an echo of the originating request.
+- Return a replacement config to rewrite the URL/method/headers/body (tests
+  cover URL rewriting, method/body transformation, and header injection); return
+  nothing to observe only.
+- **Built-in debug logger**: `createDebugLogger(options)` returns a
+  `{ requestInterceptor, responseInterceptor }` pair that emits stable,
+  greppable lines and redacts sensitive headers by default:
+
+  ```
+  [astroid] → GET https://api.astroid.finance/v1/wallets headers={...}
+  [astroid] ← 200 GET https://api.astroid.finance/v1/wallets (42ms) body={...}
+  ```
+
+  It can also be enabled from config with `debug: true` / `debug: {...}`.
+- TSDoc examples are included on the module, `createInterceptorMiddleware`, and
+  `createDebugLogger`.
+
+**Acceptance criteria**
+- [x] Client options interface supports arrays of request/response interceptors.
+- [x] Request interceptors execute in order before fetch; response interceptors
+      execute upon receiving responses.
+- [x] Unit tests verify interceptor execution order and payload propagation.
+- [x] Interceptor usage documented with a TSDoc example.
+
+---
+
+## Issue #273 — Pagination parameters & meta types for list endpoints (`@astroid/client`, `@astroid/types`)
+
+- `PaginationParams` (`page?`, `cursor?`, `limit?`, `order?`) and the generic
+  `PaginatedResponse<T>` (`data: T[]`, `meta?: ResponseMeta`) are already
+  exported from `@astroid/types` and re-exported from `@astroid/client`.
+- `ResponseMeta` now also exposes `prevCursor?: string | null`, and
+  `CursorPaginated<T>` gains the same optional field, so backwards cursor
+  navigation is typed.
+- `serializePaginationParams` now also handles `page` and defensively drops
+  `null` / empty-string values, so serialization never produces literal `""`
+  query segments.
+- Pagination is wired into the client request layer: `Astroid.buildQuery(...)`
+  merges pagination params with arbitrary query params.
+
+**Acceptance criteria**
+- [x] `PaginationParams` and `PaginatedResponse` exported from `@astroid/types`.
+- [x] Client request utilities serialize optional pagination query strings.
+- [x] Unit tests verify query-parameter encoding and response parsing.
+- [x] `pnpm build` and `pnpm test` pass across the workspace.
+
+---
+
+## Issue #278 — Pagination response helpers & query parameter builders (`@astroid/client`)
+
+- **`buildPaginationQuery(params?)`** — returns a populated `URLSearchParams`
+  from `{ cursor, limit, order, page }`, safely omitting `undefined`, `null`,
+  and empty-string values without producing `?`/`&` artifacts.
+- **`buildPaginationQueryString(params?)`** — returns a leading-`?` query
+  string (`'?limit=25'`) or `''`, safe to concatenate onto any path.
+- Both are exported from `packages/client/src/index.ts`, alongside the existing
+  `serializePaginationParams` / `unwrapPaginatedResponse` helpers and the
+  generic `PaginatedResponse` re-export.
+- New Vitest suite additions under
+  `packages/client/src/__tests__/pagination.test.ts` verify serialization of
+  cursors, limits, order, and page, including boundary/empty cases.
+
+**Acceptance criteria**
+- [x] `buildPaginationQuery` exported from `@astroid/client`.
+- [x] Generic `PaginatedResponse` envelope exported for list results.
+- [x] Tests in `packages/client/src/__tests__/pagination.test.ts` cover
+      cursor/limit/order serialization.
+- [x] `pnpm --filter @astroid/client build` and `pnpm typecheck` pass.
+
+---
+
+## Files changed
+
+**Added**
+- `packages/client/src/interceptors.ts`
+- `packages/client/src/__tests__/interceptors.test.ts`
+- `packages/react/src/hooks/usePaginatedResource.ts`
+- `packages/react/src/__tests__/paginated-resource.test.tsx`
+
+**Modified**
+- `packages/client/src/index.ts` (config wiring + exports)
+- `packages/client/src/pagination.ts` (`buildPaginationQuery`,
+  `buildPaginationQueryString`, null-safe serialization)
+- `packages/client/src/__tests__/pagination.test.ts`
+- `packages/types/src/common.ts` (`prevCursor` on `ResponseMeta` /
+  `CursorPaginated`)
+- `packages/types/src/pagination.test.ts`
+- `packages/react/src/index.ts`
+
+---
 
 ## Validation
 
-| scope | command | result |
+| package | command | result |
 | --- | --- | --- |
-| workspace | `pnpm build` | 16/16 packages build |
-| workspace | `pnpm typecheck` | 16/16 packages pass, zero errors |
-| workspace | `pnpm lint` | clean |
-| `@astroid/policy` | `pnpm --filter @astroid/policy test` | 82 passed (3 files) |
-| `@astroid/budget` | `pnpm --filter @astroid/budget test` | 95 passed (7 files) |
-| `@astroid/transaction` | `pnpm --filter @astroid/transaction test` | 155 passed (14 files) |
-| `@astroid/react` | `pnpm --filter @astroid/react test` | 76 passed (9 files) |
+| workspace | `pnpm build` | pass |
+| workspace | `pnpm lint` | pass |
+| workspace | `pnpm typecheck` | 16/16 packages pass |
+| `@astroid/client` | `pnpm test` | 17 files / 254 tests pass |
+| `@astroid/react` | `pnpm test` | 9 files / 79 tests pass |
+| `@astroid/types` | `pnpm test` | 4 files / 63 tests pass |
 | workspace | `pnpm test` | all packages pass |
 
-Manual checks: simulation request bodies are asserted to serialize to the exact
-JSON payloads sent to `/policies/simulate` and `/budgets/:id/utilization`; the
-payment builder is asserted to produce an unsigned envelope with the expected
-destination/asset/amount decoded from its XDR.
+---
+
+## Notes / design decisions
+
+- Interceptors intentionally layer on top of the existing middleware stack
+  rather than replacing it: `createInterceptorMiddleware` simply adapts the
+  `PreparedRequest`/`RawResponse` pipeline into the ergonomic
+  `RequestConfig`/`ResponseConfig` shape, so existing middleware order and
+  behaviour are unchanged.
+- The React hook factory is deliberately resource-agnostic (it takes a query
+  key and page fetcher) so it can be reused by every resource package without
+  coupling `@astroid/react` to resource implementations.
+- `prevCursor` was added as an optional field to keep the change non-breaking.
