@@ -9,133 +9,50 @@
 
 import { ApiErrorCode, type ApiError } from '@astroid/types';
 
-/** Structured context available on every Astroid error. */
-export interface AstroidErrorOptions {
-  code: string;
-  status?: number;
-  requestId?: string;
-  details?: Record<string, unknown>;
-  cause?: unknown;
-}
+export {
+  AstroidError,
+  type AstroidErrorOptions,
+} from './base.js';
+import { AstroidError } from './base.js';
 
-/**
- * Base class for all Astroid SDK errors.
- *
- * @example
- * ```ts
- * try {
- *   await astroid.transactions.create(input);
- * } catch (err) {
- *   if (err instanceof BudgetExceededError) {
- *     console.error(err.code, err.details);
- *   }
- * }
- * ```
- */
-export class AstroidError extends Error {
-  /** Machine-readable error code (mirrors the API error code where possible). */
-  readonly code: string;
-  /** HTTP status code, when the error originated from an HTTP response. */
-  readonly status: number | undefined;
-  /** The API request id, for correlating with backend logs. */
-  readonly requestId: string | undefined;
-  /** Structured, machine-readable detail. */
-  readonly details: Record<string, unknown> | undefined;
+/* -------------------------------------------------------------------------- */
+/* Specialized HTTP/API error classes                                          */
+/* -------------------------------------------------------------------------- */
 
-  constructor(message: string, options: AstroidErrorOptions) {
-    super(message, options.cause !== undefined ? { cause: options.cause } : undefined);
-    this.name = new.target.name;
-    this.code = options.code;
-    this.status = options.status;
-    this.requestId = options.requestId;
-    this.details = options.details;
-    // Restore prototype chain for reliable `instanceof` across transpile targets.
-    Object.setPrototypeOf(this, new.target.prototype);
-  }
-
-  /** Whether retrying the request could plausibly succeed. */
-  get isRetryable(): boolean {
-    return false;
-  }
-
-  /** A plain, serialisable representation (safe to log — no secrets). */
-  toJSON(): Record<string, unknown> {
-  return {
-    name: this.name,
-    message: this.message,
-    code: this.code,
-    status: this.status,
-    requestId: this.requestId,
-    details: this.details,
-    stack: this.stack,
-  };
-  }
-}
-
-/** 401 — missing/invalid credentials, expired token, or invalid API key. */
-export class AuthenticationError extends AstroidError {}
-
-/** 403 — authenticated but not permitted. */
-export class AuthorizationError extends AstroidError {}
-
-/** 400/422 — request failed schema or business validation. */
-export class ValidationError extends AstroidError {
-  /** Field-level validation issues, when the API provides them. */
-  get fieldErrors(): Record<string, string[]> | undefined {
-    return this.details?.fields as Record<string, string[]> | undefined;
-  }
-}
-
-/** 404 — the requested resource does not exist. */
-export class NotFoundError extends AstroidError {}
-
-/** 409 — the request conflicts with the current resource state. */
-export class ConflictError extends AstroidError {}
-
-/** A transaction was blocked because it violates one or more spending policies. */
-export class PolicyViolationError extends AstroidError {}
-
-/** A transaction was blocked because the source account lacks sufficient funds. */
-export class InsufficientFundsError extends AstroidError {}
+export {
+  AuthenticationError,
+  AuthorizationError,
+  ValidationError,
+  NotFoundError,
+  ConflictError,
+  PolicyViolationError,
+  InsufficientFundsError,
+  BudgetExceededError,
+  ApprovalRequiredError,
+  RateLimitError,
+  NetworkError,
+  ServerError,
+} from './classes.js';
+import {
+  AuthenticationError,
+  AuthorizationError,
+  ValidationError,
+  NotFoundError,
+  ConflictError,
+  PolicyViolationError,
+  InsufficientFundsError,
+  BudgetExceededError,
+  ApprovalRequiredError,
+  RateLimitError,
+  NetworkError,
+  ServerError,
+} from './classes.js';
 
 /** Alias for {@link InsufficientFundsError} — matches the naming used in API docs and client middleware. */
 export const AstroidInsufficientFundsError = InsufficientFundsError;
 
 /** Alias for {@link PolicyViolationError} — matches the naming used in API docs and client middleware. */
 export const AstroidPolicyViolationError = PolicyViolationError;
-
-/** A transaction was blocked because it would exceed an available budget. */
-export class BudgetExceededError extends AstroidError {}
-
-/** A transaction requires human approval before it can execute. */
-export class ApprovalRequiredError extends AstroidError {}
-
-/** 429 — rate limit exceeded. Inspect `retryAfter` before retrying. */
-export class RateLimitError extends AstroidError {
-  /** Seconds to wait before retrying, from the `Retry-After` header if present. */
-  get retryAfter(): number | undefined {
-    const value = this.details?.retryAfter;
-    return typeof value === 'number' ? value : undefined;
-  }
-
-  override get isRetryable(): boolean {
-    return true;
-  }
-}
-
-/** A transport-level failure: DNS, connection reset, offline, or timeout. */
-export class NetworkError extends AstroidError {
-  override get isRetryable(): boolean {
-    return true;
-  }
-}
-
-/** 5xx — the API failed to handle a valid request. */
-export class ServerError extends AstroidError {
-  override get isRetryable(): boolean {
-    return true;
-  }
-}
 
 /**
  * Maps an API error code to its concrete error class. Unknown codes fall back to
@@ -326,3 +243,27 @@ export const AstroidValidationError = ValidationError;
 
 /** Alias for {@link NetworkError} — transport failures and timeouts. */
 export const AstroidNetworkError = NetworkError;
+
+/* -------------------------------------------------------------------------- */
+/* Structured Stellar error mapping (issue #253)                               */
+/* -------------------------------------------------------------------------- */
+
+export {
+  InsufficientBalanceError,
+  TrustlineMissingError,
+  StellarAuthError,
+  SequenceConflictError,
+  TransactionExpiredError,
+  StellarMalformedError,
+  StellarNetworkError,
+  STELLAR_OPERATION_CODE_MAP,
+  STELLAR_TRANSACTION_CODE_MAP,
+  STELLAR_CODE_STATUS_MAP,
+  extractStellarResultCodes,
+  errorClassForStellarCode,
+  mapStellarError,
+  stellarCodeToApiError,
+  isStellarError,
+  type StellarResultCodes,
+  type StellarMappingContext,
+} from './stellar.js';
