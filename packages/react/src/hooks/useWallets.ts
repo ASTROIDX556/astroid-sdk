@@ -115,32 +115,91 @@ export interface TransferVariables {
 }
 
 /**
+ * Common options for wallet mutation hooks supporting query cache invalidation.
+ */
+export interface WalletMutationOptions<TData, TVariables> {
+  /**
+   * Whether to automatically invalidate related wallet queries upon mutation success.
+   * Defaults to `true`.
+   */
+  invalidateOnSuccess?: boolean;
+  /**
+   * Custom query keys to invalidate on successful mutation execution.
+   * Can be an array of query keys or a function that receives the mutation result and variables.
+   */
+  invalidateQueries?:
+    | readonly (readonly unknown[])[]
+    | ((data: TData, variables: TVariables) => readonly (readonly unknown[])[]);
+  /** Optional callback invoked on mutation success. */
+  onSuccess?: (data: TData, variables: TVariables, context: unknown) => void | Promise<void>;
+  /** Optional callback invoked on mutation error. */
+  onError?: (error: Error, variables: TVariables, context: unknown) => void | Promise<void>;
+  /** Optional callback invoked when the mutation settles (success or error). */
+  onSettled?: (
+    data: TData | undefined,
+    error: Error | null,
+    variables: TVariables,
+    context: unknown,
+  ) => void | Promise<void>;
+}
+
+/** Options for the `useTransfer` hook. */
+export type UseTransferOptions = WalletMutationOptions<Transaction, TransferVariables>;
+
+/**
  * Mutation hook to initiate a transfer from a wallet.
  *
  * Invalidates the wallet's balance and detail queries on success so balances
  * stay fresh after the transfer lands.
  *
+ * @param options Optional configuration for automatic or custom query invalidation and lifecycle callbacks.
  * @returns A TanStack Query mutation with `mutate({ walletId, input })`,
  *   `isPending`, `error`, etc.
  *
  * @example
  * ```tsx
- * const transfer = useTransfer();
+ * const transfer = useTransfer({
+ *   onSuccess: (tx) => console.log('Transferred:', tx.id),
+ * });
  * transfer.mutate({
  *   walletId: 'wal_abc123',
  *   input: { recipientAddress: 'G…', asset: 'USDC', amount: '10' },
  * });
  * ```
  */
-export function useTransfer(): UseMutationResult<Transaction, Error, TransferVariables> {
+export function useTransfer(
+  options: UseTransferOptions = {},
+): UseMutationResult<Transaction, Error, TransferVariables> {
   const astroid = useAstroidClient();
   const queryClient = useQueryClient();
+  const {
+    invalidateOnSuccess = true,
+    invalidateQueries: customInvalidate,
+    onSuccess,
+    onError,
+    onSettled,
+  } = options;
 
   return useMutation({
     mutationFn: ({ walletId, input }: TransferVariables) => astroid.wallets.transfer(walletId, input),
-    onSuccess: (_data, { walletId }) => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.wallets.balance(walletId) });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.wallets.detail(walletId) });
+    onSuccess: async (data, variables, context) => {
+      if (invalidateOnSuccess) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.wallets.balance(variables.walletId) });
+        void queryClient.invalidateQueries({ queryKey: queryKeys.wallets.detail(variables.walletId) });
+      }
+      if (customInvalidate) {
+        const keys = typeof customInvalidate === 'function' ? customInvalidate(data, variables) : customInvalidate;
+        for (const queryKey of keys) {
+          void queryClient.invalidateQueries({ queryKey });
+        }
+      }
+      await onSuccess?.(data, variables, context);
+    },
+    onError: async (error, variables, context) => {
+      await onError?.(error, variables, context);
+    },
+    onSettled: async (data, error, variables, context) => {
+      await onSettled?.(data, error, variables, context);
     },
   });
 }
@@ -162,6 +221,9 @@ export type WalletMutationVariables =
 /** The result of a wallet mutation: a {@link Wallet} or a {@link Transaction}. */
 export type WalletMutationResult = Wallet | Transaction;
 
+/** Options for the `useWalletMutation` hook. */
+export type UseWalletMutationOptions = WalletMutationOptions<WalletMutationResult, WalletMutationVariables>;
+
 /**
  * Mutation hook covering every wallet operation (create, import, update,
  * freeze, unfreeze, archive, transfer) through a single typed API.
@@ -169,12 +231,15 @@ export type WalletMutationResult = Wallet | Transaction;
  * On success the wallet list, detail, and balance queries are invalidated so
  * cached data reflects the mutation immediately.
  *
+ * @param options Optional configuration for query invalidation and lifecycle callbacks.
  * @returns A TanStack Query mutation with `mutate(variables)`, `isPending`,
  *   `error`, etc. `variables.action` narrows the payload type.
  *
  * @example
  * ```tsx
- * const walletMutation = useWalletMutation();
+ * const walletMutation = useWalletMutation({
+ *   invalidateOnSuccess: true,
+ * });
  *
  * // Create:
  * walletMutation.mutate({ action: 'create', input: { label: 'Ops' } });
@@ -187,13 +252,22 @@ export type WalletMutationResult = Wallet | Transaction;
  * });
  * ```
  */
-export function useWalletMutation(): UseMutationResult<
+export function useWalletMutation(
+  options: UseWalletMutationOptions = {},
+): UseMutationResult<
   WalletMutationResult,
   Error,
   WalletMutationVariables
 > {
   const astroid = useAstroidClient();
   const queryClient = useQueryClient();
+  const {
+    invalidateOnSuccess = true,
+    invalidateQueries: customInvalidate,
+    onSuccess,
+    onError,
+    onSettled,
+  } = options;
 
   return useMutation({
     mutationFn: async (variables: WalletMutationVariables): Promise<WalletMutationResult> => {
@@ -214,16 +288,31 @@ export function useWalletMutation(): UseMutationResult<
           return astroid.wallets.transfer(variables.walletId, variables.input);
       }
     },
-    onSuccess: (_data, variables) => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.wallets.list() });
-      if ('walletId' in variables) {
-        void queryClient.invalidateQueries({
-          queryKey: queryKeys.wallets.detail(variables.walletId),
-        });
-        void queryClient.invalidateQueries({
-          queryKey: queryKeys.wallets.balance(variables.walletId),
-        });
+    onSuccess: async (data, variables, context) => {
+      if (invalidateOnSuccess) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.wallets.list() });
+        if ('walletId' in variables) {
+          void queryClient.invalidateQueries({
+            queryKey: queryKeys.wallets.detail(variables.walletId),
+          });
+          void queryClient.invalidateQueries({
+            queryKey: queryKeys.wallets.balance(variables.walletId),
+          });
+        }
       }
+      if (customInvalidate) {
+        const keys = typeof customInvalidate === 'function' ? customInvalidate(data, variables) : customInvalidate;
+        for (const queryKey of keys) {
+          void queryClient.invalidateQueries({ queryKey });
+        }
+      }
+      await onSuccess?.(data, variables, context);
+    },
+    onError: async (error, variables, context) => {
+      await onError?.(error, variables, context);
+    },
+    onSettled: async (data, error, variables, context) => {
+      await onSettled?.(data, error, variables, context);
     },
   });
 }

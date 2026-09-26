@@ -88,31 +88,138 @@ export class AstroidError extends Error {
   }
 }
 
-/** 401 — missing/invalid credentials, expired token, or invalid API key. */
-export class AuthenticationError extends AstroidError {}
-
-/** 403 — authenticated but not permitted. */
-export class AuthorizationError extends AstroidError {}
-
-/** 400/422 — request failed schema or business validation. */
-export class ValidationError extends AstroidError {
-  /** Field-level validation issues, when the API provides them. */
-  get fieldErrors(): Record<string, string[]> | undefined {
-    return this.details?.fields as Record<string, string[]> | undefined;
+/**
+ * Error thrown when an API request fails authentication (HTTP 401).
+ *
+ * Typically indicates missing or invalid API credentials, an expired bearer token,
+ * or an invalid API key.
+ */
+export class AuthenticationError extends AstroidError {
+  /**
+   * Create an `AuthenticationError`.
+   *
+   * @param message Human-readable error message.
+   * @param options Error configuration options.
+   */
+  constructor(message: string, options: AstroidErrorOptions) {
+    super(message, options);
+    Object.setPrototypeOf(this, new.target.prototype);
   }
 }
 
-/** 404 — the requested resource does not exist. */
-export class NotFoundError extends AstroidError {}
+/**
+ * Error thrown when an authenticated request lacks necessary permissions (HTTP 403).
+ *
+ * Indicates that the client is authenticated but forbidden from accessing the requested resource
+ * or performing the requested operation.
+ */
+export class ForbiddenError extends AstroidError {
+  /**
+   * Create a `ForbiddenError`.
+   *
+   * @param message Human-readable error message.
+   * @param options Error configuration options.
+   */
+  constructor(message: string, options: AstroidErrorOptions) {
+    super(message, options);
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
 
-/** 409 — the request conflicts with the current resource state. */
-export class ConflictError extends AstroidError {}
+/**
+ * Alias for {@link ForbiddenError} (HTTP 403) for backwards compatibility.
+ */
+export const AuthorizationError = ForbiddenError;
+export type AuthorizationError = ForbiddenError;
 
-/** A transaction was blocked because it violates one or more spending policies. */
-export class PolicyViolationError extends AstroidError {}
+/**
+ * Error thrown when a request fails schema, type, or business validation (HTTP 400/422).
+ *
+ * Exposes structured field-level validation errors via {@link fieldErrors} when provided by the backend.
+ */
+export class ValidationError extends AstroidError {
+  /**
+   * Create a `ValidationError`.
+   *
+   * @param message Human-readable error message.
+   * @param options Error configuration options including validation details.
+   */
+  constructor(message: string, options: AstroidErrorOptions) {
+    super(message, options);
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
 
-/** A transaction was blocked because the source account lacks sufficient funds. */
-export class InsufficientFundsError extends AstroidError {}
+  /** Field-level validation issues, when the API provides them. */
+  get fieldErrors(): Record<string, string[]> | undefined {
+    return (this.details?.fields ?? this.details?.validationErrors) as
+      | Record<string, string[]>
+      | undefined;
+  }
+}
+
+/**
+ * Error thrown when the requested resource cannot be found (HTTP 404).
+ */
+export class NotFoundError extends AstroidError {
+  /**
+   * Create a `NotFoundError`.
+   *
+   * @param message Human-readable error message.
+   * @param options Error configuration options.
+   */
+  constructor(message: string, options: AstroidErrorOptions) {
+    super(message, options);
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+
+/**
+ * Error thrown when a request conflicts with the current resource state (HTTP 409).
+ */
+export class ConflictError extends AstroidError {
+  /**
+   * Create a `ConflictError`.
+   *
+   * @param message Human-readable error message.
+   * @param options Error configuration options.
+   */
+  constructor(message: string, options: AstroidErrorOptions) {
+    super(message, options);
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+
+/**
+ * Error thrown when a transaction is blocked because it violates one or more spending policies.
+ */
+export class PolicyViolationError extends AstroidError {
+  /**
+   * Create a `PolicyViolationError`.
+   *
+   * @param message Human-readable error message.
+   * @param options Error configuration options.
+   */
+  constructor(message: string, options: AstroidErrorOptions) {
+    super(message, options);
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+
+/**
+ * Error thrown when a transaction is blocked because the source account lacks sufficient funds.
+ */
+export class InsufficientFundsError extends AstroidError {
+  /**
+   * Create an `InsufficientFundsError`.
+   *
+   * @param message Human-readable error message.
+   * @param options Error configuration options.
+   */
+  constructor(message: string, options: AstroidErrorOptions) {
+    super(message, options);
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
 
 /** Alias for {@link InsufficientFundsError} — matches the naming used in API docs and client middleware. */
 export const AstroidInsufficientFundsError = InsufficientFundsError;
@@ -120,14 +227,55 @@ export const AstroidInsufficientFundsError = InsufficientFundsError;
 /** Alias for {@link PolicyViolationError} — matches the naming used in API docs and client middleware. */
 export const AstroidPolicyViolationError = PolicyViolationError;
 
-/** A transaction was blocked because it would exceed an available budget. */
-export class BudgetExceededError extends AstroidError {}
+/**
+ * Error thrown when a transaction is blocked because it would exceed an available budget.
+ */
+export class BudgetExceededError extends AstroidError {
+  /**
+   * Create a `BudgetExceededError`.
+   *
+   * @param message Human-readable error message.
+   * @param options Error configuration options.
+   */
+  constructor(message: string, options: AstroidErrorOptions) {
+    super(message, options);
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
 
-/** A transaction requires human approval before it can execute. */
-export class ApprovalRequiredError extends AstroidError {}
+/**
+ * Error thrown when a transaction requires human approval before it can execute.
+ */
+export class ApprovalRequiredError extends AstroidError {
+  /**
+   * Create an `ApprovalRequiredError`.
+   *
+   * @param message Human-readable error message.
+   * @param options Error configuration options.
+   */
+  constructor(message: string, options: AstroidErrorOptions) {
+    super(message, options);
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
 
-/** 429 — rate limit exceeded. Inspect `retryAfter` before retrying. */
+/**
+ * Error thrown when request rate limits are exceeded (HTTP 429).
+ *
+ * Inspect {@link retryAfter} to determine how many seconds to wait before retrying.
+ */
 export class RateLimitError extends AstroidError {
+  /**
+   * Create a `RateLimitError`.
+   *
+   * @param message Human-readable error message.
+   * @param options Error configuration options.
+   */
+  constructor(message: string, options: AstroidErrorOptions) {
+    super(message, options);
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+
   /** Seconds to wait before retrying, from the `Retry-After` header if present. */
   get retryAfter(): number | undefined {
     const value = this.details?.retryAfter;
@@ -139,19 +287,51 @@ export class RateLimitError extends AstroidError {
   }
 }
 
-/** A transport-level failure: DNS, connection reset, offline, or timeout. */
+/**
+ * Error thrown on transport-level failures (DNS resolution, connection reset, offline, or timeout).
+ */
 export class NetworkError extends AstroidError {
+  /**
+   * Create a `NetworkError`.
+   *
+   * @param message Human-readable error message.
+   * @param options Error configuration options.
+   */
+  constructor(message: string, options: AstroidErrorOptions) {
+    super(message, options);
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+
   override get isRetryable(): boolean {
     return true;
   }
 }
 
-/** 5xx — the API failed to handle a valid request. */
-export class ServerError extends AstroidError {
+/**
+ * Error thrown when the backend returns a 5xx Internal Server Error or unexpected failure.
+ */
+export class InternalServerError extends AstroidError {
+  /**
+   * Create an `InternalServerError`.
+   *
+   * @param message Human-readable error message.
+   * @param options Error configuration options.
+   */
+  constructor(message: string, options: AstroidErrorOptions) {
+    super(message, options);
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+
   override get isRetryable(): boolean {
     return true;
   }
 }
+
+/**
+ * Alias for {@link InternalServerError} — 5xx server-side failure.
+ */
+export const ServerError = InternalServerError;
+export type ServerError = InternalServerError;
 
 /**
  * Maps an API error code to its concrete error class. Unknown codes fall back to
@@ -165,7 +345,7 @@ export function errorClassForCode(code: string): typeof AstroidError {
     case ApiErrorCode.TOKEN_EXPIRED:
       return AuthenticationError;
     case ApiErrorCode.FORBIDDEN:
-      return AuthorizationError;
+      return ForbiddenError;
     case ApiErrorCode.VALIDATION_ERROR:
     case ApiErrorCode.BAD_REQUEST:
       return ValidationError;
@@ -192,7 +372,7 @@ export function errorClassForCode(code: string): typeof AstroidError {
       return NetworkError;
     case ApiErrorCode.INTERNAL_ERROR:
     case ApiErrorCode.SERVICE_UNAVAILABLE:
-      return ServerError;
+      return InternalServerError;
     default:
       // Also support direct Horizon codes that may leak as API codes
       if (code === 'op_underfunded' || code === 'op_low_reserve' || code === 'tx_insufficient_balance') {

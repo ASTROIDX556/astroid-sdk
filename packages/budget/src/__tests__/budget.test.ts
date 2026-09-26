@@ -230,6 +230,86 @@ describe('BudgetClient', () => {
     expect(status.spent).toBe('1100');
     expect(status.state).toBe('exhausted');
   });
+
+  it('createAlert() / createThresholdAlert() POSTs to /v1/budgets/:id/alerts', async () => {
+    const mockAlert = {
+      id: 'alt_1',
+      budgetId: 'bud_1',
+      organizationId: 'org_1',
+      thresholdPercent: 80,
+      channel: 'WEBHOOK',
+      target: 'https://example.com/webhook',
+      status: 'ACTIVE',
+      recurring: true,
+      createdAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-01T00:00:00.000Z',
+    };
+    http.post.mockResolvedValue(mockAlert);
+    const result = await client.createAlert('bud_1', {
+      thresholdPercent: 80,
+      channel: 'WEBHOOK',
+      target: 'https://example.com/webhook',
+    });
+    expect(http.post).toHaveBeenCalledWith('/v1/budgets/bud_1/alerts', {
+      thresholdPercent: 80,
+      channel: 'WEBHOOK',
+      target: 'https://example.com/webhook',
+    });
+    expect(result).toBe(mockAlert);
+
+    const thresholdResult = await client.createThresholdAlert('bud_1', {
+      thresholdPercent: 80,
+      channel: 'WEBHOOK',
+      target: 'https://example.com/webhook',
+    });
+    expect(thresholdResult).toBe(mockAlert);
+  });
+
+  it('listAlerts() / listThresholdAlerts() GETs /v1/budgets/:id/alerts', async () => {
+    http.get.mockResolvedValue({ data: [] });
+    await client.listAlerts('bud_1', { status: 'ACTIVE' });
+    expect(http.get).toHaveBeenCalledWith('/v1/budgets/bud_1/alerts', {
+      query: { status: 'ACTIVE' },
+    });
+
+    await client.listThresholdAlerts('bud_1');
+    expect(http.get).toHaveBeenCalledWith('/v1/budgets/bud_1/alerts', {
+      query: {},
+    });
+  });
+
+  it('getAlert() / getThresholdAlert() GETs /v1/budgets/:id/alerts/:alertId', async () => {
+    const mockAlert = { id: 'alt_1', thresholdPercent: 50 };
+    http.get.mockResolvedValue(mockAlert);
+    const result = await client.getAlert('bud_1', 'alt_1');
+    expect(http.get).toHaveBeenCalledWith('/v1/budgets/bud_1/alerts/alt_1');
+    expect(result).toBe(mockAlert);
+
+    const aliasResult = await client.getThresholdAlert('bud_1', 'alt_1');
+    expect(aliasResult).toBe(mockAlert);
+  });
+
+  it('updateAlert() / updateThresholdAlert() PATCHes /v1/budgets/:id/alerts/:alertId', async () => {
+    const updated = { id: 'alt_1', thresholdPercent: 90 };
+    http.patch.mockResolvedValue(updated);
+    const result = await client.updateAlert('bud_1', 'alt_1', { thresholdPercent: 90 });
+    expect(http.patch).toHaveBeenCalledWith('/v1/budgets/bud_1/alerts/alt_1', {
+      thresholdPercent: 90,
+    });
+    expect(result).toBe(updated);
+
+    const aliasResult = await client.updateThresholdAlert('bud_1', 'alt_1', { thresholdPercent: 90 });
+    expect(aliasResult).toBe(updated);
+  });
+
+  it('deleteAlert() / deleteThresholdAlert() DELETEs /v1/budgets/:id/alerts/:alertId', async () => {
+    http.delete.mockResolvedValue(undefined);
+    await client.deleteAlert('bud_1', 'alt_1');
+    expect(http.delete).toHaveBeenCalledWith('/v1/budgets/bud_1/alerts/alt_1');
+
+    await client.deleteThresholdAlert('bud_1', 'alt_1');
+    expect(http.delete).toHaveBeenCalledWith('/v1/budgets/bud_1/alerts/alt_1');
+  });
 });
 
 /* -------------------------------------------------------------------------- */

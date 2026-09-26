@@ -421,6 +421,7 @@ export {
   AstroidError,
   AuthenticationError,
   AuthorizationError,
+  ForbiddenError,
   ValidationError,
   NotFoundError,
   ConflictError,
@@ -429,6 +430,7 @@ export {
   ApprovalRequiredError,
   RateLimitError,
   NetworkError,
+  InternalServerError,
   ServerError,
   isAstroidError,
 } from '@astroid/errors';
