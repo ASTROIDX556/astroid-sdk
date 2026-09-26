@@ -11,7 +11,7 @@ import { type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AstroidProvider } from '../provider.js';
 import type { Astroid } from '@astroid/client';
-import type { Agent, Paginated } from '@astroid/types';
+import type { Agent, CreateAgentParams, Paginated } from '@astroid/types';
 
 /** A fully-populated agent fixture. */
 export const AGENT_A: Agent = {
@@ -59,14 +59,35 @@ export function createMockClient() {
     agents: {
       list: vi.fn(async (): Promise<Paginated<Agent>> => AGENT_PAGE),
       get: vi.fn(async (): Promise<Agent> => AGENT_A),
+      create: vi.fn(async (params: CreateAgentParams): Promise<Agent> => ({
+        ...AGENT_A,
+        id: 'agent_created',
+        name: params.name,
+        capabilities: params.capabilities,
+        description: params.description ?? null,
+        role: (params.role ?? 'CUSTOM') as Agent['role'],
+        status: 'ACTIVE' as Agent['status'],
+        provider: params.provider ?? null,
+        model: params.model ?? null,
+        primaryWalletId: params.primaryWalletId ?? null,
+        metadata: params.metadata ?? {},
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      })),
     },
   } as unknown as Astroid;
 }
 
-/** A fresh QueryClient + AstroidProvider wrapper for each hook render. */
-export function createWrapper(client: Astroid) {
+/**
+ * A fresh QueryClient + AstroidProvider wrapper for each hook render.
+ *
+ * Pass `gcTime: Infinity` for tests that prime the cache with data that has no
+ * active observer (e.g. optimistic-mutation tests); the default `gcTime: 0`
+ * garbage-collects unobserved entries during mutation cache transactions.
+ */
+export function createWrapper(client: Astroid, options: { gcTime?: number } = {}) {
   const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    defaultOptions: { queries: { retry: false, gcTime: options.gcTime ?? 0 } },
   });
   return {
     queryClient,
