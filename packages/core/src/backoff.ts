@@ -8,6 +8,7 @@ import type { RetryConfig } from './config.js';
  * Compute the delay (ms) before retry `attempt` (1-based) using exponential
  * backoff with full jitter, capped at `maxDelayMs`.
  *
+ * The growth rate is `config.backoffFactor` (default `2`, i.e. doubling).
  * A `random` function is injected so callers/tests stay deterministic; it
  * defaults to `Math.random`.
  */
@@ -16,7 +17,8 @@ export function backoffDelay(
   config: RetryConfig,
   random: () => number = Math.random,
 ): number {
-  const exponential = config.baseDelayMs * 2 ** (attempt - 1);
+  const factor = config.backoffFactor ?? 2;
+  const exponential = config.baseDelayMs * factor ** (attempt - 1);
   const capped = Math.min(exponential, config.maxDelayMs);
   // Full jitter: a random point in [0, capped].
   return Math.floor(random() * capped);

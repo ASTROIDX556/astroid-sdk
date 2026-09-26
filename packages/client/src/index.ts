@@ -414,12 +414,16 @@ export default Astroid;
 /** Normalise the shorthand `retries` / `retryDelay` options into core retry config. */
 function normalizeConfig(config: AstroidClientConfig): CoreClientConfig {
   if (config.retries === undefined) return config;
+  const existingRetry = typeof config.retry === 'object' ? config.retry : {};
   return {
     ...config,
     retry: {
+      // Keep any explicitly configured retry options (e.g. `backoffFactor`,
+      // `retryableStatusCodes`) alongside the shorthand fields.
+      ...existingRetry,
       maxRetries: config.retries,
-      baseDelayMs: config.retryDelay ?? 250,
-      maxDelayMs: 8000,
+      baseDelayMs: config.retryDelay ?? existingRetry.baseDelayMs ?? 250,
+      maxDelayMs: existingRetry.maxDelayMs ?? 8000,
     },
   };
 }
