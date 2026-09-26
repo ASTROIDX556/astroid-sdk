@@ -13,12 +13,11 @@
  * - **Exponential backoff with full jitter**: each retry waits a random
  *   interval in `[0, min(baseDelayMs * 2^(attempt-1), maxDelayMs)]` so agents
  *   don't all thunder-herd against a recovering backend.
- * - **Retry-After compliance**: on 429 responses the middleware reads the
- *   `Retry-After` header (seconds) and waits at least that long before the
- *   next attempt, capped at `maxDelayMs`.
+ * - **Retry-After compliance**: retryable responses may supply `Retry-After`
+ *   as seconds or an HTTP date; the wait is capped at `maxDelayMs`.
  * - **Configurable retry predicate**: the default retryable status set
- *   (`408 / 425 / 429 / 500 / 502 / 503 / 504`) can be replaced per-instance
- *   with a custom `shouldRetryStatus` function.
+ *   (`429` and any `5xx`) can be replaced per-instance with a custom
+ *   `shouldRetryStatus` function; other `4xx` responses fail immediately.
  * - **Visibility via `onRetry` callback**: consumers can log, trace, or
  *   surface retry events without instrumenting low-level transports.
  *
@@ -114,8 +113,7 @@ export interface RetryMiddlewareConfig extends RetryMiddlewareOptions {
 
   /**
    * Custom predicate deciding whether a given HTTP status code is retryable.
-   * Defaults to the SDK-wide {@link isRetryableStatus} (`408`, `425`, `429`,
-   * `500`, `502`, `503`, `504`).
+  * Defaults to the SDK-wide {@link isRetryableStatus}: `429` and any `5xx`.
    */
   shouldRetryStatus?: (status: number) => boolean;
 
