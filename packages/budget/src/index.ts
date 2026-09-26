@@ -13,6 +13,36 @@ export {
 } from './metrics.js';
 export { checkBudgetLimit, type BudgetValidationResult } from './validation.js';
 
+export {
+  assertValidThresholdPercent,
+  createBudgetAlert,
+  deleteBudgetAlert,
+  getBudgetAlert,
+  isValidBudgetAlertChannel,
+  listBudgetAlerts,
+  updateBudgetAlert,
+  BudgetAlertValidationError,
+  BUDGET_ALERT_THRESHOLDS,
+  type BudgetAlert,
+  type BudgetAlertChannel,
+  type CreateBudgetAlertInput,
+  type UpdateBudgetAlertInput,
+  type ListBudgetAlertsParams,
+} from './alerts.js';
+export {
+  BudgetClient,
+  classifyAllocation,
+  deriveAllocationStatus,
+  isAllocationExhausted,
+  toBudgetQuery,
+  DEFAULT_ALLOCATION_THRESHOLDS,
+  type BudgetHttpClient,
+  type BudgetQuery,
+  type BudgetRequestOptions,
+  type DeriveAllocationOptions,
+  type ListBudgetsParams,
+} from './budget.js';
+
 import { Resource } from '@astroid/core';
 import type {
   Budget,
@@ -194,3 +224,7 @@ export type {
   BudgetSimulationResult,
   BudgetUtilization,
 } from '@astroid/types';
+
+/** Alias of {@link BudgetResource} matching the `*sResource` client naming. */
+export const BudgetsResource = BudgetResource;
+

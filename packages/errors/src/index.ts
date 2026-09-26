@@ -23,6 +23,7 @@ import { AstroidError } from './base.js';
 export {
   AuthenticationError,
   AuthorizationError,
+  ForbiddenError,
   ValidationError,
   NotFoundError,
   ConflictError,
@@ -33,10 +34,11 @@ export {
   RateLimitError,
   NetworkError,
   ServerError,
+  InternalServerError,
 } from './classes.js';
 import {
   AuthenticationError,
-  AuthorizationError,
+  ForbiddenError,
   ValidationError,
   NotFoundError,
   ConflictError,
@@ -46,7 +48,7 @@ import {
   ApprovalRequiredError,
   RateLimitError,
   NetworkError,
-  ServerError,
+  InternalServerError,
 } from './classes.js';
 
 /** Alias for {@link InsufficientFundsError} — matches the naming used in API docs and client middleware. */
@@ -67,7 +69,7 @@ export function errorClassForCode(code: string): typeof AstroidError {
     case ApiErrorCode.TOKEN_EXPIRED:
       return AuthenticationError;
     case ApiErrorCode.FORBIDDEN:
-      return AuthorizationError;
+      return ForbiddenError;
     case ApiErrorCode.VALIDATION_ERROR:
     case ApiErrorCode.BAD_REQUEST:
       return ValidationError;
@@ -94,7 +96,7 @@ export function errorClassForCode(code: string): typeof AstroidError {
       return NetworkError;
     case ApiErrorCode.INTERNAL_ERROR:
     case ApiErrorCode.SERVICE_UNAVAILABLE:
-      return ServerError;
+      return InternalServerError;
     default:
       // Also support direct Horizon codes that may leak as API codes
       if (code === 'op_underfunded' || code === 'op_low_reserve' || code === 'tx_insufficient_balance') {

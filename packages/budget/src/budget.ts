@@ -20,6 +20,7 @@
 
 import type {
   Budget,
+  BudgetAlert,
   BudgetAllocationState,
   BudgetAllocationStatus,
   BudgetAllocationThresholds,
@@ -30,12 +31,22 @@ import type {
   BudgetCheckResult,
   BudgetUtilization,
   ConsumeBudgetInput,
+  CreateBudgetAlertInput,
   CreateBudgetInput,
   DecimalString,
+  ListBudgetAlertsParams,
   PaginatedResponse,
   PaginationParams,
+  UpdateBudgetAlertInput,
   UpdateBudgetInput,
 } from '@astroid/types';
+import {
+  createBudgetAlert,
+  listBudgetAlerts,
+  getBudgetAlert,
+  updateBudgetAlert,
+  deleteBudgetAlert,
+} from './alerts.js';
 
 /* -------------------------------------------------------------------------- */
 /* Transport                                                                   */
@@ -368,5 +379,98 @@ export class BudgetClient {
   ): Promise<BudgetAllocationStatus> {
     const budget = await this.get(budgetId);
     return deriveAllocationStatus(budget, options);
+  }
+
+  /**
+   * Create a budget threshold alert subscription.
+   *
+   * @param budgetId The budget to attach the alert to.
+   * @param input    Threshold percentage, notification channel, and destination.
+   */
+  async createAlert(budgetId: string, input: CreateBudgetAlertInput): Promise<BudgetAlert> {
+    return createBudgetAlert(this.http, budgetId, input);
+  }
+
+  /** Alias of {@link createAlert} for threshold-explicit naming. */
+  async createThresholdAlert(
+    budgetId: string,
+    input: CreateBudgetAlertInput,
+  ): Promise<BudgetAlert> {
+    return this.createAlert(budgetId, input);
+  }
+
+  /**
+   * List threshold alerts configured on a budget.
+   *
+   * @param budgetId The budget whose alerts to list.
+   * @param params   Optional status and channel filters and pagination.
+   */
+  async listAlerts(
+    budgetId: string,
+    params?: ListBudgetAlertsParams,
+  ): Promise<PaginatedResponse<BudgetAlert>> {
+    return listBudgetAlerts(this.http, budgetId, params);
+  }
+
+  /** Alias of {@link listAlerts} for threshold-explicit naming. */
+  async listThresholdAlerts(
+    budgetId: string,
+    params?: ListBudgetAlertsParams,
+  ): Promise<PaginatedResponse<BudgetAlert>> {
+    return this.listAlerts(budgetId, params);
+  }
+
+  /**
+   * Retrieve a single budget alert by id.
+   *
+   * @param budgetId The budget id.
+   * @param alertId  The alert id.
+   */
+  async getAlert(budgetId: string, alertId: string): Promise<BudgetAlert> {
+    return getBudgetAlert(this.http, budgetId, alertId);
+  }
+
+  /** Alias of {@link getAlert} for threshold-explicit naming. */
+  async getThresholdAlert(budgetId: string, alertId: string): Promise<BudgetAlert> {
+    return this.getAlert(budgetId, alertId);
+  }
+
+  /**
+   * Update a budget threshold alert subscription.
+   *
+   * @param budgetId The budget id.
+   * @param alertId  The alert id.
+   * @param input    Updated threshold percent, channel, destination, or status.
+   */
+  async updateAlert(
+    budgetId: string,
+    alertId: string,
+    input: UpdateBudgetAlertInput,
+  ): Promise<BudgetAlert> {
+    return updateBudgetAlert(this.http, budgetId, alertId, input);
+  }
+
+  /** Alias of {@link updateAlert} for threshold-explicit naming. */
+  async updateThresholdAlert(
+    budgetId: string,
+    alertId: string,
+    input: UpdateBudgetAlertInput,
+  ): Promise<BudgetAlert> {
+    return this.updateAlert(budgetId, alertId, input);
+  }
+
+  /**
+   * Delete a budget threshold alert subscription.
+   *
+   * @param budgetId The budget id.
+   * @param alertId  The alert id to delete.
+   */
+  async deleteAlert(budgetId: string, alertId: string): Promise<void> {
+    return deleteBudgetAlert(this.http, budgetId, alertId);
+  }
+
+  /** Alias of {@link deleteAlert} for threshold-explicit naming. */
+  async deleteThresholdAlert(budgetId: string, alertId: string): Promise<void> {
+    return this.deleteAlert(budgetId, alertId);
   }
 }

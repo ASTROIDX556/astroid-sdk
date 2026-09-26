@@ -46,6 +46,7 @@ import {
   AstroidError,
   AuthenticationError,
   AuthorizationError,
+  ForbiddenError,
   ValidationError,
   NotFoundError,
   ConflictError,
@@ -54,6 +55,7 @@ import {
   BudgetExceededError,
   ApprovalRequiredError,
   RateLimitError,
+  InternalServerError,
   ServerError,
   errorClassForCode,
   mapStellarError,
@@ -69,6 +71,7 @@ export {
   AstroidError,
   AuthenticationError,
   AuthorizationError,
+  ForbiddenError,
   ValidationError,
   NotFoundError,
   ConflictError,
@@ -77,6 +80,7 @@ export {
   BudgetExceededError,
   ApprovalRequiredError,
   RateLimitError,
+  InternalServerError,
   ServerError,
   StellarHorizonError,
 };
@@ -107,7 +111,7 @@ const HORIZON_DOMAIN_MAP: Record<string, typeof AstroidError> = {
   op_line_full: ValidationError,
   // Auth
   op_bad_auth: AuthenticationError,
-  op_unauthorized: AuthorizationError,
+  op_unauthorized: ForbiddenError,
   tx_bad_auth: AuthenticationError,
   // Sequence / conflict
   tx_bad_seq: ConflictError,
