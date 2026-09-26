@@ -90,7 +90,7 @@ describe('createRetryMiddleware', () => {
 
     const ctx = prepared.options.context as Record<string, unknown>;
     expect(ctx._retryConfig).toMatchObject({
-      maxRetries: 2,
+      maxRetries: 3,
       baseDelayMs: 250,
       maxDelayMs: 8000,
     });
@@ -438,6 +438,36 @@ describe('Astroid client — non-retryable errors', () => {
     await expect(client.wallets.get('w_422')).rejects.toBeDefined();
     expect(mockFetch).toHaveBeenCalledTimes(1); // no retries
   });
+
+  it('does not retry on 408 (Request Timeout) despite the transient-sounding name', async () => {
+    const mockFetch = vi.fn().mockImplementation(async () =>
+      errorResponse(408, 'REQUEST_TIMEOUT', 'Request Timeout'),
+    );
+
+    const client = new Astroid({
+      ...BASE_CONFIG,
+      fetch: mockFetch as unknown as typeof fetch,
+    });
+    client.use(createRetryMiddleware({ maxRetries: 3, baseDelayMs: 5, maxDelayMs: 50 }));
+
+    await expect(client.wallets.get('w_408')).rejects.toBeDefined();
+    expect(mockFetch).toHaveBeenCalledTimes(1); // no retries
+  });
+
+  it('does not retry on 425 (Too Early)', async () => {
+    const mockFetch = vi.fn().mockImplementation(async () =>
+      errorResponse(425, 'TOO_EARLY', 'Too Early'),
+    );
+
+    const client = new Astroid({
+      ...BASE_CONFIG,
+      fetch: mockFetch as unknown as typeof fetch,
+    });
+    client.use(createRetryMiddleware({ maxRetries: 3, baseDelayMs: 5, maxDelayMs: 50 }));
+
+    await expect(client.wallets.get('w_425')).rejects.toBeDefined();
+    expect(mockFetch).toHaveBeenCalledTimes(1); // no retries
+  });
 });
 
 /* -------------------------------------------------------------------------- */
@@ -492,6 +522,19 @@ describe('Astroid client — retry disabled', () => {
 /* -------------------------------------------------------------------------- */
 
 describe('Astroid client — retry from config', () => {
+  it('defaults to 3 retries and a 250ms base delay when no retry config is supplied', () => {
+    const client = new Astroid({
+      apiKey: 'sk_test_default',
+      baseUrl: 'https://api.astroid.test',
+      fetch: vi.fn() as unknown as typeof fetch,
+    });
+
+    expect(client.http.config.retry).toMatchObject({
+      maxRetries: 3,
+      baseDelayMs: 250,
+    });
+  });
+
   it('retries using config passed to new Astroid()', async () => {
     let callCount = 0;
     const mockFetch = vi.fn().mockImplementation(async () => {

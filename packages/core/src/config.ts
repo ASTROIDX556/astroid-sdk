@@ -33,7 +33,7 @@ export interface AuthConfig {
 
 /** Retry/backoff behaviour for transient failures. */
 export interface RetryConfig {
-  /** Maximum number of retries after the first attempt. Default 2. */
+  /** Maximum number of retries after the first attempt. Default 3. */
   maxRetries: number;
   /** Base backoff in ms; grows exponentially with jitter. Default 250. */
   baseDelayMs: number;
@@ -147,7 +147,7 @@ export interface ResolvedConfig {
 export const DEFAULT_BASE_URL = 'https://api.astroid.finance';
 
 const DEFAULT_RETRY: RetryConfig = {
-  maxRetries: 2,
+  maxRetries: 3,
   baseDelayMs: 250,
   maxDelayMs: 8000,
 };

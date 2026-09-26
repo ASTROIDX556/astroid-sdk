@@ -299,7 +299,7 @@ export function translateErrorBody(
  *
  * The middleware deliberately **does not** intercept `401` (which is handled by
  * the session refresh / dynamic token provider) nor retryable statuses
- * (`408`, `429`, `5xx`) so that the `HttpClient`'s built-in retry and refresh
+ * (`429`, `5xx`) so that the `HttpClient`'s built-in retry and refresh
  * loops retain full control. Those cases are instead refined in `onError`
  * after retries are exhausted.
  *
