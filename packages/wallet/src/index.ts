@@ -33,6 +33,18 @@ export {
 
 export { SecureKeystore, type EncryptedPayload } from './keystore.js';
 
+// Wallet key management & Ed25519 message signing utilities (issue #235).
+export {
+  isValidPublicKey,
+  isValidSecretKey,
+  assertValidPublicKey,
+  assertValidSecretKey,
+  derivePublicKey,
+  signMessage,
+  verifyMessage,
+  zeroize,
+} from './crypto.js';
+
 /** Filters accepted by {@link WalletResource.list}. */
 export interface WalletListParams extends PaginationParams {
   status?: WalletStatus;
