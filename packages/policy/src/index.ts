@@ -6,10 +6,52 @@ import type {
   PolicySimulationResult,
 } from '@astroid/types';
 
-import { simulatePolicy } from './simulator.js';
+import { simulatePolicy as evaluatePolicyRules } from './simulator.js';
 import type { PolicySimulationReport, SimulatedTransaction } from './simulator.js';
+import { simulatePolicy } from './simulate-policy.js';
 
-export type { PolicySimulationReport, SimulatedTransaction };
+/**
+ * The client-side (offline) policy engine. `evaluatePolicyRules` is the pure
+ * evaluator that takes a set of policy rules and a transaction payload and
+ * returns a {@link PolicySimulationReport} — no network required.
+ */
+export { evaluatePolicyRules };
+
+/**
+ * Server-side policy simulation endpoint helper. Import `simulatePolicy` to run
+ * a dry-run against the API without constructing a {@link PolicyResource}.
+ */
+export {
+  simulatePolicy,
+  POLICY_SIMULATE_PATH,
+  type PolicySimulationHttpClient,
+} from './simulate-policy.js';
+
+/** Offline policy-engine types and helpers (see {@link evaluatePolicyRules}). */
+export {
+  simulatePolicyLocal,
+  type SimulatedTransaction,
+  type PolicySimulationReport,
+  type DecodedOperation,
+  type DecodedTxPayload,
+  type LocalPolicySimulationResult,
+} from './simulator.js';
+
+/**
+ * Policy DTOs re-exported from `@astroid/types` so consumers of
+ * `@astroid/policy` can name the simulation request/response types without a
+ * second import.
+ */
+export type {
+  Policy,
+  PolicySimulationRequest,
+  PolicySimulationResult,
+  PolicyViolation,
+  PolicyViolationDetail,
+  PolicyRiskAssessment,
+  PolicyRiskFactor,
+  PolicyBudgetImpact,
+} from '@astroid/types';
 
 /** Filters accepted by {@link PolicyResource.list}. */
 export interface PolicyListParams {
@@ -60,18 +102,49 @@ export class PolicyResource extends Resource {
   }
 
   /**
-   * Perform a pre-flight server-side policy simulation.
+   * Simulate a proposed transaction against the organization's policy rules on
+   * the server, **without committing it**.
+   *
+   * The request combines the transaction payload (`asset`, `amount`,
+   * `recipientAddress`, …) with the rules to evaluate: pass `policyIds` to check
+   * specific policies, or `walletId` / `agentId` to evaluate every enabled policy
+   * in scope. The endpoint returns a {@link PolicySimulationResult} describing
+   * whether the transaction is allowed, which rules were breached, any required
+   * approvals, the risk assessment and the budget impact.
+   *
+   * A blocked transaction is **not** an error — `allowed` is `false` and
+   * `violations` lists the breaches. Only a transport/API failure rejects.
+   *
+   * @param input The transaction payload plus the policy rules to evaluate against.
+   * @returns     The dry-run decision and its supporting detail.
+   * @throws      `NetworkError` / typed API errors when the request itself fails.
+   *
+   * @example
+   * ```ts
+   * const result = await astroid.policies.simulatePolicy({
+   *   walletId: 'w_1',
+   *   asset: 'USDC',
+   *   amount: '250',
+   *   recipientAddress: 'GABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUVW',
+   * });
+   *
+   * if (!result.allowed) {
+   *   throw new Error(result.explanation);
+   * }
+   * ```
    */
-  async simulate(input: PolicySimulationRequest): Promise<PolicySimulationResult> {
-    const res = await this.client.post<PolicySimulationResult>('/policies/simulate', input);
-    return res.data;
+  async simulatePolicy(input: PolicySimulationRequest): Promise<PolicySimulationResult> {
+    return simulatePolicy(this.client, input);
   }
 
   /**
-   * Perform a policy simulation dry-run check against active spending policies.
+   * Perform a pre-flight server-side policy simulation.
+   *
+   * @deprecated Use {@link PolicyResource.simulatePolicy} instead; behaviour is
+   * identical.
    */
-  async simulatePolicy(input: PolicySimulationRequest): Promise<PolicySimulationResult> {
-    return this.simulate(input);
+  async simulate(input: PolicySimulationRequest): Promise<PolicySimulationResult> {
+    return this.simulatePolicy(input);
   }
 
   /**
@@ -81,9 +154,9 @@ export class PolicyResource extends Resource {
    * This is the high-level simulation wrapper: it fetches the active policies
    * for the given agent (or wallet), converts the proposed transaction into a
    * {@link SimulatedTransaction}, and evaluates it client-side with the local
-   * policy engine. The result tells the caller whether the transaction may
-   * proceed and, if not, exactly which rules were breached — all without
-   * spending network fees on a transaction that would be rejected.
+   * policy engine (`evaluatePolicyRules`). The result tells the caller whether
+   * the transaction may proceed and, if not, exactly which rules were breached —
+   * all without spending network fees on a transaction that would be rejected.
    *
    * @param options.agentId     Agent whose policies apply (mutually exclusive with `walletId`).
    * @param options.walletId    Wallet whose policies apply (mutually exclusive with `agentId`).
@@ -108,7 +181,7 @@ export class PolicyResource extends Resource {
 
     const { data: policies } = await this.list(params);
 
-    return simulatePolicy(policies, transaction);
+    return evaluatePolicyRules(policies, transaction);
   }
 }
 
