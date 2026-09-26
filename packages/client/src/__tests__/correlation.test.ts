@@ -63,8 +63,11 @@ describe('createCorrelationMiddleware', () => {
 
     const prepared = await mw.onRequest!(req);
 
+    // Issue #255: request ID and correlation ID are resolved independently —
+    // both are fresh UUID v4s when the caller supplies neither.
     expect(prepared.headers[CORRELATION_ID_HEADER]).toMatch(UUID_V4_RE);
-    expect(prepared.headers[REQUEST_ID_HEADER]).toBe(
+    expect(prepared.headers[REQUEST_ID_HEADER]).toMatch(UUID_V4_RE);
+    expect(prepared.headers[REQUEST_ID_HEADER]).not.toBe(
       prepared.headers[CORRELATION_ID_HEADER],
     );
     expect(prepared.options.context?._correlationId).toBe(
@@ -239,7 +242,7 @@ describe('Correlation ID through Astroid client', () => {
     const mockFetch = vi.fn().mockImplementation(async (_url: string | URL, opts?: RequestInit) => {
       const headers = (opts?.headers as Record<string, string>) ?? {};
       expect(headers[CORRELATION_ID_HEADER]).toMatch(UUID_V4_RE);
-      expect(headers[REQUEST_ID_HEADER]).toBe(headers[CORRELATION_ID_HEADER]);
+      expect(headers[REQUEST_ID_HEADER]).toMatch(UUID_V4_RE);
       return jsonResponse({ data: { id: 'w1' } });
     });
 
