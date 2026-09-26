@@ -35,6 +35,7 @@ import type { PaginationParams } from '@astroid/types';
 import { serializePaginationParams } from './pagination.js';
 import { createCorrelationMiddleware } from './middleware/correlation.js';
 import { createRateLimiterMiddleware } from './middleware/rate-limiter.js';
+import { createLoggingMiddleware, type LoggingMiddlewareOptions } from './middleware/logging.js';
 import { createErrorParserMiddleware } from './error-parser-middleware.js';
 import { AgentResource } from '@astroid/agent';
 import { AnalyticsResource } from '@astroid/analytics';
@@ -66,6 +67,8 @@ export interface AstroidClientConfig extends CoreClientConfig {
   retries?: number;
   /** Base retry delay in ms (shorthand for `retry.baseDelayMs`). */
   retryDelay?: number;
+  /** Request/response logging hooks with automatic header redaction. */
+  logging?: LoggingMiddlewareOptions;
 }
 
 /** The AI-native namespace: express intents, not low-level transfers. */
@@ -258,6 +261,11 @@ export class Astroid {
     // X-Astroid-Correlation-ID header and fires onRequest/onResponse hooks.
     this.http.use(createCorrelationMiddleware(clientConfig?.telemetry));
 
+    // Request/response logging with header redaction (opt-in via config).
+    if (clientConfig?.logging) {
+      this.http.use(createLoggingMiddleware(clientConfig.logging));
+    }
+
     // Auto-register the error parser middleware so all responses are routed
     // through the rich error mapping layer.
     this.http.use(createErrorParserMiddleware());
@@ -368,7 +376,7 @@ export {
   type SessionManagerConfig,
 } from '@astroid/auth';
 export { WalletResource, type WalletListParams } from '@astroid/wallet';
-export { AgentResource, type AgentListParams } from '@astroid/agent';
+export { AgentResource, type AgentListParams, type AgentCursorListParams } from '@astroid/agent';
 export { PolicyResource, type PolicyListParams } from '@astroid/policy';
 export { BudgetResource, type BudgetListParams } from '@astroid/budget';
 export { TransactionResource, type ProposalListParams } from '@astroid/transaction';
@@ -450,3 +458,13 @@ export {
   type ParsedError,
 } from './errors.js';
 export { createErrorParserMiddleware } from './error-parser-middleware.js';
+
+// Shared auto-pagination helpers — cursor (keyset) iteration for any list endpoint.
+export {
+  paginateCursor,
+  normalizeCursorPage,
+  MAX_CURSOR_PAGES,
+  type CursorPage,
+  type CursorPageFetcher,
+  type PaginateCursorOptions,
+} from './pagination.js';

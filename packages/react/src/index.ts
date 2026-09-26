@@ -3,6 +3,7 @@ export {
   useAstroid,
   useAstroidClient,
   queryKeys,
+  invalidateQueries,
   useWallets,
   useWallet,
   useWalletBalance,
