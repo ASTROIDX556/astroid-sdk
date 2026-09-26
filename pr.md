@@ -1,174 +1,140 @@
-# feat: paginated React hook factory, HTTP interceptors & pagination helpers
+# feat(policy,transaction,analytics,auth): policy builder, memo-aware payment builder, time-series analytics & API-key sessions
 
-Closes #70
-Closes #270
-Closes #273
-Closes #278
+Closes #225
+Closes #226
+Closes #227
+Closes #228
 
 ---
 
 ## Overview
 
-This PR lands the reusable list/pagination infrastructure for the SDK and the
-React data layer built on top of it. It touches three workspace packages:
+This PR lands four related agent-safety and agent-runtime capabilities across the
+SDK. They share a theme — giving autonomous agents **type-safe, validated
+primitives for the money-moving path** — so they are implemented together:
 
 | Package | What changed |
 | --- | --- |
-| `@astroid/react` | New generic infinite/paginated query hook + hook factory |
-| `@astroid/client` | Pluggable request/response interceptors, built-in debug logger, pagination query builders |
-| `@astroid/types` | Cursor pagination metadata now exposes a `prevCursor` |
-
-All four issues target the same theme — clean, typed pagination navigation —
-and are implemented together so the pieces compose (pagination types → client
-query builders → React hooks).
+| `@astroid/policy` | New fluent `PolicyBuilder` + rule validation utilities |
+| `@astroid/transaction` | Payment builder now supports text/hash/return/id memos |
+| `@astroid/analytics` + `@astroid/types` | `getTimeSeriesData` + strongly-typed time-series DTOs |
+| `@astroid/auth` | `SessionManager` now supports API-key **and** JWT auth modes |
 
 ---
 
-## Issue #70 — React query hook factory for paginated resource lists (`@astroid/react`)
+## Issue #225 — Policy condition builder & validation utilities (`@astroid/policy`)
 
-New module `packages/react/src/hooks/usePaginatedResource.ts`.
+New module `packages/policy/src/builder.ts`.
 
-- **`useInfiniteResource<TItem, TParams>(config, options)`** — a generic
-  TanStack Query hook for cursor-paginated list endpoints. It owns query-key
-  management (appending resolved params), page state, and next-page fetching,
-  with full type inference over `TItem` and `TParams`.
-- **`createPaginatedResourceHook(config)`** — the hook factory. Bind a
-  `PaginatedResourceConfig` (query key + page fetcher + defaults) once and get
-  back a reusable hook, so components pass only per-instance options.
-- **Caching & stale time** — `staleTime` can be set per-resource or per
-  instance; `gcTime`, `retry`, `enabled`, `refetchOnWindowFocus`,
-  `initialCursor`, and `limit` are exposed. Query keys include the resolved
-  params so different filters cache independently.
-- **States surfaced cleanly** — `isLoading`, `isError`, `error`,
-  `isFetchingNextPage`, `hasNextPage`, plus `fetchNextPage()` / `refetch()`
-  and a flattened `items` array (and raw `pages`, `total`).
-- **Custom cursors** — `getNextPageParam` defaults to following
-  `meta.nextCursor` while `meta.hasMore !== false`, but can be overridden.
-- Exported from `packages/react/src/index.ts` alongside the existing provider,
-  resource, and mutation hooks.
-
-```tsx
-import { createPaginatedResourceHook } from '@astroid/react';
-
-const useWalletsPage = createPaginatedResourceHook({
-  queryKey: ['astroid', 'wallets', 'list'],
-  fetchPage: (params) => astroid.wallets.list(params),
-  staleTime: 30_000,
-});
-
-const { items, isLoading, error, hasNextPage, isFetchingNextPage, fetchNextPage } =
-  useWalletsPage();
-```
+- **`PolicyBuilder`** — a fluent, chainable class for assembling a policy draft:
+  - Destinations: `allowDestination(s)` / `denyDestination(s)`
+  - Assets: `allowAsset(s)` / `denyAsset(s)` (`XLM`, bare codes, `CODE:ISSUER`)
+  - Limits: `maxAmount`, `minAmount`, `dailyLimit`, `weeklyLimit`, `monthlyLimit`
+  - Window/scope: `timeWindow`, `forAgent`, `withPriority`, `enabled`, `ofType`
+  - `build()` returns the exact `PolicyDraft` payload accepted by
+    `PolicyResource.create` and infers the policy `type` from the configured
+    conditions (or `COMPOSITE` when several families are combined).
+- **Validation during construction** — Stellar address format, asset identifiers,
+  positive numeric bounds, and ordered `timeWindow` bounds are checked as the
+  rule is built, throwing structured `ValidationError`s.
+- **Standalone utilities** — `validatePolicyRule` (non-throwing, returns every
+  issue), `assertValidPolicyRule` (throws), and the
+  `isValidPolicyAddress` / `isValidPolicyAsset` predicates.
+- Exported from `packages/policy/src/index.ts` with full TSDoc + usage example.
 
 **Acceptance criteria**
-- [x] Implemented a paginated query hook factory in `packages/react`.
-- [x] Exported the new hooks alongside existing provider/resource hooks.
-- [x] Unit tests use `@testing-library/react` and `QueryClient` wrappers.
-- [x] `pnpm build`, `pnpm lint`, `pnpm typecheck` all pass.
+- [x] Fluent `PolicyBuilder` with rule chaining for destinations, assets, and
+      velocity limits.
+- [x] Stellar public-key formats and numeric bounds validated at construction.
+- [x] Exported from `@astroid/policy` with TSDoc + usage examples.
+- [x] Unit tests cover serialization and validation-error throwing.
 
 ---
 
-## Issue #270 — Request/response logging interceptor support (`@astroid/client`)
+## Issue #226 — Memo-aware payment transaction builder (`@astroid/transaction`)
 
-New module `packages/client/src/interceptors.ts`, wired into `AstroidClientConfig`
-and the `Astroid` constructor.
+`packages/transaction/src/builder.ts` previously only supported `memoText`.
+`BuildTransactionOptions` now accepts the full memo surface:
 
-- **`requestInterceptors` / `responseInterceptors`** arrays on the client
-  config. Request interceptors run in array order before dispatch; response
-  interceptors run in array order as responses arrive.
-- **Lightweight, async-friendly signatures**:
-  - `RequestInterceptor = (config: RequestConfig) => RequestConfig | void | Promise<...>`
-  - `ResponseInterceptor = (response: ResponseConfig) => ResponseConfig | void | Promise<...>`
-  - `RequestConfig` exposes `url`, `method`, `headers`, `body` (decoded), and
-    the original `options`; `ResponseConfig` exposes `status`, `headers`,
-    `body`, `requestId`, and an echo of the originating request.
-- Return a replacement config to rewrite the URL/method/headers/body (tests
-  cover URL rewriting, method/body transformation, and header injection); return
-  nothing to observe only.
-- **Built-in debug logger**: `createDebugLogger(options)` returns a
-  `{ requestInterceptor, responseInterceptor }` pair that emits stable,
-  greppable lines and redacts sensitive headers by default:
-
-  ```
-  [astroid] → GET https://api.astroid.finance/v1/wallets headers={...}
-  [astroid] ← 200 GET https://api.astroid.finance/v1/wallets (42ms) body={...}
-  ```
-
-  It can also be enabled from config with `debug: true` / `debug: {...}`.
-- TSDoc examples are included on the module, `createInterceptorMiddleware`, and
-  `createDebugLogger`.
+- `memoText` (≤28 bytes), `memoHash` / `memoReturn` (32 bytes as 64 hex chars),
+  and `memoId` (uint64).
+- Memo options are mutually exclusive — supplying more than one fails fast with
+  a structured `ValidationError` (`CONFLICTING_MEMO`).
+- New validators `isValidMemoHash` / `assertValidMemoHash` in
+  `packages/transaction/src/validate.ts`.
+- Existing `buildPaymentTransaction` continues to support native XLM and custom
+  issued assets, fee configuration, and recipient address validation.
 
 **Acceptance criteria**
-- [x] Client options interface supports arrays of request/response interceptors.
-- [x] Request interceptors execute in order before fetch; response interceptors
-      execute upon receiving responses.
-- [x] Unit tests verify interceptor execution order and payload propagation.
-- [x] Interceptor usage documented with a TSDoc example.
+- [x] `buildPaymentTransaction` supports native XLM and custom issued assets.
+- [x] Memo handling for text, hash, and return (plus id) and fee options.
+- [x] Validation for recipient Stellar addresses and memo values.
+- [x] Unit tests decode the built envelope and assert memo structure + errors.
 
 ---
 
-## Issue #273 — Pagination parameters & meta types for list endpoints (`@astroid/client`, `@astroid/types`)
+## Issue #227 — Analytics time-series query helpers (`@astroid/analytics`, `@astroid/types`)
 
-- `PaginationParams` (`page?`, `cursor?`, `limit?`, `order?`) and the generic
-  `PaginatedResponse<T>` (`data: T[]`, `meta?: ResponseMeta`) are already
-  exported from `@astroid/types` and re-exported from `@astroid/client`.
-- `ResponseMeta` now also exposes `prevCursor?: string | null`, and
-  `CursorPaginated<T>` gains the same optional field, so backwards cursor
-  navigation is typed.
-- `serializePaginationParams` now also handles `page` and defensively drops
-  `null` / empty-string values, so serialization never produces literal `""`
-  query segments.
-- Pagination is wired into the client request layer: `Astroid.buildQuery(...)`
-  merges pagination params with arbitrary query params.
+- New DTOs in `packages/types/src/analytics.ts`: `TimeSeriesMetric`,
+  `TimeSeriesDataParams`, `TimeSeriesDataPoint`, and `TimeSeriesDataResponse`.
+- New `AnalyticsResource.getTimeSeriesData(query)` in
+  `packages/analytics/src/index.ts`, hitting `/analytics/time-series` and
+  serialising date range, granularity, metric family/ies, and agent/wallet/asset
+  scope filters (undefined fields omitted).
+- `getAgentMetrics` (already present) plus the new method round out the
+  aggregated, strongly-typed metrics API. The new DTOs are re-exported from
+  `@astroid/analytics`.
 
 **Acceptance criteria**
-- [x] `PaginationParams` and `PaginatedResponse` exported from `@astroid/types`.
-- [x] Client request utilities serialize optional pagination query strings.
-- [x] Unit tests verify query-parameter encoding and response parsing.
-- [x] `pnpm build` and `pnpm test` pass across the workspace.
+- [x] `getAgentMetrics` and `getTimeSeriesData` available in `@astroid/analytics`.
+- [x] Query parameters for date ranges, granularity, and metric types.
+- [x] Strongly-typed metric DTOs live in `@astroid/types`.
+- [x] Unit tests mock API responses for several time-series queries.
 
 ---
 
-## Issue #278 — Pagination response helpers & query parameter builders (`@astroid/client`)
+## Issue #228 — JWT & API-key session handlers (`@astroid/auth`)
 
-- **`buildPaginationQuery(params?)`** — returns a populated `URLSearchParams`
-  from `{ cursor, limit, order, page }`, safely omitting `undefined`, `null`,
-  and empty-string values without producing `?`/`&` artifacts.
-- **`buildPaginationQueryString(params?)`** — returns a leading-`?` query
-  string (`'?limit=25'`) or `''`, safe to concatenate onto any path.
-- Both are exported from `packages/client/src/index.ts`, alongside the existing
-  `serializePaginationParams` / `unwrapPaginatedResponse` helpers and the
-  generic `PaginatedResponse` re-export.
-- New Vitest suite additions under
-  `packages/client/src/__tests__/pagination.test.ts` verify serialization of
-  cursors, limits, order, and page, including boundary/empty cases.
+`packages/auth/src/session.ts` already managed JWT access/refresh tokens. It now
+models the auth strategy explicitly:
+
+- `SessionAuthMode = 'jwt' | 'apiKey'`, inferred from the supplied credentials or
+  set via config.
+- **API-key mode** stores a long-lived key, persists it through the pluggable
+  `TokenStorage`, and injects it via a configurable header (`x-api-key` by
+  default) through `getAuthHeaders` / `applyAuthHeaders`.
+- **JWT mode** keeps automatic expiration detection and queued refresh; the
+  middleware continues to refresh before requests and clear credentials on 401.
+- Clear error handling: `assertAuthenticated` throws structured
+  `AuthenticationError`s (`UNAUTHENTICATED` / `TOKEN_EXPIRED`), and
+  `refreshSession` rejects in API-key mode (`API_KEY_MODE`) since keys don't
+  rotate.
+- `createSessionMiddleware` and `wireSessionToHttpClient` are mode-aware.
 
 **Acceptance criteria**
-- [x] `buildPaginationQuery` exported from `@astroid/client`.
-- [x] Generic `PaginatedResponse` envelope exported for list results.
-- [x] Tests in `packages/client/src/__tests__/pagination.test.ts` cover
-      cursor/limit/order serialization.
-- [x] `pnpm --filter @astroid/client build` and `pnpm typecheck` pass.
+- [x] Session manager supports API-key and JWT modes.
+- [x] Token expiration detection and automatic refresh (JWT).
+- [x] Clear errors for unauthenticated / expired sessions.
+- [x] Unit tests verify header injection and session state transitions.
 
 ---
 
 ## Files changed
 
 **Added**
-- `packages/client/src/interceptors.ts`
-- `packages/client/src/__tests__/interceptors.test.ts`
-- `packages/react/src/hooks/usePaginatedResource.ts`
-- `packages/react/src/__tests__/paginated-resource.test.tsx`
+- `packages/policy/src/builder.ts`
+- `packages/policy/__tests__/builder.test.ts`
+- `packages/analytics/__tests__/time-series-data.test.ts`
+- `packages/auth/__tests__/api-key-session.test.ts`
 
 **Modified**
-- `packages/client/src/index.ts` (config wiring + exports)
-- `packages/client/src/pagination.ts` (`buildPaginationQuery`,
-  `buildPaginationQueryString`, null-safe serialization)
-- `packages/client/src/__tests__/pagination.test.ts`
-- `packages/types/src/common.ts` (`prevCursor` on `ResponseMeta` /
-  `CursorPaginated`)
-- `packages/types/src/pagination.test.ts`
-- `packages/react/src/index.ts`
+- `packages/policy/src/index.ts`
+- `packages/transaction/src/builder.ts`
+- `packages/transaction/src/validate.ts`
+- `packages/transaction/__tests__/builder.test.ts`
+- `packages/types/src/analytics.ts`
+- `packages/analytics/src/index.ts`
+- `packages/auth/src/session.ts`
 
 ---
 
@@ -177,23 +143,24 @@ and the `Astroid` constructor.
 | package | command | result |
 | --- | --- | --- |
 | workspace | `pnpm build` | pass |
-| workspace | `pnpm lint` | pass |
 | workspace | `pnpm typecheck` | 16/16 packages pass |
-| `@astroid/client` | `pnpm test` | 17 files / 254 tests pass |
-| `@astroid/react` | `pnpm test` | 9 files / 79 tests pass |
-| `@astroid/types` | `pnpm test` | 4 files / 63 tests pass |
+| workspace | `pnpm lint` | pass |
 | workspace | `pnpm test` | all packages pass |
+| `@astroid/policy` | `pnpm test` | 4 files / 97 tests pass |
+| `@astroid/transaction` | `pnpm test` | 14 files / 160 tests pass |
+| `@astroid/analytics` | `pnpm test` | 9 files / 106 tests pass |
+| `@astroid/auth` | `pnpm test` | 2 files / 22 tests pass |
 
 ---
 
 ## Notes / design decisions
 
-- Interceptors intentionally layer on top of the existing middleware stack
-  rather than replacing it: `createInterceptorMiddleware` simply adapts the
-  `PreparedRequest`/`RawResponse` pipeline into the ergonomic
-  `RequestConfig`/`ResponseConfig` shape, so existing middleware order and
-  behaviour are unchanged.
-- The React hook factory is deliberately resource-agnostic (it takes a query
-  key and page fetcher) so it can be reused by every resource package without
-  coupling `@astroid/react` to resource implementations.
-- `prevCursor` was added as an optional field to keep the change non-breaking.
+- The policy builder stays dependency-free beyond `@astroid/errors`: address and
+  asset checks are format validations, with the backend remaining the source of
+  truth for full checksum verification.
+- Memo options are intentionally mutually exclusive so a transaction can never
+  silently carry two memos.
+- `getTimeSeriesData` reuses the existing `AnalyticsResource` base so no new
+  transport concerns are introduced.
+- API-key sessions deliberately do not expose a refresh cycle; treating a key as
+  unrefreshable surfaces a single, clear error instead of a confusing 401 loop.
