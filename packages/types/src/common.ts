@@ -103,6 +103,8 @@ export interface CursorPaginated<T> {
   items: T[];
   /** Cursor to pass back for the next page, or `null` when exhausted. */
   nextCursor: string | null;
+  /** Cursor for the previous page, or `null` when this is the first page. */
+  prevCursor?: string | null;
   /** Whether more pages follow this one. */
   hasMore: boolean;
 }
@@ -113,6 +115,8 @@ export interface ResponseMeta {
   cursor?: string;
   /** Cursor to pass back for the next page, or `null` when the result set is exhausted. */
   nextCursor?: string | null;
+  /** Cursor for the previous page, or `null` when this is the first page. */
+  prevCursor?: string | null;
   /** The current 1-based page number (offset pagination). */
   page?: number;
   /** The page size used for this response. */

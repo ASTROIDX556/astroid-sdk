@@ -3,6 +3,7 @@ import {
   AstroidError,
   AuthenticationError,
   AuthorizationError,
+  ForbiddenError,
   ConflictError,
   InsufficientFundsError,
   BudgetExceededError,
@@ -11,6 +12,7 @@ import {
   NotFoundError,
   PolicyViolationError,
   RateLimitError,
+  InternalServerError,
   ServerError,
   ValidationError,
   errorClassForCode,
@@ -34,8 +36,9 @@ describe('@astroid/errors', () => {
       expect(errorClassForCode('TOKEN_EXPIRED')).toBe(AuthenticationError);
     });
 
-    it('maps FORBIDDEN to AuthorizationError', () => {
-      expect(errorClassForCode('FORBIDDEN')).toBe(AuthorizationError);
+    it('maps FORBIDDEN to ForbiddenError and AuthorizationError', () => {
+      expect(errorClassForCode('FORBIDDEN')).toBe(ForbiddenError);
+      expect(new (errorClassForCode('FORBIDDEN'))('x', { code: 'FORBIDDEN' })).toBeInstanceOf(AuthorizationError);
     });
 
     it('maps validation codes to ValidationError', () => {
@@ -80,9 +83,9 @@ describe('@astroid/errors', () => {
       expect(errorClassForCode('TIMEOUT')).toBe(NetworkError);
     });
 
-    it('maps server codes to ServerError', () => {
-      expect(errorClassForCode('INTERNAL_ERROR')).toBe(ServerError);
-      expect(errorClassForCode('SERVICE_UNAVAILABLE')).toBe(ServerError);
+    it('maps server codes to InternalServerError and ServerError', () => {
+      expect(errorClassForCode('INTERNAL_ERROR')).toBe(InternalServerError);
+      expect(errorClassForCode('SERVICE_UNAVAILABLE')).toBe(InternalServerError);
     });
 
     it('maps Horizon leak-through codes to InsufficientFundsError', () => {
@@ -216,8 +219,9 @@ describe('@astroid/errors', () => {
       expect(err).toBeInstanceOf(AuthenticationError);
     });
 
-    it('403 → AuthorizationError', () => {
+    it('403 → ForbiddenError and AuthorizationError', () => {
       const err = fromStatus(403, 'Forbidden');
+      expect(err).toBeInstanceOf(ForbiddenError);
       expect(err).toBeInstanceOf(AuthorizationError);
     });
 
@@ -242,13 +246,15 @@ describe('@astroid/errors', () => {
       expect(err).toBeInstanceOf(RateLimitError);
     });
 
-    it('500 → ServerError', () => {
+    it('500 → InternalServerError and ServerError', () => {
       const err = fromStatus(500, 'Internal error');
+      expect(err).toBeInstanceOf(InternalServerError);
       expect(err).toBeInstanceOf(ServerError);
     });
 
-    it('503 → ServerError', () => {
+    it('503 → InternalServerError and ServerError', () => {
       const err = fromStatus(503, 'Service unavailable');
+      expect(err).toBeInstanceOf(InternalServerError);
       expect(err).toBeInstanceOf(ServerError);
     });
   });
@@ -391,11 +397,13 @@ describe('@astroid/errors', () => {
 
     it('sets name to the subclass name', () => {
       expect(new AuthenticationError('a', { code: 'AUTHENTICATION_ERROR' }).name).toBe('AuthenticationError');
+      expect(new ForbiddenError('f', { code: 'FORBIDDEN' }).name).toBe('ForbiddenError');
       expect(new RateLimitError('r', { code: 'RATE_LIMITED' }).name).toBe('RateLimitError');
       expect(new PolicyViolationError('p', { code: 'POLICY_VIOLATION' }).name).toBe('PolicyViolationError');
       expect(new NotFoundError('n', { code: 'NOT_FOUND' }).name).toBe('NotFoundError');
       expect(new InsufficientFundsError('i', { code: 'INSUFFICIENT_FUNDS' }).name).toBe('InsufficientFundsError');
-      expect(new ServerError('s', { code: 'INTERNAL_ERROR' }).name).toBe('ServerError');
+      expect(new InternalServerError('s', { code: 'INTERNAL_ERROR' }).name).toBe('InternalServerError');
+      expect(new ServerError('s', { code: 'INTERNAL_ERROR' }).name).toBe('InternalServerError');
     });
   });
 
@@ -432,6 +440,14 @@ describe('@astroid/errors', () => {
       expect(auth instanceof AstroidError).toBe(true);
       expect(auth instanceof Error).toBe(true);
       expect(auth instanceof ValidationError).toBe(false);
+
+      const forbidden = new ForbiddenError('f', { code: 'FORBIDDEN' });
+      expect(forbidden instanceof ForbiddenError).toBe(true);
+      expect(forbidden instanceof AstroidError).toBe(true);
+
+      const internal = new InternalServerError('i', { code: 'INTERNAL_ERROR' });
+      expect(internal instanceof InternalServerError).toBe(true);
+      expect(internal instanceof AstroidError).toBe(true);
     });
   });
 
@@ -453,12 +469,14 @@ describe('@astroid/errors', () => {
     expect(new AuthenticationError('auth', { code: 'AUTHENTICATION_ERROR' }).name).toBe(
       'AuthenticationError',
     );
+    expect(new ForbiddenError('forbid', { code: 'FORBIDDEN' }).name).toBe('ForbiddenError');
     expect(new RateLimitError('rate', { code: 'RATE_LIMITED' }).name).toBe('RateLimitError');
     expect(new PolicyViolationError('policy', { code: 'POLICY_VIOLATION' }).name).toBe(
       'PolicyViolationError',
     );
     expect(new NotFoundError('nf', { code: 'NOT_FOUND' }).name).toBe('NotFoundError');
     expect(new ValidationError('val', { code: 'VALIDATION_ERROR' }).name).toBe('ValidationError');
-    expect(new ServerError('srv', { code: 'INTERNAL_ERROR' }).name).toBe('ServerError');
+    expect(new InternalServerError('srv', { code: 'INTERNAL_ERROR' }).name).toBe('InternalServerError');
+    expect(new ServerError('srv', { code: 'INTERNAL_ERROR' }).name).toBe('InternalServerError');
   });
 });

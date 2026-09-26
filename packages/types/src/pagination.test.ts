@@ -94,10 +94,19 @@ describe('@astroid/types — pagination', () => {
     expectTypeOf<CursorPaginated<SampleItem>>().toEqualTypeOf<{
       items: SampleItem[];
       nextCursor: string | null;
+      prevCursor?: string | null;
       hasMore: boolean;
     }>();
     const page: CursorPaginated<SampleItem> = { items: [], nextCursor: null, hasMore: false };
     expect(page.nextCursor).toBeNull();
+
+    const withPrev: CursorPaginated<SampleItem> = {
+      items: [],
+      nextCursor: 'cur_next',
+      prevCursor: 'cur_prev',
+      hasMore: true,
+    };
+    expect(withPrev.prevCursor).toBe('cur_prev');
   });
 
   it('PaginatedResponse is assignable to a generic unwrapping helper', () => {
@@ -114,12 +123,15 @@ describe('@astroid/types — pagination', () => {
     const meta: ResponseMeta = {
       cursor: 'cur_before',
       nextCursor: 'cur_after',
+      prevCursor: 'cur_before',
       page: 3,
       limit: 50,
       total: 250,
       hasMore: true,
     };
     expect(meta.nextCursor).toBe('cur_after');
+    expect(meta.prevCursor).toBe('cur_before');
     expectTypeOf(meta.nextCursor).toEqualTypeOf<string | null | undefined>();
+    expectTypeOf(meta.prevCursor).toEqualTypeOf<string | null | undefined>();
   });
 });

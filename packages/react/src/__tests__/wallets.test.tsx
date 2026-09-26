@@ -241,6 +241,85 @@ describe('useTransfer', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual(TRANSACTION);
   });
+
+  it('invalidates balance and detail queries on transfer success', async () => {
+    const client = createMockClient();
+    const { result } = renderHook(
+      () => ({
+        balance: useWalletBalance('wal_abc123'),
+        detail: useWallet('wal_abc123'),
+        transfer: useTransfer(),
+      }),
+      { wrapper: createWrapper(client) },
+    );
+
+    await waitFor(() => expect(result.current.balance.data).toEqual(BALANCE));
+    await waitFor(() => expect(result.current.detail.data).toEqual(WALLET));
+    const balanceCalls = walletMethods(client).balance.mock.calls.length;
+    const detailCalls = walletMethods(client).get.mock.calls.length;
+
+    result.current.transfer.mutate({
+      walletId: 'wal_abc123',
+      input: { recipientAddress: WALLET.stellarAddress, asset: 'USDC', amount: '10' },
+    });
+
+    await waitFor(() => expect(result.current.transfer.isSuccess).toBe(true));
+    await waitFor(() =>
+      expect(walletMethods(client).balance.mock.calls.length).toBeGreaterThan(balanceCalls),
+    );
+    await waitFor(() =>
+      expect(walletMethods(client).get.mock.calls.length).toBeGreaterThan(detailCalls),
+    );
+  });
+
+  it('supports custom invalidateQueries and onSuccess callback in useTransfer', async () => {
+    const client = createMockClient();
+    const onSuccess = vi.fn();
+    const customKey = ['custom', 'key'] as const;
+
+    const { result } = renderHook(
+      () =>
+        useTransfer({
+          invalidateQueries: [customKey],
+          onSuccess,
+        }),
+      { wrapper: createWrapper(client) },
+    );
+
+    result.current.mutate({
+      walletId: 'wal_abc123',
+      input: { recipientAddress: WALLET.stellarAddress, asset: 'USDC', amount: '10' },
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(onSuccess).toHaveBeenCalledWith(
+      TRANSACTION,
+      expect.objectContaining({ walletId: 'wal_abc123' }),
+      undefined,
+    );
+  });
+
+  it('respects invalidateOnSuccess: false in useTransfer', async () => {
+    const client = createMockClient();
+    const { result } = renderHook(
+      () => ({
+        balance: useWalletBalance('wal_abc123'),
+        transfer: useTransfer({ invalidateOnSuccess: false }),
+      }),
+      { wrapper: createWrapper(client) },
+    );
+
+    await waitFor(() => expect(result.current.balance.data).toEqual(BALANCE));
+    const balanceCalls = walletMethods(client).balance.mock.calls.length;
+
+    result.current.transfer.mutate({
+      walletId: 'wal_abc123',
+      input: { recipientAddress: WALLET.stellarAddress, asset: 'USDC', amount: '10' },
+    });
+
+    await waitFor(() => expect(result.current.transfer.isSuccess).toBe(true));
+    expect(walletMethods(client).balance.mock.calls.length).toBe(balanceCalls);
+  });
 });
 
 /* -------------------------------------------------------------------------- */
@@ -351,5 +430,58 @@ describe('useWalletMutation', () => {
     await waitFor(() =>
       expect(walletMethods(client).balance.mock.calls.length).toBeGreaterThan(balanceCalls),
     );
+  });
+
+  it('supports custom invalidateQueries function and onSuccess callback in useWalletMutation', async () => {
+    const client = createMockClient();
+    const onSuccess = vi.fn();
+    const customFn = vi.fn((_data, vars) => [
+      ['custom', 'key', (vars as { walletId?: string }).walletId ?? 'all'] as const,
+    ]);
+
+    const { result } = renderHook(
+      () =>
+        useWalletMutation({
+          invalidateQueries: customFn,
+          onSuccess,
+        }),
+      { wrapper: createWrapper(client) },
+    );
+
+    result.current.mutate({
+      action: 'freeze',
+      walletId: 'wal_abc123',
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(customFn).toHaveBeenCalled();
+    expect(onSuccess).toHaveBeenCalledWith(
+      WALLET,
+      expect.objectContaining({ action: 'freeze', walletId: 'wal_abc123' }),
+      undefined,
+    );
+  });
+
+  it('respects invalidateOnSuccess: false in useWalletMutation', async () => {
+    const client = createMockClient();
+    const { result } = renderHook(
+      () => ({
+        balance: useWalletBalance('wal_abc123'),
+        mutation: useWalletMutation({ invalidateOnSuccess: false }),
+      }),
+      { wrapper: createWrapper(client) },
+    );
+
+    await waitFor(() => expect(result.current.balance.data).toEqual(BALANCE));
+    const balanceCalls = walletMethods(client).balance.mock.calls.length;
+
+    result.current.mutation.mutate({
+      action: 'transfer',
+      walletId: 'wal_abc123',
+      input: { recipientAddress: WALLET.stellarAddress, asset: 'USDC', amount: '10' },
+    });
+
+    await waitFor(() => expect(result.current.mutation.isSuccess).toBe(true));
+    expect(walletMethods(client).balance.mock.calls.length).toBe(balanceCalls);
   });
 });
