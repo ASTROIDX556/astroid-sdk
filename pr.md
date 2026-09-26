@@ -1,115 +1,140 @@
-# feat(client): configurable retry with exponential backoff & jitter
+# feat(policy,transaction,analytics,auth): policy builder, memo-aware payment builder, time-series analytics & API-key sessions
 
-Makes `@astroid/client` resilient to transient network failures and rate limits
-by aligning the SDK's already-built retry pipeline with the exact policy
-required by the issue: retry on `429` and **all** `5xx`, never on any other
-`4xx`, with a default of **3** retries and exponential full-jitter backoff.
-
-Closes #262
+Closes #225
+Closes #226
+Closes #227
+Closes #228
 
 ---
 
-## Background
+## Overview
 
-`@astroid/client` sends every request through the shared `HttpClient` in
-`@astroid/core`, which already owns the retry loop (`HttpClient.request`):
-it classifies each response, computes a backoff delay, sleeps, and re-attempts
-up to the configured limit. Policy is supplied by `backoffDelay`,
-`isRetryableStatus`, `RetryConfig`, and the opt-in `createRetryMiddleware`.
+This PR lands four related agent-safety and agent-runtime capabilities across the
+SDK. They share a theme — giving autonomous agents **type-safe, validated
+primitives for the money-moving path** — so they are implemented together:
 
-This PR does **not** add a second, parallel retry stack. It corrects the two
-places where that pipeline diverged from the issue's requirements and hardens
-the client-level tests around them.
-
-### Gap 1 — default retry count was 2, issue requires 3
-
-`DEFAULT_RETRY.maxRetries` (`packages/core/src/config.ts`) and
-`DEFAULT_MAX_RETRIES` (`packages/client/src/middleware/retry.ts`) were both `2`.
-Because retries are **enabled by default**, a fresh
-`new Astroid({ apiKey })` made only two retry attempts.
-
-### Gap 2 — non-`429` 4xx statuses were retried
-
-`isRetryableStatus` used a fixed allow-list
-`{408, 425, 429, 500, 502, 503, 504}`. `408 Request Timeout` and `425 Too Early`
-are 4xx client errors, and the issue is explicit: *retry on 5xx and 429, but
-never retry on 4xx client errors (except 429)*. The allow-list also meant
-legitimate 5xx statuses such as `501` and `505` were never retried.
+| Package | What changed |
+| --- | --- |
+| `@astroid/policy` | New fluent `PolicyBuilder` + rule validation utilities |
+| `@astroid/transaction` | Payment builder now supports text/hash/return/id memos |
+| `@astroid/analytics` + `@astroid/types` | `getTimeSeriesData` + strongly-typed time-series DTOs |
+| `@astroid/auth` | `SessionManager` now supports API-key **and** JWT auth modes |
 
 ---
 
-## Changes
+## Issue #225 — Policy condition builder & validation utilities (`@astroid/policy`)
 
-### `packages/core/src/backoff.ts` — retry predicate
+New module `packages/policy/src/builder.ts`.
 
-Replaces the allow-list with an explicit, documented rule:
+- **`PolicyBuilder`** — a fluent, chainable class for assembling a policy draft:
+  - Destinations: `allowDestination(s)` / `denyDestination(s)`
+  - Assets: `allowAsset(s)` / `denyAsset(s)` (`XLM`, bare codes, `CODE:ISSUER`)
+  - Limits: `maxAmount`, `minAmount`, `dailyLimit`, `weeklyLimit`, `monthlyLimit`
+  - Window/scope: `timeWindow`, `forAgent`, `withPriority`, `enabled`, `ofType`
+  - `build()` returns the exact `PolicyDraft` payload accepted by
+    `PolicyResource.create` and infers the policy `type` from the configured
+    conditions (or `COMPOSITE` when several families are combined).
+- **Validation during construction** — Stellar address format, asset identifiers,
+  positive numeric bounds, and ordered `timeWindow` bounds are checked as the
+  rule is built, throwing structured `ValidationError`s.
+- **Standalone utilities** — `validatePolicyRule` (non-throwing, returns every
+  issue), `assertValidPolicyRule` (throws), and the
+  `isValidPolicyAddress` / `isValidPolicyAsset` predicates.
+- Exported from `packages/policy/src/index.ts` with full TSDoc + usage example.
 
-```ts
-export function isRetryableStatus(status: number): boolean {
-  return status === 429 || (status >= 500 && status < 600);
-}
-```
-
-- `429 Too Many Requests` → retried (rate-limit window reopens).
-- **Every** `5xx` → retried (server-side failure, including `501`, `505`, …).
-- Every other `4xx` → never retried (client error: bad request, auth,
-  validation, not-found, `408`, `425`, …).
-- Full-jitter exponential backoff in `backoffDelay` is unchanged:
-  `floor(random() * min(baseDelayMs * 2 ** (attempt - 1), maxDelayMs))`.
-
-### `packages/core/src/config.ts` — default retries
-
-- `DEFAULT_RETRY.maxRetries`: `2` → **`3`**; `RetryConfig` doc updated.
-- `baseDelayMs` remains `250` (configurable), `maxDelayMs` remains `8000`.
-
-### `packages/core/src/middleware.ts` — middleware default
-
-- `createRetryMiddleware()` default `maxRetries`: `2` → **`3`**.
-
-### `packages/client/src/middleware/retry.ts` — client middleware
-
-- `DEFAULT_MAX_RETRIES`: `2` → **`3`**.
-- `@default` JSDoc and the retryable-status documentation updated to describe
-  `429` + any `5xx` rather than the old hard-coded list.
-
-### `packages/client/src/middleware/error.ts` — doc accuracy
-
-- The error-translator comment no longer lists `408` among the statuses the
-  retry loop owns (`429`, `5xx`).
+**Acceptance criteria**
+- [x] Fluent `PolicyBuilder` with rule chaining for destinations, assets, and
+      velocity limits.
+- [x] Stellar public-key formats and numeric bounds validated at construction.
+- [x] Exported from `@astroid/policy` with TSDoc + usage examples.
+- [x] Unit tests cover serialization and validation-error throwing.
 
 ---
 
-## Tests
+## Issue #226 — Memo-aware payment transaction builder (`@astroid/transaction`)
 
-All added/extended in the client package (`vitest` + mocked `fetch`).
+`packages/transaction/src/builder.ts` previously only supported `memoText`.
+`BuildTransactionOptions` now accepts the full memo surface:
 
-`packages/client/src/__tests__/retry.test.ts`
-- Default retry config is now asserted as `{ maxRetries: 3, baseDelayMs: 250,
-  maxDelayMs: 8000 }`.
-- New: `408` and `425` are **not** retried (exactly one `fetch` call).
-- New: `new Astroid({ apiKey })` resolves to `retry.maxRetries === 3` with a
-  `250ms` base delay when no retry config is supplied.
-- Existing coverage retained: `502 → 200` recovery, `503`/`504` retries,
-  `maxRetries` exhaustion throwing `ServerError`, `429` retry + `Retry-After`
-  honouring, `400`/`404`/`422` non-retryal, network-error retry,
-  `retry: false` disabling retries, and `onRetry` instrumentation.
+- `memoText` (≤28 bytes), `memoHash` / `memoReturn` (32 bytes as 64 hex chars),
+  and `memoId` (uint64).
+- Memo options are mutually exclusive — supplying more than one fails fast with
+  a structured `ValidationError` (`CONFLICTING_MEMO`).
+- New validators `isValidMemoHash` / `assertValidMemoHash` in
+  `packages/transaction/src/validate.ts`.
+- Existing `buildPaymentTransaction` continues to support native XLM and custom
+  issued assets, fee configuration, and recipient address validation.
 
-`packages/client/src/retry.test.ts`
-- Extends the predicate test to cover `501`/`505` (retryable) and
-  `408`/`422`/`425` (non-retryable).
+**Acceptance criteria**
+- [x] `buildPaymentTransaction` supports native XLM and custom issued assets.
+- [x] Memo handling for text, hash, and return (plus id) and fee options.
+- [x] Validation for recipient Stellar addresses and memo values.
+- [x] Unit tests decode the built envelope and assert memo structure + errors.
 
 ---
 
-## Acceptance criteria
+## Issue #227 — Analytics time-series query helpers (`@astroid/analytics`, `@astroid/types`)
 
-- [x] Client automatically retries failed requests matching retryable statuses
-      (`429` and all `5xx`), enabled by default.
-- [x] Exponential backoff increases between attempts with full jitter applied.
-- [x] Non-retryable errors (`400`, `401`, `403`, `404`, `408`, `422`, `425`)
-      throw immediately without retrying.
-- [x] Configurable `maxRetries` (default **3**) and base backoff delay.
-- [x] Comprehensive unit tests in the client package using `vitest` and mocked
-      `fetch`, including a `502 Bad Gateway` followed by a `200 OK`.
+- New DTOs in `packages/types/src/analytics.ts`: `TimeSeriesMetric`,
+  `TimeSeriesDataParams`, `TimeSeriesDataPoint`, and `TimeSeriesDataResponse`.
+- New `AnalyticsResource.getTimeSeriesData(query)` in
+  `packages/analytics/src/index.ts`, hitting `/analytics/time-series` and
+  serialising date range, granularity, metric family/ies, and agent/wallet/asset
+  scope filters (undefined fields omitted).
+- `getAgentMetrics` (already present) plus the new method round out the
+  aggregated, strongly-typed metrics API. The new DTOs are re-exported from
+  `@astroid/analytics`.
+
+**Acceptance criteria**
+- [x] `getAgentMetrics` and `getTimeSeriesData` available in `@astroid/analytics`.
+- [x] Query parameters for date ranges, granularity, and metric types.
+- [x] Strongly-typed metric DTOs live in `@astroid/types`.
+- [x] Unit tests mock API responses for several time-series queries.
+
+---
+
+## Issue #228 — JWT & API-key session handlers (`@astroid/auth`)
+
+`packages/auth/src/session.ts` already managed JWT access/refresh tokens. It now
+models the auth strategy explicitly:
+
+- `SessionAuthMode = 'jwt' | 'apiKey'`, inferred from the supplied credentials or
+  set via config.
+- **API-key mode** stores a long-lived key, persists it through the pluggable
+  `TokenStorage`, and injects it via a configurable header (`x-api-key` by
+  default) through `getAuthHeaders` / `applyAuthHeaders`.
+- **JWT mode** keeps automatic expiration detection and queued refresh; the
+  middleware continues to refresh before requests and clear credentials on 401.
+- Clear error handling: `assertAuthenticated` throws structured
+  `AuthenticationError`s (`UNAUTHENTICATED` / `TOKEN_EXPIRED`), and
+  `refreshSession` rejects in API-key mode (`API_KEY_MODE`) since keys don't
+  rotate.
+- `createSessionMiddleware` and `wireSessionToHttpClient` are mode-aware.
+
+**Acceptance criteria**
+- [x] Session manager supports API-key and JWT modes.
+- [x] Token expiration detection and automatic refresh (JWT).
+- [x] Clear errors for unauthenticated / expired sessions.
+- [x] Unit tests verify header injection and session state transitions.
+
+---
+
+## Files changed
+
+**Added**
+- `packages/policy/src/builder.ts`
+- `packages/policy/__tests__/builder.test.ts`
+- `packages/analytics/__tests__/time-series-data.test.ts`
+- `packages/auth/__tests__/api-key-session.test.ts`
+
+**Modified**
+- `packages/policy/src/index.ts`
+- `packages/transaction/src/builder.ts`
+- `packages/transaction/src/validate.ts`
+- `packages/transaction/__tests__/builder.test.ts`
+- `packages/types/src/analytics.ts`
+- `packages/analytics/src/index.ts`
+- `packages/auth/src/session.ts`
 
 ---
 
@@ -117,11 +142,25 @@ All added/extended in the client package (`vitest` + mocked `fetch`).
 
 | package | command | result |
 | --- | --- | --- |
-| `@astroid/client` | `pnpm test` | 221 passed (15 files) |
-| `@astroid/client` | `pnpm typecheck` | pass |
-| workspace | `pnpm test` | all packages pass |
+| workspace | `pnpm build` | pass |
 | workspace | `pnpm typecheck` | 16/16 packages pass |
+| workspace | `pnpm lint` | pass |
+| workspace | `pnpm test` | all packages pass |
+| `@astroid/policy` | `pnpm test` | 4 files / 97 tests pass |
+| `@astroid/transaction` | `pnpm test` | 14 files / 160 tests pass |
+| `@astroid/analytics` | `pnpm test` | 9 files / 106 tests pass |
+| `@astroid/auth` | `pnpm test` | 2 files / 22 tests pass |
 
-The retry mechanism itself was originally introduced in #186/#196/#171; this PR
-brings its defaults and status policy in line with #262 and adds the tests that
-pin that behaviour.
+---
+
+## Notes / design decisions
+
+- The policy builder stays dependency-free beyond `@astroid/errors`: address and
+  asset checks are format validations, with the backend remaining the source of
+  truth for full checksum verification.
+- Memo options are intentionally mutually exclusive so a transaction can never
+  silently carry two memos.
+- `getTimeSeriesData` reuses the existing `AnalyticsResource` base so no new
+  transport concerns are introduced.
+- API-key sessions deliberately do not expose a refresh cycle; treating a key as
+  unrefreshable surfaces a single, clear error instead of a confusing 401 loop.

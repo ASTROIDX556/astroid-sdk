@@ -38,12 +38,12 @@ import { ApiErrorCode, type ApiError } from '@astroid/types';
 import {
   AstroidError,
   AuthenticationError,
-  AuthorizationError,
+  ForbiddenError,
   ValidationError,
   NotFoundError,
   ConflictError,
   RateLimitError,
-  ServerError,
+  InternalServerError,
   errorClassForCode,
   type AstroidErrorOptions,
 } from './index.js';
@@ -59,19 +59,20 @@ import {
  *
  * @example
  * ```ts
+ * errorClassForStatus(403); // → ForbiddenError
  * errorClassForStatus(429); // → RateLimitError
- * errorClassForStatus(500); // → ServerError
+ * errorClassForStatus(500); // → InternalServerError
  * errorClassForStatus(418); // → AstroidError (no more specific class applies)
  * ```
  */
 export function errorClassForStatus(status: number): typeof AstroidError {
   if (status === 401) return AuthenticationError;
-  if (status === 403) return AuthorizationError;
+  if (status === 403) return ForbiddenError;
   if (status === 404) return NotFoundError;
   if (status === 409) return ConflictError;
   if (status === 400 || status === 422) return ValidationError;
   if (status === 429) return RateLimitError;
-  if (status >= 500) return ServerError;
+  if (status >= 500) return InternalServerError;
   return AstroidError;
 }
 

@@ -17,9 +17,11 @@ import {
   AstroidError,
   AuthenticationError,
   AuthorizationError,
+  ForbiddenError,
   ConflictError,
   NotFoundError,
   RateLimitError,
+  InternalServerError,
   ServerError,
   ValidationError,
   errorClassForStatus,
@@ -34,7 +36,7 @@ import { errorClassForCode } from '../index.js';
 /* errorClassForStatus — HTTP status → error class                             */
 /* -------------------------------------------------------------------------- */
 
-describe('errorClassForStatus (issue #279)', () => {
+describe('errorClassForStatus (issue #271 / #279)', () => {
   it('maps 400 to ValidationError', () => {
     expect(errorClassForStatus(400)).toBe(ValidationError);
   });
@@ -43,8 +45,9 @@ describe('errorClassForStatus (issue #279)', () => {
     expect(errorClassForStatus(401)).toBe(AuthenticationError);
   });
 
-  it('maps 403 to AuthorizationError', () => {
-    expect(errorClassForStatus(403)).toBe(AuthorizationError);
+  it('maps 403 to ForbiddenError (and matches AuthorizationError)', () => {
+    expect(errorClassForStatus(403)).toBe(ForbiddenError);
+    expect(new (errorClassForStatus(403))('x', { code: 'FORBIDDEN' })).toBeInstanceOf(ForbiddenError);
   });
 
   it('maps 404 to NotFoundError', () => {
@@ -63,11 +66,11 @@ describe('errorClassForStatus (issue #279)', () => {
     expect(errorClassForStatus(429)).toBe(RateLimitError);
   });
 
-  it('maps all 5xx statuses to ServerError', () => {
-    expect(errorClassForStatus(500)).toBe(ServerError);
-    expect(errorClassForStatus(502)).toBe(ServerError);
-    expect(errorClassForStatus(503)).toBe(ServerError);
-    expect(errorClassForStatus(599)).toBe(ServerError);
+  it('maps all 5xx statuses to InternalServerError', () => {
+    expect(errorClassForStatus(500)).toBe(InternalServerError);
+    expect(errorClassForStatus(502)).toBe(InternalServerError);
+    expect(errorClassForStatus(503)).toBe(InternalServerError);
+    expect(errorClassForStatus(599)).toBe(InternalServerError);
   });
 
   it('falls back to the base AstroidError for unmapped statuses', () => {
@@ -154,9 +157,10 @@ describe('mapStatusToError (issue #279)', () => {
     expect(err.statusCode).toBe(401);
   });
 
-  it('maps 403 to AuthorizationError', () => {
+  it('maps 403 to ForbiddenError', () => {
     const err = mapStatusToError(403);
-    expect(err).toBeInstanceOf(AuthorizationError);
+    expect(err).toBeInstanceOf(ForbiddenError);
+    expect(err.statusCode).toBe(403);
   });
 
   it('maps 404 to NotFoundError and preserves the requestId', () => {
@@ -172,8 +176,9 @@ describe('mapStatusToError (issue #279)', () => {
     expect(err.isRetryable).toBe(true);
   });
 
-  it('maps 5xx to ServerError', () => {
+  it('maps 5xx to InternalServerError and ServerError', () => {
     const err = mapStatusToError(503, 'Down');
+    expect(err).toBeInstanceOf(InternalServerError);
     expect(err).toBeInstanceOf(ServerError);
     expect(err.statusCode).toBe(503);
   });
@@ -252,15 +257,17 @@ describe('errorFromStatus (issue #279)', () => {
 /* Specialized error classes — names, instanceof, statusCode                   */
 /* -------------------------------------------------------------------------- */
 
-describe('specialized error classes (issue #279)', () => {
+describe('specialized error classes (issue #271 / #279)', () => {
   it('sets err.name to the exact class name for every subclass', () => {
     const errors: AstroidError[] = [
       new AuthenticationError('a', { code: 'AUTHENTICATION_ERROR', statusCode: 401 }),
+      new ForbiddenError('a', { code: 'FORBIDDEN', statusCode: 403 }),
       new AuthorizationError('a', { code: 'FORBIDDEN', statusCode: 403 }),
       new ValidationError('a', { code: 'VALIDATION_ERROR', statusCode: 400 }),
       new NotFoundError('a', { code: 'NOT_FOUND', statusCode: 404 }),
       new ConflictError('a', { code: 'CONFLICT', statusCode: 409 }),
       new RateLimitError('a', { code: 'RATE_LIMITED', statusCode: 429 }),
+      new InternalServerError('a', { code: 'INTERNAL_ERROR', statusCode: 500 }),
       new ServerError('a', { code: 'INTERNAL_ERROR', statusCode: 500 }),
     ];
     for (const err of errors) {

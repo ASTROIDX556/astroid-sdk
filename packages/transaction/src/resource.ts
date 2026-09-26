@@ -12,7 +12,9 @@ import type {
   PaginationParams,
   ProposalStatus,
   Transaction,
+  TransactionFeeEstimate,
   TransactionListParams,
+  TransactionSimulationOutcome,
 } from '@astroid/types';
 
 /** Filters accepted by {@link TransactionsResource.list}. */
@@ -44,6 +46,39 @@ export class TransactionsResource extends Resource {
   /** Create a transaction envelope for a wallet. */
   async create(input: CreateTransactionInput): Promise<Transaction> {
     const res = await this.client.post<Transaction>('/transactions', input);
+    return res.data;
+  }
+
+  /**
+   * Ask the Astroid API to estimate the fee for a transaction envelope.
+   *
+   * Delegates to the backend `/transactions/estimate-fee` endpoint, which
+   * combines live network fee data with the organization's own configuration.
+   */
+  async estimateFee(input: {
+    transactionXdr?: string;
+    operationCount?: number;
+    network?: string;
+  }): Promise<TransactionFeeEstimate> {
+    const res = await this.client.post<TransactionFeeEstimate>(
+      '/transactions/estimate-fee',
+      input,
+    );
+    return res.data;
+  }
+
+  /**
+   * Run a server-side dry-run of a transaction through the Astroid API before
+   * broadcast. Delegates to `/transactions/simulate`.
+   */
+  async simulate(input: {
+    transactionXdr: string;
+    networkPassphrase?: string;
+  }): Promise<TransactionSimulationOutcome> {
+    const res = await this.client.post<TransactionSimulationOutcome>(
+      '/transactions/simulate',
+      input,
+    );
     return res.data;
   }
 }
