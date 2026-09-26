@@ -69,14 +69,6 @@ export class AstroidError extends Error {
   }
 
   /**
-   * Alias for {@link status} using the `statusCode` spelling common in HTTP
-   * clients. `undefined` for errors that did not originate from a response.
-   */
-  get statusCode(): number | undefined {
-    return this.status;
-  }
-
-  /**
    * Alias for {@link code} using the `errorCode` spelling used in the API
    * error envelope, so callers can branch on either name.
    */
