@@ -454,6 +454,20 @@ export {
   AstroidValidationError,
   AstroidNetworkError,
 } from '@astroid/errors';
+// Centralized Stellar domain errors and mapping (issue #253).
+export {
+  InsufficientBalanceError,
+  TrustlineMissingError,
+  StellarAuthError,
+  SequenceConflictError,
+  TransactionExpiredError,
+  StellarMalformedError,
+  StellarNetworkError,
+  mapStellarError,
+  extractStellarResultCodes,
+  errorClassForStellarCode,
+  isStellarError,
+} from '@astroid/errors';
 export {
   createErrorTranslatorMiddleware,
   errorTranslatorMiddleware,
