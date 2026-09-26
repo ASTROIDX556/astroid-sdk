@@ -1,115 +1,174 @@
-# feat(client): configurable retry with exponential backoff & jitter
+# feat: paginated React hook factory, HTTP interceptors & pagination helpers
 
-Makes `@astroid/client` resilient to transient network failures and rate limits
-by aligning the SDK's already-built retry pipeline with the exact policy
-required by the issue: retry on `429` and **all** `5xx`, never on any other
-`4xx`, with a default of **3** retries and exponential full-jitter backoff.
-
-Closes #262
+Closes #70
+Closes #270
+Closes #273
+Closes #278
 
 ---
 
-## Background
+## Overview
 
-`@astroid/client` sends every request through the shared `HttpClient` in
-`@astroid/core`, which already owns the retry loop (`HttpClient.request`):
-it classifies each response, computes a backoff delay, sleeps, and re-attempts
-up to the configured limit. Policy is supplied by `backoffDelay`,
-`isRetryableStatus`, `RetryConfig`, and the opt-in `createRetryMiddleware`.
+This PR lands the reusable list/pagination infrastructure for the SDK and the
+React data layer built on top of it. It touches three workspace packages:
 
-This PR does **not** add a second, parallel retry stack. It corrects the two
-places where that pipeline diverged from the issue's requirements and hardens
-the client-level tests around them.
+| Package | What changed |
+| --- | --- |
+| `@astroid/react` | New generic infinite/paginated query hook + hook factory |
+| `@astroid/client` | Pluggable request/response interceptors, built-in debug logger, pagination query builders |
+| `@astroid/types` | Cursor pagination metadata now exposes a `prevCursor` |
 
-### Gap 1 — default retry count was 2, issue requires 3
-
-`DEFAULT_RETRY.maxRetries` (`packages/core/src/config.ts`) and
-`DEFAULT_MAX_RETRIES` (`packages/client/src/middleware/retry.ts`) were both `2`.
-Because retries are **enabled by default**, a fresh
-`new Astroid({ apiKey })` made only two retry attempts.
-
-### Gap 2 — non-`429` 4xx statuses were retried
-
-`isRetryableStatus` used a fixed allow-list
-`{408, 425, 429, 500, 502, 503, 504}`. `408 Request Timeout` and `425 Too Early`
-are 4xx client errors, and the issue is explicit: *retry on 5xx and 429, but
-never retry on 4xx client errors (except 429)*. The allow-list also meant
-legitimate 5xx statuses such as `501` and `505` were never retried.
+All four issues target the same theme — clean, typed pagination navigation —
+and are implemented together so the pieces compose (pagination types → client
+query builders → React hooks).
 
 ---
 
-## Changes
+## Issue #70 — React query hook factory for paginated resource lists (`@astroid/react`)
 
-### `packages/core/src/backoff.ts` — retry predicate
+New module `packages/react/src/hooks/usePaginatedResource.ts`.
 
-Replaces the allow-list with an explicit, documented rule:
+- **`useInfiniteResource<TItem, TParams>(config, options)`** — a generic
+  TanStack Query hook for cursor-paginated list endpoints. It owns query-key
+  management (appending resolved params), page state, and next-page fetching,
+  with full type inference over `TItem` and `TParams`.
+- **`createPaginatedResourceHook(config)`** — the hook factory. Bind a
+  `PaginatedResourceConfig` (query key + page fetcher + defaults) once and get
+  back a reusable hook, so components pass only per-instance options.
+- **Caching & stale time** — `staleTime` can be set per-resource or per
+  instance; `gcTime`, `retry`, `enabled`, `refetchOnWindowFocus`,
+  `initialCursor`, and `limit` are exposed. Query keys include the resolved
+  params so different filters cache independently.
+- **States surfaced cleanly** — `isLoading`, `isError`, `error`,
+  `isFetchingNextPage`, `hasNextPage`, plus `fetchNextPage()` / `refetch()`
+  and a flattened `items` array (and raw `pages`, `total`).
+- **Custom cursors** — `getNextPageParam` defaults to following
+  `meta.nextCursor` while `meta.hasMore !== false`, but can be overridden.
+- Exported from `packages/react/src/index.ts` alongside the existing provider,
+  resource, and mutation hooks.
 
-```ts
-export function isRetryableStatus(status: number): boolean {
-  return status === 429 || (status >= 500 && status < 600);
-}
+```tsx
+import { createPaginatedResourceHook } from '@astroid/react';
+
+const useWalletsPage = createPaginatedResourceHook({
+  queryKey: ['astroid', 'wallets', 'list'],
+  fetchPage: (params) => astroid.wallets.list(params),
+  staleTime: 30_000,
+});
+
+const { items, isLoading, error, hasNextPage, isFetchingNextPage, fetchNextPage } =
+  useWalletsPage();
 ```
 
-- `429 Too Many Requests` → retried (rate-limit window reopens).
-- **Every** `5xx` → retried (server-side failure, including `501`, `505`, …).
-- Every other `4xx` → never retried (client error: bad request, auth,
-  validation, not-found, `408`, `425`, …).
-- Full-jitter exponential backoff in `backoffDelay` is unchanged:
-  `floor(random() * min(baseDelayMs * 2 ** (attempt - 1), maxDelayMs))`.
-
-### `packages/core/src/config.ts` — default retries
-
-- `DEFAULT_RETRY.maxRetries`: `2` → **`3`**; `RetryConfig` doc updated.
-- `baseDelayMs` remains `250` (configurable), `maxDelayMs` remains `8000`.
-
-### `packages/core/src/middleware.ts` — middleware default
-
-- `createRetryMiddleware()` default `maxRetries`: `2` → **`3`**.
-
-### `packages/client/src/middleware/retry.ts` — client middleware
-
-- `DEFAULT_MAX_RETRIES`: `2` → **`3`**.
-- `@default` JSDoc and the retryable-status documentation updated to describe
-  `429` + any `5xx` rather than the old hard-coded list.
-
-### `packages/client/src/middleware/error.ts` — doc accuracy
-
-- The error-translator comment no longer lists `408` among the statuses the
-  retry loop owns (`429`, `5xx`).
+**Acceptance criteria**
+- [x] Implemented a paginated query hook factory in `packages/react`.
+- [x] Exported the new hooks alongside existing provider/resource hooks.
+- [x] Unit tests use `@testing-library/react` and `QueryClient` wrappers.
+- [x] `pnpm build`, `pnpm lint`, `pnpm typecheck` all pass.
 
 ---
 
-## Tests
+## Issue #270 — Request/response logging interceptor support (`@astroid/client`)
 
-All added/extended in the client package (`vitest` + mocked `fetch`).
+New module `packages/client/src/interceptors.ts`, wired into `AstroidClientConfig`
+and the `Astroid` constructor.
 
-`packages/client/src/__tests__/retry.test.ts`
-- Default retry config is now asserted as `{ maxRetries: 3, baseDelayMs: 250,
-  maxDelayMs: 8000 }`.
-- New: `408` and `425` are **not** retried (exactly one `fetch` call).
-- New: `new Astroid({ apiKey })` resolves to `retry.maxRetries === 3` with a
-  `250ms` base delay when no retry config is supplied.
-- Existing coverage retained: `502 → 200` recovery, `503`/`504` retries,
-  `maxRetries` exhaustion throwing `ServerError`, `429` retry + `Retry-After`
-  honouring, `400`/`404`/`422` non-retryal, network-error retry,
-  `retry: false` disabling retries, and `onRetry` instrumentation.
+- **`requestInterceptors` / `responseInterceptors`** arrays on the client
+  config. Request interceptors run in array order before dispatch; response
+  interceptors run in array order as responses arrive.
+- **Lightweight, async-friendly signatures**:
+  - `RequestInterceptor = (config: RequestConfig) => RequestConfig | void | Promise<...>`
+  - `ResponseInterceptor = (response: ResponseConfig) => ResponseConfig | void | Promise<...>`
+  - `RequestConfig` exposes `url`, `method`, `headers`, `body` (decoded), and
+    the original `options`; `ResponseConfig` exposes `status`, `headers`,
+    `body`, `requestId`, and an echo of the originating request.
+- Return a replacement config to rewrite the URL/method/headers/body (tests
+  cover URL rewriting, method/body transformation, and header injection); return
+  nothing to observe only.
+- **Built-in debug logger**: `createDebugLogger(options)` returns a
+  `{ requestInterceptor, responseInterceptor }` pair that emits stable,
+  greppable lines and redacts sensitive headers by default:
 
-`packages/client/src/retry.test.ts`
-- Extends the predicate test to cover `501`/`505` (retryable) and
-  `408`/`422`/`425` (non-retryable).
+  ```
+  [astroid] → GET https://api.astroid.finance/v1/wallets headers={...}
+  [astroid] ← 200 GET https://api.astroid.finance/v1/wallets (42ms) body={...}
+  ```
+
+  It can also be enabled from config with `debug: true` / `debug: {...}`.
+- TSDoc examples are included on the module, `createInterceptorMiddleware`, and
+  `createDebugLogger`.
+
+**Acceptance criteria**
+- [x] Client options interface supports arrays of request/response interceptors.
+- [x] Request interceptors execute in order before fetch; response interceptors
+      execute upon receiving responses.
+- [x] Unit tests verify interceptor execution order and payload propagation.
+- [x] Interceptor usage documented with a TSDoc example.
 
 ---
 
-## Acceptance criteria
+## Issue #273 — Pagination parameters & meta types for list endpoints (`@astroid/client`, `@astroid/types`)
 
-- [x] Client automatically retries failed requests matching retryable statuses
-      (`429` and all `5xx`), enabled by default.
-- [x] Exponential backoff increases between attempts with full jitter applied.
-- [x] Non-retryable errors (`400`, `401`, `403`, `404`, `408`, `422`, `425`)
-      throw immediately without retrying.
-- [x] Configurable `maxRetries` (default **3**) and base backoff delay.
-- [x] Comprehensive unit tests in the client package using `vitest` and mocked
-      `fetch`, including a `502 Bad Gateway` followed by a `200 OK`.
+- `PaginationParams` (`page?`, `cursor?`, `limit?`, `order?`) and the generic
+  `PaginatedResponse<T>` (`data: T[]`, `meta?: ResponseMeta`) are already
+  exported from `@astroid/types` and re-exported from `@astroid/client`.
+- `ResponseMeta` now also exposes `prevCursor?: string | null`, and
+  `CursorPaginated<T>` gains the same optional field, so backwards cursor
+  navigation is typed.
+- `serializePaginationParams` now also handles `page` and defensively drops
+  `null` / empty-string values, so serialization never produces literal `""`
+  query segments.
+- Pagination is wired into the client request layer: `Astroid.buildQuery(...)`
+  merges pagination params with arbitrary query params.
+
+**Acceptance criteria**
+- [x] `PaginationParams` and `PaginatedResponse` exported from `@astroid/types`.
+- [x] Client request utilities serialize optional pagination query strings.
+- [x] Unit tests verify query-parameter encoding and response parsing.
+- [x] `pnpm build` and `pnpm test` pass across the workspace.
+
+---
+
+## Issue #278 — Pagination response helpers & query parameter builders (`@astroid/client`)
+
+- **`buildPaginationQuery(params?)`** — returns a populated `URLSearchParams`
+  from `{ cursor, limit, order, page }`, safely omitting `undefined`, `null`,
+  and empty-string values without producing `?`/`&` artifacts.
+- **`buildPaginationQueryString(params?)`** — returns a leading-`?` query
+  string (`'?limit=25'`) or `''`, safe to concatenate onto any path.
+- Both are exported from `packages/client/src/index.ts`, alongside the existing
+  `serializePaginationParams` / `unwrapPaginatedResponse` helpers and the
+  generic `PaginatedResponse` re-export.
+- New Vitest suite additions under
+  `packages/client/src/__tests__/pagination.test.ts` verify serialization of
+  cursors, limits, order, and page, including boundary/empty cases.
+
+**Acceptance criteria**
+- [x] `buildPaginationQuery` exported from `@astroid/client`.
+- [x] Generic `PaginatedResponse` envelope exported for list results.
+- [x] Tests in `packages/client/src/__tests__/pagination.test.ts` cover
+      cursor/limit/order serialization.
+- [x] `pnpm --filter @astroid/client build` and `pnpm typecheck` pass.
+
+---
+
+## Files changed
+
+**Added**
+- `packages/client/src/interceptors.ts`
+- `packages/client/src/__tests__/interceptors.test.ts`
+- `packages/react/src/hooks/usePaginatedResource.ts`
+- `packages/react/src/__tests__/paginated-resource.test.tsx`
+
+**Modified**
+- `packages/client/src/index.ts` (config wiring + exports)
+- `packages/client/src/pagination.ts` (`buildPaginationQuery`,
+  `buildPaginationQueryString`, null-safe serialization)
+- `packages/client/src/__tests__/pagination.test.ts`
+- `packages/types/src/common.ts` (`prevCursor` on `ResponseMeta` /
+  `CursorPaginated`)
+- `packages/types/src/pagination.test.ts`
+- `packages/react/src/index.ts`
 
 ---
 
@@ -117,11 +176,24 @@ All added/extended in the client package (`vitest` + mocked `fetch`).
 
 | package | command | result |
 | --- | --- | --- |
-| `@astroid/client` | `pnpm test` | 221 passed (15 files) |
-| `@astroid/client` | `pnpm typecheck` | pass |
-| workspace | `pnpm test` | all packages pass |
+| workspace | `pnpm build` | pass |
+| workspace | `pnpm lint` | pass |
 | workspace | `pnpm typecheck` | 16/16 packages pass |
+| `@astroid/client` | `pnpm test` | 17 files / 254 tests pass |
+| `@astroid/react` | `pnpm test` | 9 files / 79 tests pass |
+| `@astroid/types` | `pnpm test` | 4 files / 63 tests pass |
+| workspace | `pnpm test` | all packages pass |
 
-The retry mechanism itself was originally introduced in #186/#196/#171; this PR
-brings its defaults and status policy in line with #262 and adds the tests that
-pin that behaviour.
+---
+
+## Notes / design decisions
+
+- Interceptors intentionally layer on top of the existing middleware stack
+  rather than replacing it: `createInterceptorMiddleware` simply adapts the
+  `PreparedRequest`/`RawResponse` pipeline into the ergonomic
+  `RequestConfig`/`ResponseConfig` shape, so existing middleware order and
+  behaviour are unchanged.
+- The React hook factory is deliberately resource-agnostic (it takes a query
+  key and page fetcher) so it can be reused by every resource package without
+  coupling `@astroid/react` to resource implementations.
+- `prevCursor` was added as an optional field to keep the change non-breaking.
