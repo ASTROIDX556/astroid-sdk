@@ -6,6 +6,7 @@ import {
   type UseQueryResult,
 } from '@tanstack/react-query';
 import { queryKeys, useAstroidClient } from '../hooks.js';
+import { walletBalancesKeys } from './useWalletBalances.js';
 import type {
   CreateWalletInput,
   ImportWalletInput,
@@ -141,6 +142,8 @@ export function useTransfer(): UseMutationResult<Transaction, Error, TransferVar
     onSuccess: (_data, { walletId }) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.wallets.balance(walletId) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.wallets.detail(walletId) });
+      // Keep the multi-asset balance sync (issue #252) fresh after transfers.
+      void queryClient.invalidateQueries({ queryKey: walletBalancesKeys.byId(walletId) });
     },
   });
 }
@@ -222,6 +225,10 @@ export function useWalletMutation(): UseMutationResult<
         });
         void queryClient.invalidateQueries({
           queryKey: queryKeys.wallets.balance(variables.walletId),
+        });
+        // Keep the multi-asset balance sync (issue #252) fresh after mutations.
+        void queryClient.invalidateQueries({
+          queryKey: walletBalancesKeys.byId(variables.walletId),
         });
       }
     },
