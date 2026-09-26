@@ -205,7 +205,16 @@ export class HttpClient {
         // Non-2xx: decide whether to retry, otherwise throw a typed error.
         const error = this.toError(raw);
         await this.middleware.applyError(error, prepared);
-        const shouldRetryStatus = contextOptions?.shouldRetryStatus ?? isRetryableStatus;
+        // Resolve the retryable-status predicate. Precedence:
+        //   1. a custom predicate supplied to the retry middleware,
+        //   2. an explicit `retryableStatusCodes` list (per-request or global),
+        //   3. the SDK-wide default (`429` + any `5xx`).
+        const statusCodes = contextOptions?.retryableStatusCodes ?? retry?.retryableStatusCodes;
+        const shouldRetryStatus =
+          contextOptions?.shouldRetryStatus ??
+          (statusCodes
+            ? (status: number) => statusCodes.includes(status)
+            : isRetryableStatus);
         if (retry && prepared.retryable && attempt < maxAttempts && shouldRetryStatus(raw.status)) {
           lastError = error;
           const delay = this.retryDelay(attempt, raw, retry);
