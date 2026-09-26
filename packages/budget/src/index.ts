@@ -204,141 +204,32 @@ export class BudgetResource extends Resource {
   }
 
   /**
-   * Create a budget threshold alert subscription.
+   * Retrieve the current utilization snapshot for a budget.
    *
-   * @param budgetId The budget to attach the alert to.
-   * @param input    Threshold percentage, notification channel, and destination.
-   * @throws {BudgetAlertValidationError} When `input` is structurally invalid.
-   */
-  async createAlert(budgetId: string, input: CreateBudgetAlertInput): Promise<BudgetAlert> {
-    assertValidThresholdPercent(input.thresholdPercent);
-    if (!isValidBudgetAlertChannel(input.channel)) {
-      throw new BudgetAlertValidationError(
-        `Unknown budget alert channel "${String(input.channel)}".`,
-        { channel: input.channel },
-      );
-    }
-    const res = await this.client.post<BudgetAlert>(
-      `/budgets/${encodeURIComponent(budgetId)}/alerts`,
-      input,
-    );
-    return res.data;
-  }
-
-  /**
-   * Alias of {@link createAlert} for threshold-explicit naming.
-   */
-  async createThresholdAlert(
-    budgetId: string,
-    input: CreateBudgetAlertInput,
-  ): Promise<BudgetAlert> {
-    return this.createAlert(budgetId, input);
-  }
-
-  /**
-   * List threshold alerts configured on a budget.
+   * This is the fully-qualified alias of {@link BudgetResource.utilization}
+   * exposed for callers who prefer a `getBudgetUtilization`-style resource API;
+   * behaviour is identical.
    *
-   * @param budgetId The budget whose alerts to list.
-   * @param params   Optional status and channel filters and pagination.
+   * @param budgetId The budget to inspect.
+   * @returns        Limit, spending, headroom, and the 0..1 utilization ratio
+   *                 for the active window (see {@link BudgetUtilization}).
    */
-  async listAlerts(
-    budgetId: string,
-    params: ListBudgetAlertsParams = {},
-  ): Promise<Paginated<BudgetAlert>> {
-    return this.listData<BudgetAlert>(
-      `/budgets/${encodeURIComponent(budgetId)}/alerts`,
-      { ...params },
-    );
-  }
-
-  /**
-   * Alias of {@link listAlerts} for threshold-explicit naming.
-   */
-  async listThresholdAlerts(
-    budgetId: string,
-    params: ListBudgetAlertsParams = {},
-  ): Promise<Paginated<BudgetAlert>> {
-    return this.listAlerts(budgetId, params);
-  }
-
-  /**
-   * Retrieve a single budget alert by id.
-   *
-   * @param budgetId The budget id.
-   * @param alertId  The alert id.
-   */
-  async getAlert(budgetId: string, alertId: string): Promise<BudgetAlert> {
-    return this.getData<BudgetAlert>(
-      `/budgets/${encodeURIComponent(budgetId)}/alerts/${encodeURIComponent(alertId)}`,
-    );
-  }
-
-  /**
-   * Alias of {@link getAlert} for threshold-explicit naming.
-   */
-  async getThresholdAlert(budgetId: string, alertId: string): Promise<BudgetAlert> {
-    return this.getAlert(budgetId, alertId);
-  }
-
-  /**
-   * Update a budget threshold alert subscription.
-   *
-   * @param budgetId The budget id.
-   * @param alertId  The alert id.
-   * @param input    Updated threshold percent, channel, destination, or status.
-   * @throws {BudgetAlertValidationError} When a supplied field is invalid.
-   */
-  async updateAlert(
-    budgetId: string,
-    alertId: string,
-    input: UpdateBudgetAlertInput,
-  ): Promise<BudgetAlert> {
-    if (input.thresholdPercent !== undefined) {
-      assertValidThresholdPercent(input.thresholdPercent);
-    }
-    if (input.channel !== undefined && !isValidBudgetAlertChannel(input.channel)) {
-      throw new BudgetAlertValidationError(
-        `Unknown budget alert channel "${String(input.channel)}".`,
-        { channel: input.channel },
-      );
-    }
-    const res = await this.client.patch<BudgetAlert>(
-      `/budgets/${encodeURIComponent(budgetId)}/alerts/${encodeURIComponent(alertId)}`,
-      input,
-    );
-    return res.data;
-  }
-
-  /**
-   * Alias of {@link updateAlert} for threshold-explicit naming.
-   */
-  async updateThresholdAlert(
-    budgetId: string,
-    alertId: string,
-    input: UpdateBudgetAlertInput,
-  ): Promise<BudgetAlert> {
-    return this.updateAlert(budgetId, alertId, input);
-  }
-
-  /**
-   * Delete a budget threshold alert subscription.
-   *
-   * @param budgetId The budget id.
-   * @param alertId  The alert id to delete.
-   */
-  async deleteAlert(budgetId: string, alertId: string): Promise<void> {
-    await this.client.delete<void>(
-      `/budgets/${encodeURIComponent(budgetId)}/alerts/${encodeURIComponent(alertId)}`,
-    );
-  }
-
-  /**
-   * Alias of {@link deleteAlert} for threshold-explicit naming.
-   */
-  async deleteThresholdAlert(budgetId: string, alertId: string): Promise<void> {
-    return this.deleteAlert(budgetId, alertId);
+  async getBudgetUtilization(budgetId: string): Promise<BudgetUtilization> {
+    return this.utilization(budgetId);
   }
 }
 
-/** Alias of {@link BudgetResource} matching the `*sResource` client naming. */
-export const BudgetsResource = BudgetResource;
+/**
+ * Budget DTOs re-exported from `@astroid/types` so consumers of
+ * `@astroid/budget` can use the resource return types without a second import.
+ */
+export type {
+  Budget,
+  BudgetAllocationState,
+  BudgetAllocationStatus,
+  BudgetAllocationThresholds,
+  BudgetCheckResult,
+  BudgetMetrics,
+  BudgetSimulationResult,
+  BudgetUtilization,
+} from '@astroid/types';

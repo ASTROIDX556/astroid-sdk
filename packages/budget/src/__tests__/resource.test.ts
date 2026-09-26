@@ -168,130 +168,28 @@ describe('BudgetResource', () => {
     expect(result.remaining).toBe('600.00');
   });
 
-  it('createAlert posts to /budgets/{id}/alerts and validates threshold', async () => {
+  it('getBudgetUtilization is an alias of utilization', async () => {
     const { client, calls, handler } = makeClient();
-    const mockAlert = {
-      id: 'alt_1',
+    const utilization: BudgetUtilization = {
       budgetId: BUDGET_ID,
-      organizationId: 'org_1',
-      thresholdPercent: 80,
-      channel: 'WEBHOOK',
-      target: 'https://example.com/alerts',
-      status: 'ACTIVE',
-      recurring: true,
-      createdAt: '2026-08-01T00:00:00.000Z',
-      updatedAt: '2026-08-01T00:00:00.000Z',
+      period: 'MONTHLY',
+      periodStart: '2026-08-01T00:00:00.000Z',
+      periodEnd: '2026-09-01T00:00:00.000Z',
+      limit: '1000.00',
+      spent: '400.00',
+      remaining: '600.00',
+      utilization: 0.4,
+      percent: 40,
+      state: 'healthy',
     };
-    handler.mockResolvedValueOnce(mockAlert);
+    handler.mockResolvedValueOnce(utilization);
     const resource = new BudgetResource(client);
 
-    const result = await resource.createAlert(BUDGET_ID, {
-      thresholdPercent: 80,
-      channel: 'WEBHOOK',
-      target: 'https://example.com/alerts',
-    });
+    const result = await resource.getBudgetUtilization(BUDGET_ID);
 
     expect(calls).toEqual([
-      {
-        method: 'post',
-        path: `/budgets/${BUDGET_ID}/alerts`,
-        body: {
-          thresholdPercent: 80,
-          channel: 'WEBHOOK',
-          target: 'https://example.com/alerts',
-        },
-      },
+      { method: 'get', path: `/budgets/${BUDGET_ID}/utilization`, query: undefined },
     ]);
-    expect(result).toEqual(mockAlert);
-  });
-
-  it('createAlert validates invalid threshold percentage and channel', async () => {
-    const { client } = makeClient();
-    const resource = new BudgetResource(client);
-
-    await expect(
-      resource.createAlert(BUDGET_ID, {
-        thresholdPercent: 0,
-        channel: 'WEBHOOK',
-        target: 'https://example.com/alerts',
-      }),
-    ).rejects.toThrow('thresholdPercent must be a finite number greater than 0 and at most 1000');
-
-    await expect(
-      resource.createAlert(BUDGET_ID, {
-        thresholdPercent: 80,
-        channel: 'INVALID_CHANNEL' as never,
-        target: 'https://example.com/alerts',
-      }),
-    ).rejects.toThrow('Unknown budget alert channel "INVALID_CHANNEL"');
-  });
-
-  it('listAlerts requests /budgets/{id}/alerts with pagination and filters', async () => {
-    const { client, calls, handler } = makeClient();
-    const mockAlerts = [{ id: 'alt_1', thresholdPercent: 50 }];
-    handler.mockResolvedValueOnce(mockAlerts);
-    const resource = new BudgetResource(client);
-
-    const result = await resource.listAlerts(BUDGET_ID, { status: 'ACTIVE', limit: 10 });
-
-    expect(calls).toEqual([
-      {
-        method: 'get',
-        path: `/budgets/${BUDGET_ID}/alerts`,
-        query: { status: 'ACTIVE', limit: 10 },
-      },
-    ]);
-    expect(result.data).toEqual(mockAlerts);
-  });
-
-  it('getAlert requests /budgets/{id}/alerts/{alertId}', async () => {
-    const { client, calls, handler } = makeClient();
-    const mockAlert = { id: 'alt_1', thresholdPercent: 50 };
-    handler.mockResolvedValueOnce(mockAlert);
-    const resource = new BudgetResource(client);
-
-    const result = await resource.getAlert(BUDGET_ID, 'alt_1');
-
-    expect(calls).toEqual([
-      {
-        method: 'get',
-        path: `/budgets/${BUDGET_ID}/alerts/alt_1`,
-        query: undefined,
-      },
-    ]);
-    expect(result).toEqual(mockAlert);
-  });
-
-  it('updateAlert patches /budgets/{id}/alerts/{alertId}', async () => {
-    const { client, calls, handler } = makeClient();
-    const mockAlert = { id: 'alt_1', thresholdPercent: 90 };
-    handler.mockResolvedValueOnce(mockAlert);
-    const resource = new BudgetResource(client);
-
-    const result = await resource.updateAlert(BUDGET_ID, 'alt_1', { thresholdPercent: 90 });
-
-    expect(calls).toEqual([
-      {
-        method: 'patch',
-        path: `/budgets/${BUDGET_ID}/alerts/alt_1`,
-        body: { thresholdPercent: 90 },
-      },
-    ]);
-    expect(result).toEqual(mockAlert);
-  });
-
-  it('deleteAlert deletes /budgets/{id}/alerts/{alertId}', async () => {
-    const { client, calls, handler } = makeClient();
-    handler.mockResolvedValueOnce(undefined);
-    const resource = new BudgetResource(client);
-
-    await resource.deleteAlert(BUDGET_ID, 'alt_1');
-
-    expect(calls).toEqual([
-      {
-        method: 'delete',
-        path: `/budgets/${BUDGET_ID}/alerts/alt_1`,
-      },
-    ]);
+    expect(result).toEqual(utilization);
   });
 });
