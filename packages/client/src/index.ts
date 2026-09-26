@@ -69,6 +69,15 @@ export interface AstroidClientConfig extends CoreClientConfig {
   retryDelay?: number;
   /** Request/response logging hooks with automatic header redaction. */
   logging?: LoggingMiddlewareOptions;
+  /**
+   * Custom correlation/tracing headers applied to every outbound request
+   * (issue #255). Shorthand for the core `tracingHeaders` option: use this to
+   * stamp a fixed deployment- or tenant-level `X-Correlation-ID`, or to set the
+   * `X-Request-ID` / `X-Astroid-Correlation-ID` header names with static values.
+   * Per-request `options.headers`, `options.correlationId` and
+   * `options.requestId` always take precedence.
+   */
+  tracingHeaders?: Record<string, string>;
 }
 
 /** The AI-native namespace: express intents, not low-level transfers. */
@@ -259,7 +268,9 @@ export class Astroid {
 
     // Correlation ID + telemetry: every outbound request carries a
     // X-Astroid-Correlation-ID header and fires onRequest/onResponse hooks.
-    this.http.use(createCorrelationMiddleware(clientConfig?.telemetry));
+    // Static tracing headers from the config are honoured as defaults and are
+    // overridden by per-request options.
+    this.http.use(createCorrelationMiddleware(clientConfig?.telemetry, clientConfig?.tracingHeaders));
 
     // Request/response logging with header redaction (opt-in via config).
     if (clientConfig?.logging) {
@@ -440,6 +451,8 @@ export {
   correlationMiddleware,
   CORRELATION_ID_HEADER,
   REQUEST_ID_HEADER,
+  X_CORRELATION_ID_HEADER,
+  type CorrelationTracingConfig,
 } from './middleware/correlation.js';
 
 // Re-export telemetry types for consumers
