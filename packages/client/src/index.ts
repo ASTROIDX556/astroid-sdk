@@ -75,6 +75,11 @@ export interface AstroidClientConfig extends CoreClientConfig {
   retries?: number;
   /** Base retry delay in ms (shorthand for `retry.baseDelayMs`). */
   retryDelay?: number;
+  /**
+   * Exponential backoff multiplier between retries (shorthand for
+   * `retry.multiplier`). Defaults to `2` (classic doubling).
+   */
+  retryMultiplier?: number;
   /** Request/response logging hooks with automatic header redaction. */
   logging?: LoggingMiddlewareOptions;
   /**
@@ -411,15 +416,24 @@ export class Astroid {
 
 export default Astroid;
 
-/** Normalise the shorthand `retries` / `retryDelay` options into core retry config. */
+/**
+ * Normalise the shorthand `retries` / `retryDelay` / `retryMultiplier` options
+ * into a core retry config, merging (rather than replacing) any explicit
+ * `retry` object the caller also supplied.
+ */
 function normalizeConfig(config: AstroidClientConfig): CoreClientConfig {
-  if (config.retries === undefined) return config;
+  const { retries, retryDelay, retryMultiplier } = config;
+  if (retries === undefined && retryDelay === undefined && retryMultiplier === undefined) {
+    return config;
+  }
+  const existing = typeof config.retry === 'object' && config.retry !== null ? config.retry : {};
   return {
     ...config,
     retry: {
-      maxRetries: config.retries,
-      baseDelayMs: config.retryDelay ?? 250,
-      maxDelayMs: 8000,
+      ...existing,
+      ...(retries !== undefined ? { maxRetries: retries } : {}),
+      ...(retryDelay !== undefined ? { baseDelayMs: retryDelay } : {}),
+      ...(retryMultiplier !== undefined ? { multiplier: retryMultiplier } : {}),
     },
   };
 }

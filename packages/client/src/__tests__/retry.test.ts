@@ -93,6 +93,7 @@ describe('createRetryMiddleware', () => {
       maxRetries: 3,
       baseDelayMs: 250,
       maxDelayMs: 8000,
+      multiplier: 2,
     });
   });
 
@@ -179,7 +180,7 @@ describe('retryMiddleware', () => {
 /* -------------------------------------------------------------------------- */
 
 describe('computeRetryDelay', () => {
-  const config = { maxRetries: 3, baseDelayMs: 100, maxDelayMs: 2000 };
+  const config = { maxRetries: 3, baseDelayMs: 100, maxDelayMs: 2000, multiplier: 2 };
 
   it('uses Retry-After header on 429 responses (in ms)', () => {
     // 2 seconds → 2000ms, but capped at maxDelayMs=2000
@@ -208,6 +209,14 @@ describe('computeRetryDelay', () => {
     const delay = computeRetryDelay(1, config, 429, undefined, () => 1.0);
     // Attempt 1: 100 * 2^0 = 100, random=1.0 → floor(1.0 * 100) = 100
     expect(delay).toBe(100);
+  });
+
+  it('honours a custom backoff multiplier', () => {
+    const tripling = { ...config, multiplier: 3 };
+    // Attempt 2: 100 * 3^1 = 300, random=1.0 → 300
+    expect(computeRetryDelay(2, tripling, 503, undefined, () => 1.0)).toBe(300);
+    // Attempt 3: 100 * 3^2 = 900, random=1.0 → 900
+    expect(computeRetryDelay(3, tripling, 503, undefined, () => 1.0)).toBe(900);
   });
 
   it('ignores NaN Retry-After and falls back to backoff', () => {
@@ -532,6 +541,35 @@ describe('Astroid client — retry from config', () => {
     expect(client.http.config.retry).toMatchObject({
       maxRetries: 3,
       baseDelayMs: 250,
+      multiplier: 2,
+    });
+  });
+
+  it('accepts an explicit backoff multiplier in the retry config', () => {
+    const client = new Astroid({
+      apiKey: 'sk_test_multiplier',
+      baseUrl: 'https://api.astroid.test',
+      retry: { multiplier: 3 },
+      fetch: vi.fn() as unknown as typeof fetch,
+    });
+
+    expect(client.http.config.retry).toMatchObject({ multiplier: 3 });
+  });
+
+  it('normalises the retryMultiplier shorthand into the retry config', () => {
+    const client = new Astroid({
+      apiKey: 'sk_test_multiplier',
+      baseUrl: 'https://api.astroid.test',
+      retries: 4,
+      retryDelay: 100,
+      retryMultiplier: 1.5,
+      fetch: vi.fn() as unknown as typeof fetch,
+    });
+
+    expect(client.http.config.retry).toMatchObject({
+      maxRetries: 4,
+      baseDelayMs: 100,
+      multiplier: 1.5,
     });
   });
 

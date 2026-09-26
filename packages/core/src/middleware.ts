@@ -104,6 +104,7 @@ export function createRetryMiddleware(options: RetryMiddlewareOptions = {}): Mid
     maxRetries: options.maxRetries ?? 3,
     baseDelayMs: options.baseDelayMs ?? 250,
     maxDelayMs: options.maxDelayMs ?? 8000,
+    multiplier: options.multiplier ?? 2,
   };
 
   return {

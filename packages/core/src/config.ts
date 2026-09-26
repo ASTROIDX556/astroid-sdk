@@ -39,6 +39,11 @@ export interface RetryConfig {
   baseDelayMs: number;
   /** Upper bound for a single backoff delay in ms. Default 8000. */
   maxDelayMs: number;
+  /**
+   * Exponential growth factor between retries: the uncapped delay for retry
+   * `n` is `baseDelayMs * multiplier^(n-1)`. Default 2 (classic doubling).
+   */
+  multiplier: number;
 }
 
 /**
@@ -160,6 +165,7 @@ const DEFAULT_RETRY: RetryConfig = {
   maxRetries: 3,
   baseDelayMs: 250,
   maxDelayMs: 8000,
+  multiplier: 2,
 };
 
 /** Strip a single trailing slash so URL joins stay clean. */

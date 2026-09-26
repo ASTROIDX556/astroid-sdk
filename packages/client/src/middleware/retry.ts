@@ -88,11 +88,19 @@ export interface RetryMiddlewareConfig extends RetryMiddlewareOptions {
 
   /**
    * Initial backoff delay in milliseconds before the first retry. The actual
-   * wait for attempt `n` is a random value in `[0, min(baseDelayMs * 2^(n-1),
-   * maxDelayMs)]`.
+   * wait for attempt `n` is a random value in
+   * `[0, min(baseDelayMs * multiplier^(n-1), maxDelayMs)]`.
    * @default 250
    */
   baseDelayMs?: number;
+
+  /**
+   * Exponential growth factor applied between retries. The uncapped wait for
+   * attempt `n` is `baseDelayMs * multiplier^(n-1)`. Use `1` for a constant
+   * delay and values above `2` for more aggressive back-off.
+   * @default 2
+   */
+  multiplier?: number;
 
   /**
    * Upper bound for a single retry delay in milliseconds (including
@@ -135,6 +143,7 @@ export interface RetryMiddlewareConfig extends RetryMiddlewareOptions {
 const DEFAULT_MAX_RETRIES = 3;
 const DEFAULT_BASE_DELAY_MS = 250;
 const DEFAULT_MAX_DELAY_MS = 8_000;
+const DEFAULT_MULTIPLIER = 2;
 
 /* -------------------------------------------------------------------------- */
 /* Factory                                                                     */
@@ -178,6 +187,7 @@ export function createRetryMiddleware(options: RetryMiddlewareConfig = {}): Midd
     maxRetries: options.maxRetries ?? DEFAULT_MAX_RETRIES,
     baseDelayMs: options.baseDelayMs ?? DEFAULT_BASE_DELAY_MS,
     maxDelayMs: options.maxDelayMs ?? DEFAULT_MAX_DELAY_MS,
+    multiplier: options.multiplier ?? DEFAULT_MULTIPLIER,
   };
 
   // Normalise the middleware options we forward to the HttpClient's retry loop.

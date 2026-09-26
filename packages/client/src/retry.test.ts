@@ -10,7 +10,7 @@ import {
 
 describe('Exponential Backoff & Retry Logic in Client & Middleware', () => {
   it('backoffDelay calculates exponential backoff with full jitter', () => {
-    const config = { maxRetries: 3, baseDelayMs: 100, maxDelayMs: 1000 };
+    const config = { maxRetries: 3, baseDelayMs: 100, maxDelayMs: 1000, multiplier: 2 };
 
     const mockRandomHalf = () => 0.5;
 
@@ -20,6 +20,13 @@ describe('Exponential Backoff & Retry Logic in Client & Middleware', () => {
 
     const mockRandomMax = () => 1.0;
     expect(backoffDelay(10, config, mockRandomMax)).toBe(1000);
+  });
+
+  it('honours a configurable backoff multiplier', () => {
+    const tripling = { maxRetries: 3, baseDelayMs: 100, maxDelayMs: 10_000, multiplier: 3 };
+    expect(backoffDelay(1, tripling, () => 1)).toBe(100);
+    expect(backoffDelay(2, tripling, () => 1)).toBe(300);
+    expect(backoffDelay(3, tripling, () => 1)).toBe(900);
   });
 
   it('isRetryableStatus retries every 5xx and 429, and no other 4xx', () => {

@@ -8,7 +8,7 @@ import {
   type RetryConfig,
 } from '../retry.js';
 
-const CONFIG: RetryConfig = { maxRetries: 3, baseDelayMs: 100, maxDelayMs: 1_000 };
+const CONFIG: RetryConfig = { maxRetries: 3, baseDelayMs: 100, maxDelayMs: 1_000, multiplier: 2 };
 
 describe('@astroid/client retry module', () => {
   it('exposes the retry policy primitives from a single entry point', () => {
@@ -37,5 +37,20 @@ describe('@astroid/client retry module', () => {
     expect(computeRetryDelay(1, CONFIG, 503, undefined, () => 0.5)).toBe(50);
     expect(computeRetryDelay(2, CONFIG, 503, undefined, () => 0.5)).toBe(100);
     expect(computeRetryDelay(10, CONFIG, 503, undefined, () => 1)).toBe(1_000);
+  });
+
+  it('applies a configurable backoff multiplier', () => {
+    const tripling = { ...CONFIG, multiplier: 3 };
+    expect(backoffDelay(1, tripling, () => 1)).toBe(100);
+    expect(backoffDelay(2, tripling, () => 1)).toBe(300);
+    expect(backoffDelay(3, tripling, () => 1)).toBe(900);
+    // Never exceeds maxDelayMs.
+    expect(backoffDelay(10, tripling, () => 1)).toBe(1_000);
+  });
+
+  it('supports a constant delay when multiplier is 1', () => {
+    const constant = { ...CONFIG, multiplier: 1 };
+    expect(backoffDelay(1, constant, () => 1)).toBe(100);
+    expect(backoffDelay(5, constant, () => 1)).toBe(100);
   });
 });
