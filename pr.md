@@ -1,132 +1,123 @@
-# feat: analytics metrics helpers, client retry module, budget hooks & typed core errors
+# feat(policy, budget, transaction, react): simulation, utilization, payment & wallet-balance APIs
 
-A four-part developer-experience batch for the Astroid TypeScript SDK. Each
-issue is implemented on top of the existing resource/transport architecture, so
-there is **no new parallel infrastructure** — the additions slot into the
-conventions already used across the monorepo and reuse the shared
-`@astroid/types` DTOs.
+Completes four agent-safety issues across the SDK in one PR:
 
-Closes #78
-Closes #79
-Closes #82
-Closes #83
+- **`@astroid/policy`** — pre-flight policy simulation (`simulate` / `simulatePolicy`)
+  with strongly-typed request/response DTOs and fetch-mocked tests covering both
+  approved **and** rejected evaluations.
+- **`@astroid/budget`** — allocation & utilization query methods
+  (`getBudget`, `listBudgets`, `getBudgetUtilization`) with exported DTOs and
+  success/error tests.
+- **`@astroid/transaction`** — the `buildPaymentTransaction` helper (native XLM
+  and issued assets) with `PaymentTransactionOptions` and payload/validation
+  tests in the canonical location.
+- **`@astroid/react`** — the `useAgentWalletBalance` TanStack Query hook with
+  loading/error/data states, disabled-on-`undefined`, and a dedicated test suite.
 
----
-
-## Issue #78 — analytics metrics aggregation helpers (`@astroid/analytics`)
-
-**New module:** `packages/analytics/src/analytics.ts`
-
-Implements typed query methods and time-range filtering helpers for aggregated
-financial metrics.
-
-- **Query methods**
-  - `getTransactionVolume(client, filter)` → `VolumeSummary` (total volume for the window).
-  - `getFeeExpenditure(client, filter)` → `VolumeSummary` (aggregated fee spend).
-  - `getAgentExecutionCounts(client, filter)` → `AgentAnalytics` (per-agent execution counts).
-  - `AnalyticsQueryResource` class wraps all three for dependency-injection users.
-- **Time-range helpers**
-  - `toIso8601(value)` normalises `Date | string` to ISO-8601 UTC and drops invalid values.
-  - `resolveTimeRange(filter)` maps `startDate`/`endDate` **or** the `from`/`to` aliases and
-    `granularity` → `timeframe`.
-  - `buildAnalyticsQuery(filter, metric?)` and `buildAnalyticsPath(...)` serialise a
-    `URLSearchParams` with consistent ISO-8601 date encoding.
-- **Filter types:** `TimeRangeFilter`, `AnalyticsGranularity`, `AnalyticsMetricType`,
-  `TransactionVolumeFilter`, `FeeExpenditureFilter`, `AgentExecutionCountFilter`.
-- The existing `AnalyticsResource` gains `transactionVolume`, `feeExpenditure`, and
-  `agentExecutionCounts` methods that delegate to the standalone helpers.
-- `packages/analytics/src/index.ts` now also re-exports the local aggregation helpers
-  (`aggregateTransactionMetrics`) and the time-series query helpers, so consumers can
-  import everything from the package root.
-
-**Tests:** `packages/analytics/src/analytics.test.ts` (15 tests) mock the analytics API
-responses and cover ISO-8601 serialisation, alias resolution, metric selection,
-scope filters, and the resource wrapper.
-
-## Issue #79 — client retry with exponential backoff & jitter (`@astroid/client`)
-
-**New module:** `packages/client/src/retry.ts`
-
-A single, modular entry point for the retry policy: `backoffDelay` (full-jitter
-exponential backoff), `isRetryableStatus` (`429` + any `5xx`, never other `4xx`),
-`computeRetryDelay` (honours `Retry-After` on `429`), and the
-`createRetryMiddleware` factory. The transport-level retry loop stays in
-`@astroid/core`; this module makes the policy independently unit-testable and
-reusable outside the transport.
-
-- `ClientOptions` type alias added for `AstroidClientConfig`, which already accepts
-  `retry: { maxRetries, baseDelayMs, maxDelayMs }`, the `retries` / `retryDelay`
-  shorthands, and `retry: false` to disable retries.
-- Non-idempotent `POST`/`PATCH` requests remain non-retryable unless
-  `retryAllMethods: true` or the request is explicitly marked `retryable`.
-- `computeRetryDelay` and `RetryMiddlewareConfig` are now re-exported from the package root.
-
-**Tests:** `packages/client/src/__tests__/retry-module.test.ts` pins the modular surface,
-plus the existing `src/__tests__/retry.test.ts` suite covers `503`/`504`/`502 → success`,
-`Retry-After`, retry exhaustion, and immediate non-retryal of `400`/`401`/`403`/`404`.
-
-## Issue #82 — TanStack Query budget hooks (`@astroid/react`)
-
-**New module:** `packages/react/src/hooks/use-budgets.ts`
-
-- `useBudgets(params?)` — paginated budget list, cached under `queryKeys.budgets.list`.
-- `useBudget(id)` — single budget, disabled until an id is supplied.
-- `useBudgetUtilization(id)` — the budget's utilization snapshot.
-- `useCreateBudget()` — creates a budget and invalidates every cached budget list.
-- `useUpdateBudget()` — patches a budget and invalidates its detail, utilization, and
-  all list queries.
-
-All hooks carry TSDoc with usage examples, use the existing `queryKeys.budgets` key
-factory, and are re-exported from `packages/react/src/index.ts`.
-
-**Tests:** `packages/react/src/__tests__/use-budgets.test.tsx` renders the hooks inside a
-`QueryClientProvider` + `AstroidProvider` and asserts client calls plus cache
-invalidation on successful mutations.
-
-## Issue #83 — typed error hierarchy & normalisation (`@astroid/core`)
-
-**New module:** `packages/core/src/errors.ts`
-
-Re-exports the shared `@astroid/errors` hierarchy from the core entry point and adds
-the parsing utilities the issue asks for:
-
-- `AstroidError` base plus `AstroidApiError`, `AuthenticationError`, `ValidationError`,
-  `RateLimitError`, `ServerError`, and the rest of the domain classes, now exportable
-  directly from `@astroid/core`.
-- `parseErrorResponse(response)` safely reads a non-2xx `Response` **once**, tolerates
-  malformed/non-JSON bodies, and returns the correct typed error with `statusCode`,
-  `errorCode`, and parsed `details` (never throws).
-- `toAstroidError(value)` normalises any caught value into a structured `AstroidError`.
-- The base class gained `statusCode` / `errorCode` accessors (additive aliases for the
-  existing `status` / `code`) in `@astroid/errors`.
-- `isRetryable` is preserved on the transient classes (`RateLimitError`, `NetworkError`,
-  `ServerError`).
-
-**Tests:** `packages/core/src/errors.test.ts` (11 tests) covers status → class mapping
-for `400`, `401`, `403`, `404`, `422`, `429`, `500`, `503`, request-id capture, malformed
-bodies, serialisation, and unknown-value normalisation.
+Closes #280
+Closes #281
+Closes #282
+Closes #283
 
 ---
 
-## Validation
+## Background
+
+Autonomous agents on Stellar must be able to evaluate a proposed transfer
+against active safety policies, inspect live budget headroom, assemble a
+ready-to-sign payment envelope, and render balances in a React dashboard — all
+without first spending network fees on a doomed transaction. These four issues
+fill the remaining gaps in that developer loop, following the repository's
+**thin-client** convention: resource packages forward parameters over REST and
+never encode business decisions (the backend owns policy, risk and budget
+authority).
+
+All four packages already had a partial surface on `main`. This PR closes the
+specific gaps against each issue's acceptance criteria and adds the missing
+tests, rather than duplicating what already existed.
+
+## Changes
+
+### `@astroid/policy` — simulation types & rejected-path coverage (#280)
+
+- `PolicySimulationRequest` and `PolicySimulationResult` are exported from
+  `@astroid/types` (re-exported package-wide), with
+  `PolicyViolationDetail`, `PolicyRiskAssessment` and `PolicyBudgetImpact`
+  shapes.
+- `PolicyResource.simulate` POSTs the request to `/policies/simulate`;
+  `PolicyResource.simulatePolicy` is the dry-run alias, and the exported
+  `simulatePolicy(policies, tx)` engine evaluates a decoded transaction locally
+  against fetched active rules.
+- **Added** a fetch-mocked test proving a **rejected** simulation
+  (`allowed: false`) round-trips its violations, limit/actual values, and
+  required approvals — the file previously only asserted the approved path.
+
+### `@astroid/budget` — allocation & utilization queries (#281)
+
+- **Added** `BudgetResource.getBudgetUtilization(budgetId)` (alias of the
+  existing `utilization`) and `BudgetClient.getBudgetUtilization(budgetId, {
+  signal })`, both against `GET /budgets/:id/utilization`.
+- `getBudget` / `listBudgets` remain the fully-qualified resource aliases.
+- **Added** explicit DTO re-exports from `@astroid/budget`
+  (`Budget`, `BudgetUtilization`, `BudgetAllocationStatus`,
+  `BudgetAllocationThresholds`, `BudgetSimulationResult`, `BudgetMetrics`, …)
+  so consumers need no second import.
+- **Added** unit tests for successful utilization retrieval, id encoding +
+  abort-signal forwarding, and error propagation.
+
+### `@astroid/transaction` — payment builder & validation (#282)
+
+- `buildPaymentTransaction(options)` constructs an **unsigned** single-payment
+  Stellar transaction for native `XLM` or `CODE:ISSUER` assets, validating the
+  destination (`G…` + checksum), positive finite amount, asset issuer and
+  network passphrase up front via structured `ValidationError`s from
+  `@astroid/errors`.
+- **Added** `src/__tests__/transaction.test.ts` covering payload generation
+  (source, destination, asset code/issuer, 7-dp amount, memo, zero signatures)
+  and every rejection path (invalid/missing destination, zero/negative amount,
+  issuer-less non-native asset, unknown passphrase).
+
+### `@astroid/react` — `useAgentWalletBalance` (#283)
+
+- **Added** `useAgentWalletBalance(walletId, options)` in
+  `packages/react/src/hooks/useAgentWalletBalance.ts`, built on `useQuery` and
+  the `AstroidProvider` client context. It accepts `enabled`, `refetchInterval`
+  and `staleTime`, disables itself when `walletId` is `undefined`, and exposes
+  a typed `UseQueryResult<WalletBalance, Error>`.
+- Exported from both `@astroid/react`'s `index.ts` and `hooks.ts`, together
+  with the `agentWalletBalanceKeys` query-key factory.
+- **Added** `src/__tests__/useAgentWalletBalance.test.tsx` (Testing Library +
+  mock QueryClient) asserting data/loading state, disabled-on-`undefined`,
+  the `enabled` flag, option acceptance, and error state.
 
 Run from the repository root after `pnpm install`:
 
-| Command | Result |
-| --- | --- |
-| `pnpm build` | pass (16 packages) |
-| `pnpm typecheck` | pass (16/16 packages) |
-| `pnpm test` | pass — **all suites green** |
-| `pnpm lint` | pass |
+- [x] `PolicySimulationRequest` / `PolicySimulationResult` exported; simulation
+      method implemented; fetch-mocked tests for **approved and rejected**
+      responses.
+- [x] Budget `getBudget`, `listBudgets` and `getBudgetUtilization` methods;
+      DTO types exported from `@astroid/types` and `@astroid/budget`; tests
+      cover successful retrieval and error handling.
+- [x] `buildPaymentTransaction` + `PaymentTransactionOptions` with tests for
+      correct payload generation and input validation.
+- [x] `useAgentWalletBalance` exported with loading/error/data handling and a
+      test file; query disables when the wallet id is missing.
+- [x] `pnpm build`, `pnpm typecheck`, `pnpm test` and `pnpm lint` all pass.
 
-Package-level counts for the touched suites:
+## Validation
 
-| Package | Test files | Tests |
+| scope | command | result |
 | --- | --- | --- |
-| `@astroid/analytics` | 7 | 96 |
-| `@astroid/client` | 16 | 225 |
-| `@astroid/core` | 2 | 28 |
-| `@astroid/react` | 9 | 78 |
+| workspace | `pnpm build` | 16/16 packages build |
+| workspace | `pnpm typecheck` | 16/16 packages pass, zero errors |
+| workspace | `pnpm lint` | clean |
+| `@astroid/policy` | `pnpm --filter @astroid/policy test` | 82 passed (3 files) |
+| `@astroid/budget` | `pnpm --filter @astroid/budget test` | 95 passed (7 files) |
+| `@astroid/transaction` | `pnpm --filter @astroid/transaction test` | 155 passed (14 files) |
+| `@astroid/react` | `pnpm --filter @astroid/react test` | 76 passed (9 files) |
+| workspace | `pnpm test` | all packages pass |
 
-All new code is written to the repository's strict TypeScript standard with **zero
-`any`** and passes the ESLint configuration.
+Manual checks: simulation request bodies are asserted to serialize to the exact
+JSON payloads sent to `/policies/simulate` and `/budgets/:id/utilization`; the
+payment builder is asserted to produce an unsigned envelope with the expected
+destination/asset/amount decoded from its XDR.
