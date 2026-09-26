@@ -21,13 +21,12 @@ export {
   type UseWalletBalanceOptions,
 } from './hooks.js';
 export {
-  useBudgets,
-  useBudget,
-  useBudgetUtilization,
-  useCreateBudget,
-  useUpdateBudget,
-  type UpdateBudgetVariables,
-} from './hooks/use-budgets.js';
+  useWalletBalances,
+  useInvalidateWalletBalances,
+  walletBalancesKeys,
+  type UseWalletBalancesOptions,
+  type UseWalletBalancesResult,
+} from './hooks/useWalletBalances.js';
 export { useAgentLogs, agentLogKeys, type UseAgentLogsOptions } from './hooks/useAgentLogs.js';
 export { useAgentStatus, agentStatusKeys, type UseAgentStatusOptions } from './hooks/useAgentStatus.js';
 export { useAgentMetrics, type UseAgentMetricsOptions, type AgentMetricsData, type UseAgentMetricsResult } from './hooks/useAgentMetrics.js';
