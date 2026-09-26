@@ -155,6 +155,48 @@ describe('PolicyResource — pre-flight simulation and dry-run helper', () => {
     expect(JSON.parse(String((init as RequestInit).body))).toEqual(input);
   });
 
+  it('simulate returns a rejected result with the breached violations', async () => {
+    const rejected: PolicySimulationResult = {
+      allowed: false,
+      violations: [
+        {
+          policyId: 'pol_1',
+          policyType: 'MAX_AMOUNT',
+          message: 'Transfer amount 750 exceeds the maximum allowed limit of 500 USDC.',
+          limit: 500,
+          actual: 750,
+        },
+      ],
+      requiredApprovals: ['owner'],
+      risk: { score: 0.82, band: 'HIGH', factors: [] },
+      budgetImpact: [],
+      explanation: 'Transfer is blocked by 1 active policy.',
+    };
+    const { resource, fetch } = client(async () => jsonResponse({ data: rejected }));
+
+    const input = {
+      walletId: 'w_1',
+      asset: 'USDC',
+      amount: '750',
+      recipientAddress: 'GABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUVW',
+    };
+    const result = await resource.simulatePolicy(input);
+
+    expect(result.allowed).toBe(false);
+    expect(result.violations).toHaveLength(1);
+    expect(result.violations[0]).toMatchObject({
+      policyId: 'pol_1',
+      policyType: 'MAX_AMOUNT',
+      limit: 500,
+      actual: 750,
+    });
+    expect(result.requiredApprovals).toContain('owner');
+    const [url, init] = fetch.mock.calls[0]!;
+    expect(String(url)).toContain('/policies/simulate');
+    expect((init as RequestInit).method).toBe('POST');
+    expect(JSON.parse(String((init as RequestInit).body))).toEqual(input);
+  });
+
   it('propagates network failures as a structured NetworkError', async () => {
     const { resource } = client(async () => {
       throw new TypeError('Failed to fetch');

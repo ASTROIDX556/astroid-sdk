@@ -209,6 +209,54 @@ describe('BudgetClient', () => {
     expect(m.utilization).toBe(0.25);
   });
 
+  it('getBudgetUtilization() GETs the utilization sub-resource', async () => {
+    const utilization = {
+      budgetId: 'bud_1',
+      period: 'MONTHLY' as const,
+      periodStart: '2026-08-01T00:00:00.000Z',
+      periodEnd: '2026-09-01T00:00:00.000Z',
+      limit: '1000',
+      spent: '400',
+      remaining: '600',
+      utilization: 0.4,
+      percent: 40,
+      state: 'healthy' as const,
+    };
+    http.get.mockResolvedValue(utilization);
+
+    const result = await client.getBudgetUtilization('bud_1');
+
+    expect(http.get).toHaveBeenCalledWith('/v1/budgets/bud_1/utilization', {});
+    expect(result.utilization).toBe(0.4);
+    expect(result.percent).toBe(40);
+    expect(result.remaining).toBe('600');
+  });
+
+  it('getBudgetUtilization() encodes the budget id and forwards an abort signal', async () => {
+    http.get.mockResolvedValue({ budgetId: 'bud/1' });
+    const controller = new AbortController();
+
+    await client.getBudgetUtilization('bud/1', { signal: controller.signal });
+
+    expect(http.get).toHaveBeenCalledWith('/v1/budgets/bud%2F1/utilization', {
+      signal: controller.signal,
+    });
+  });
+
+  it('getBudgetUtilization() propagates transport errors', async () => {
+    http.get.mockRejectedValue(new Error('utilization unavailable'));
+
+    await expect(client.getBudgetUtilization('bud_1')).rejects.toThrow(
+      'utilization unavailable',
+    );
+  });
+
+  it('propagates a failed request as a rejection', async () => {
+    http.get.mockRejectedValue(new Error('budget not found'));
+
+    await expect(client.getBudget('missing')).rejects.toThrow('budget not found');
+  });
+
   it('allocationStatus() fetches the budget then derives status locally', async () => {
     http.get.mockResolvedValue(makeBudget({ limitAmount: '1000', spent: '900' }));
     const status = await client.allocationStatus('bud_1');
