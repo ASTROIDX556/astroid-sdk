@@ -22,12 +22,9 @@ export function backoffDelay(
   return Math.floor(random() * capped);
 }
 
-/** HTTP statuses that are safe to retry. */
-const RETRYABLE_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
-
-/** Whether a response status warrants a retry. */
+/** Retry rate limits and server failures; other 4xx responses need correction. */
 export function isRetryableStatus(status: number): boolean {
-  return RETRYABLE_STATUSES.has(status);
+  return status === 429 || (status >= 500 && status < 600);
 }
 
 /** Sleep for `ms`, resolving early (rejecting) if the signal aborts. */

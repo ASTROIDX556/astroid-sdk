@@ -476,6 +476,20 @@ describe('Astroid client — non-retryable errors', () => {
     expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 
+  it.each([408, 425])('does not retry on %i responses', async (status) => {
+    const mockFetch = vi.fn().mockResolvedValue(
+      errorResponse(status, 'CLIENT_ERROR', 'Request cannot be retried'),
+    );
+    const client = new Astroid({
+      ...BASE_CONFIG,
+      fetch: mockFetch as unknown as typeof fetch,
+    });
+    client.use(createRetryMiddleware({ maxRetries: 3, baseDelayMs: 5, maxDelayMs: 50 }));
+
+    await expect(client.wallets.get(`w_${status}`)).rejects.toBeDefined();
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
   it('does not retry on 404 (Not Found)', async () => {
     const mockFetch = vi.fn().mockImplementation(async () =>
       errorResponse(404, 'NOT_FOUND', 'Wallet not found'),
