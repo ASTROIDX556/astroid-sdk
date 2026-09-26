@@ -155,6 +155,40 @@ describe('PolicyResource — pre-flight simulation and dry-run helper', () => {
     expect(JSON.parse(String((init as RequestInit).body))).toEqual(input);
   });
 
+  it('simulatePolicy serializes the full transaction payload and policy-rule selectors', async () => {
+    const { resource, fetch } = client(async () => jsonResponse({ data: SIM_RESULT }));
+
+    const input = {
+      agentId: 'ag_1',
+      asset: 'XLM',
+      amount: 10,
+      recipientAddress: 'GABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUVW',
+      senderAddress: 'GSOURCE',
+      memo: 'payout',
+      spentInWindow: '40',
+      policyIds: ['pol_1', 'pol_2'],
+    };
+
+    const result = await resource.simulatePolicy(input);
+
+    expect(result).toEqual(SIM_RESULT);
+    const [url, init] = fetch.mock.calls[0]!;
+    expect(String(url)).toContain('/policies/simulate');
+    expect((init as RequestInit).method).toBe('POST');
+    expect(JSON.parse(String((init as RequestInit).body))).toEqual(input);
+  });
+
+  it('simulate is a backwards-compatible alias of simulatePolicy', async () => {
+    const { resource, fetch } = client(async () => jsonResponse({ data: SIM_RESULT }));
+
+    const result = await resource.simulate({ walletId: 'w_1', asset: 'USDC', amount: '50' });
+
+    expect(result).toEqual(SIM_RESULT);
+    const [url, init] = fetch.mock.calls[0]!;
+    expect(String(url)).toContain('/policies/simulate');
+    expect((init as RequestInit).method).toBe('POST');
+  });
+
   it('simulate returns a rejected result with the breached violations', async () => {
     const rejected: PolicySimulationResult = {
       allowed: false,
