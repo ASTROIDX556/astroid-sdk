@@ -178,13 +178,19 @@ export function createRetryMiddleware(options: RetryMiddlewareConfig = {}): Midd
     maxRetries: options.maxRetries ?? DEFAULT_MAX_RETRIES,
     baseDelayMs: options.baseDelayMs ?? DEFAULT_BASE_DELAY_MS,
     maxDelayMs: options.maxDelayMs ?? DEFAULT_MAX_DELAY_MS,
+    ...(options.retryableStatuses ? { retryableStatuses: options.retryableStatuses } : {}),
+    ...(options.jitter !== undefined ? { jitter: options.jitter } : {}),
   };
 
   // Normalise the middleware options we forward to the HttpClient's retry loop.
   const middlewareOptions: RetryMiddlewareOptions = {
     ...retryConfig,
     onRetry: options.onRetry,
-    shouldRetryStatus: options.shouldRetryStatus ?? isRetryableStatus,
+    shouldRetryStatus:
+      options.shouldRetryStatus ??
+      (options.retryableStatuses
+        ? (status: number) => options.retryableStatuses!.includes(status)
+        : isRetryableStatus),
     retryAllMethods: options.retryAllMethods ?? false,
   };
 

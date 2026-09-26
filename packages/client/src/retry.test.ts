@@ -22,16 +22,22 @@ describe('Exponential Backoff & Retry Logic in Client & Middleware', () => {
     expect(backoffDelay(10, config, mockRandomMax)).toBe(1000);
   });
 
-  it('isRetryableStatus identifies transient status codes correctly', () => {
-    expect(isRetryableStatus(503)).toBe(true);
-    expect(isRetryableStatus(500)).toBe(true);
-    expect(isRetryableStatus(502)).toBe(true);
-    expect(isRetryableStatus(504)).toBe(true);
+  it('isRetryableStatus retries only the default 429 / 502 / 503 / 504 set', () => {
     expect(isRetryableStatus(429)).toBe(true);
+    expect(isRetryableStatus(502)).toBe(true);
+    expect(isRetryableStatus(503)).toBe(true);
+    expect(isRetryableStatus(504)).toBe(true);
+
+    // Not retried by default (configurable via `retryableStatuses`).
+    expect(isRetryableStatus(500)).toBe(false);
     expect(isRetryableStatus(400)).toBe(false);
     expect(isRetryableStatus(401)).toBe(false);
     expect(isRetryableStatus(403)).toBe(false);
     expect(isRetryableStatus(404)).toBe(false);
+
+    // A caller-supplied allow-list replaces the default.
+    expect(isRetryableStatus(500, [500])).toBe(true);
+    expect(isRetryableStatus(503, [500])).toBe(false);
   });
 
   it('supports constructor retries and retryDelay options', () => {

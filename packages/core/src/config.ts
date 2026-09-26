@@ -39,6 +39,16 @@ export interface RetryConfig {
   baseDelayMs: number;
   /** Upper bound for a single backoff delay in ms. Default 8000. */
   maxDelayMs: number;
+  /**
+   * HTTP statuses that should be retried. Defaults to the SDK set
+   * `[429, 502, 503, 504]` (rate limiting and gateway errors).
+   */
+  retryableStatuses?: number[];
+  /**
+   * Apply full jitter (a random point in `[0, cappedDelay]`) to each backoff
+   * delay. Default `true`; set to `false` for deterministic delays.
+   */
+  jitter?: boolean;
 }
 
 /**

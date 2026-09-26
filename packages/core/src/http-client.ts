@@ -205,7 +205,14 @@ export class HttpClient {
         // Non-2xx: decide whether to retry, otherwise throw a typed error.
         const error = this.toError(raw);
         await this.middleware.applyError(error, prepared);
-        const shouldRetryStatus = contextOptions?.shouldRetryStatus ?? isRetryableStatus;
+        // Precedence: per-middleware predicate, then a per-client allow-list,
+        // then the SDK default (429 + 502/503/504).
+        const retryableStatuses = retry?.retryableStatuses;
+        const shouldRetryStatus =
+          contextOptions?.shouldRetryStatus ??
+          (retryableStatuses && retryableStatuses.length > 0
+            ? (status: number) => retryableStatuses.includes(status)
+            : isRetryableStatus);
         if (retry && prepared.retryable && attempt < maxAttempts && shouldRetryStatus(raw.status)) {
           lastError = error;
           const delay = this.retryDelay(attempt, raw, retry);
@@ -382,9 +389,20 @@ export class HttpClient {
   }
 }
 
-/** Whether an unknown value is a DOMException-style abort. */
+/**
+ * Whether an unknown value is an abort error.
+ *
+ * `fetch` and our `sleep` reject with a `DOMException` named `AbortError`,
+ * which is **not** an `instanceof Error` in every runtime, so we match on the
+ * `name` property instead. This guarantees an abort stops pending retries
+ * immediately rather than being mistaken for a retryable network failure.
+ */
 function isAbortError(value: unknown): boolean {
-  return value instanceof Error && value.name === 'AbortError';
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (value as { name?: unknown }).name === 'AbortError'
+  );
 }
 
 /** Build a DOM-compatible abort error regardless of runtime. */
