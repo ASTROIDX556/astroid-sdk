@@ -27,6 +27,7 @@ import type {
   BudgetHistoryQueryParams,
   BudgetMetrics,
   BudgetSimulationRequest,
+  BudgetUtilization,
   BudgetCheckResult,
   ConsumeBudgetInput,
   CreateBudgetInput,
@@ -202,6 +203,15 @@ export function deriveAllocationStatus(
 const BASE_PATH = '/v1/budgets';
 
 /**
+ * Options for {@link BudgetClient.getBudgetUtilization}: an optional abort
+ * signal plus custom utilization threshold boundaries.
+ */
+export interface BudgetUtilizationOptions extends BudgetAllocationThresholds {
+  /** Optional abort signal forwarded to the transport. */
+  signal?: AbortSignal;
+}
+
+/**
  * Typed wrapper over the Astroid budget endpoints.
  *
  * @example
@@ -295,6 +305,27 @@ export class BudgetClient {
     return this.http.patch<Budget>(`${BASE_PATH}/${encodeURIComponent(budgetId)}`, input);
   }
 
+  /**
+   * Alias of {@link update} that matches the SDK's `updateBudget` resource
+   * naming.
+   *
+   * Spending limits and other monetary fields are sent as **decimal strings**
+   * (e.g. `"7500.00"`) so amounts never round-trip through IEEE-754 floats and
+   * lose precision.
+   *
+   * @param budgetId The budget to update.
+   * @param input    The mutable budget fields (limit, period, rollover, enabled).
+   * @returns        The updated {@link Budget}.
+   *
+   * @example
+   * ```ts
+   * const updated = await budgets.updateBudget('bud_1', { limitAmount: '7500.00' });
+   * ```
+   */
+  async updateBudget(budgetId: string, input: UpdateBudgetInput): Promise<Budget> {
+    return this.update(budgetId, input);
+  }
+
   /** Delete a budget. */
   async delete(budgetId: string): Promise<void> {
     await this.http.delete<void>(`${BASE_PATH}/${encodeURIComponent(budgetId)}`);
@@ -339,5 +370,45 @@ export class BudgetClient {
   ): Promise<BudgetAllocationStatus> {
     const budget = await this.get(budgetId);
     return deriveAllocationStatus(budget, options);
+  }
+
+  /**
+   * Fetch the current utilization snapshot for a budget.
+   *
+   * Queries the server-side utilization endpoint, which evaluates the budget's
+   * active window and returns the limit, amount spent, headroom and utilization
+   * percentage as decimal-safe values (see {@link BudgetUtilization}).
+   *
+   * Pass `warnAt` / `criticalAt` to have the client re-bucket the returned
+   * {@link BudgetUtilization.state} from its `percent` against custom threshold
+   * boundaries instead of the server defaults (`80` / `95`). This is the same
+   * classification used by {@link classifyAllocation}, so agents can enforce
+   * their own velocity limits without a second round-trip.
+   *
+   * @param budgetId The budget to inspect.
+   * @param options  Optional abort signal and threshold overrides.
+   * @returns        The current {@link BudgetUtilization} snapshot.
+   *
+   * @example
+   * ```ts
+   * const u = await budgets.getBudgetUtilization('bud_1', { warnAt: 70 });
+   * if (u.state === 'critical' || u.state === 'exhausted') pauseAgent();
+   * ```
+   */
+  async getBudgetUtilization(
+    budgetId: string,
+    options: BudgetUtilizationOptions = {},
+  ): Promise<BudgetUtilization> {
+    const { signal, ...thresholds } = options;
+    const utilization = await this.http.get<BudgetUtilization>(
+      `${BASE_PATH}/${encodeURIComponent(budgetId)}/utilization`,
+      signal ? { signal } : {},
+    );
+
+    if (thresholds.warnAt !== undefined || thresholds.criticalAt !== undefined) {
+      return { ...utilization, state: classifyAllocation(utilization.percent, thresholds) };
+    }
+
+    return utilization;
   }
 }
