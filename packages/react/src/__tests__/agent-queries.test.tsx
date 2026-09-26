@@ -8,14 +8,23 @@
  * - Client errors surface in the query error state
  * - Fresh data is not refetched on rerender
  *
+ * Also covers the `useAgent` detail query hook:
+ * - Fetches a single agent by ID and caches it under the detail key
+ * - Stays idle without fetching when no ID is supplied
+ *
  * The client methods are mocked via the shared harness; no live API is contacted.
  */
 
 import { describe, expect, it, vi } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
-import { useAgents } from '../hooks.js';
+import { useAgent, useAgents } from '../hooks.js';
 import { queryKeys } from '../hooks.js';
-import { createMockClient, createWrapper, AGENT_PAGE } from './test-utils.js';
+import {
+  createMockClient,
+  createWrapper,
+  AGENT_A,
+  AGENT_PAGE,
+} from './test-utils.js';
 import type { Agent, Paginated } from '@astroid/types';
 
 describe('useAgents', () => {
@@ -91,5 +100,84 @@ describe('useAgents', () => {
     rerender();
 
     expect(client.agents.list).toHaveBeenCalledTimes(1);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* useAgent — detail query                                                     */
+/* -------------------------------------------------------------------------- */
+
+describe('useAgent', () => {
+  it('fetches and exposes a single agent by ID', async () => {
+    const client = createMockClient();
+    const { Wrapper } = createWrapper(client);
+
+    const { result } = renderHook(() => useAgent('agent_001'), { wrapper: Wrapper });
+
+    expect(result.current.isPending).toBe(true);
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(result.current.data).toEqual(AGENT_A);
+    expect(result.current.data?.name).toBe('Ledger Agent');
+    expect(client.agents.get).toHaveBeenCalledTimes(1);
+    expect(client.agents.get).toHaveBeenCalledWith('agent_001');
+  });
+
+  it('caches the result under the agents.detail query key', async () => {
+    const client = createMockClient();
+    const { queryClient, Wrapper } = createWrapper(client);
+
+    const { result } = renderHook(() => useAgent('agent_001'), { wrapper: Wrapper });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(
+      queryClient.getQueryData<Agent>(queryKeys.agents.detail('agent_001')),
+    ).toEqual(AGENT_A);
+  });
+
+  it('surfaces client errors in the query error state', async () => {
+    const client = createMockClient();
+    (client.agents.get as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error('Not found'),
+    );
+    const { Wrapper } = createWrapper(client);
+
+    const { result } = renderHook(() => useAgent('agent_404'), { wrapper: Wrapper });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.error?.message).toBe('Not found');
+    expect(result.current.data).toBeUndefined();
+  });
+
+  it('is disabled and does not fetch when the ID is undefined', async () => {
+    const client = createMockClient();
+    const { Wrapper } = createWrapper(client);
+
+    const { result } = renderHook(() => useAgent(undefined), { wrapper: Wrapper });
+
+    expect(result.current.isPending).toBe(true);
+    expect(result.current.fetchStatus).toBe('idle');
+    expect(result.current.isError).toBe(false);
+
+    // Give the query a chance to misbehave before asserting it never fetched.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(client.agents.get).not.toHaveBeenCalled();
+  });
+
+  it('does not refetch on rerender while data is fresh', async () => {
+    const client = createMockClient();
+    const { Wrapper } = createWrapper(client);
+
+    const { result, rerender } = renderHook(() => useAgent('agent_001'), {
+      wrapper: Wrapper,
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    rerender();
+    rerender();
+
+    expect(client.agents.get).toHaveBeenCalledTimes(1);
   });
 });
