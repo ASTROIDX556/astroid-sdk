@@ -26,6 +26,8 @@ import type {
   SpendingSummaryReport,
   TransactionVolumeParams,
   TransactionVolumeReport,
+  TimeSeriesDataParams,
+  TimeSeriesDataResponse,
 } from '@astroid/types';
 // Re-export the aggregated-metrics query helpers (issue #78) from the package
 // entry point so consumers can call them directly as well as through
@@ -72,6 +74,10 @@ export type {
   SpendingSummaryReport,
   TransactionVolumeParams,
   TransactionVolumeReport,
+  TimeSeriesDataParams,
+  TimeSeriesDataPoint,
+  TimeSeriesDataResponse,
+  TimeSeriesMetric,
 } from '@astroid/types';
 
 /**
@@ -170,4 +176,50 @@ export class AnalyticsResource extends Resource {
   async getTransactionVolume(query: TransactionVolumeParams = {}): Promise<TransactionVolumeReport> {
     return this.getData<TransactionVolumeReport>('/analytics/volume', { ...query });
   }
+
+  /**
+   * Multi-metric time series over a time window, bucketed by `interval`.
+   *
+   * Fetches aggregated transaction volume, fee expenditure, and agent
+   * execution counts for a date range and granularity, optionally narrowed to
+   * a specific asset, wallet, or agent. `undefined` parameters are omitted from
+   * the query string; `metrics` may request several families in one call.
+   *
+   * @example
+   * ```ts
+   * const series = await astroid.analytics.getTimeSeriesData({
+   *   startDate: '2026-01-01T00:00:00.000Z',
+   *   endDate: '2026-02-01T00:00:00.000Z',
+   *   interval: 'day',
+   *   metrics: ['transaction_volume', 'fee_expenditure'],
+   *   agentId: 'agent_123',
+   * });
+   * console.log(series.points[0]?.metric, series.points[0]?.value);
+   * ```
+   */
+  async getTimeSeriesData(query: TimeSeriesDataParams = {}): Promise<TimeSeriesDataResponse> {
+    return this.getData<TimeSeriesDataResponse>(
+      '/analytics/time-series',
+      serializeTimeSeriesDataQuery(query),
+    );
+  }
+}
+
+/**
+ * Serialise time-series query parameters, omitting every undefined field so the
+ * resulting query string stays compact.
+ */
+function serializeTimeSeriesDataQuery(
+  query: TimeSeriesDataParams,
+): Record<string, string | string[] | undefined> {
+  const out: Record<string, string | string[] | undefined> = {};
+  if (query.startDate !== undefined) out.startDate = query.startDate;
+  if (query.endDate !== undefined) out.endDate = query.endDate;
+  if (query.interval !== undefined) out.interval = query.interval;
+  if (query.metric !== undefined) out.metric = query.metric;
+  if (query.metrics !== undefined && query.metrics.length > 0) out.metrics = query.metrics;
+  if (query.agentId !== undefined) out.agentId = query.agentId;
+  if (query.walletId !== undefined) out.walletId = query.walletId;
+  if (query.asset !== undefined) out.asset = query.asset;
+  return out;
 }

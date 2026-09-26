@@ -116,3 +116,4 @@ export class PolicyResource extends Resource {
 export const PoliciesResource = PolicyResource;
 
 export * from './simulator.js';
+export * from './builder.js';
