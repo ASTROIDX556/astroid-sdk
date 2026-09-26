@@ -191,10 +191,10 @@ export function isValidMemoText(memo: string): boolean {
  */
 export function assertValidMemoText(memo: string, field = 'memo'): void {
   if (!isValidMemoText(memo)) {
-    throw new ValidationError(
-      `Standard text memo must be ${MAX_MEMO_TEXT_BYTES} bytes or fewer.`,
-      { code: 'INVALID_MEMO', details: { field } },
-    );
+    throw new ValidationError(`Standard text memo must be ${MAX_MEMO_TEXT_BYTES} bytes or fewer.`, {
+      code: 'INVALID_MEMO',
+      details: { field },
+    });
   }
 }
 

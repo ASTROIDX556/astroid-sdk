@@ -96,15 +96,12 @@ export const REQUEST_ID_HEADER = 'x-request-id';
  *                  for each request/response lifecycle event.
  * @returns A {@link Middleware} that can be registered via `client.use()`.
  */
-export function createCorrelationMiddleware(
-  telemetry?: TelemetryHooks,
-): Middleware {
+export function createCorrelationMiddleware(telemetry?: TelemetryHooks): Middleware {
   return {
     name: 'correlation',
 
     async onRequest(req: PreparedRequest): Promise<PreparedRequest> {
-      const correlationId =
-        req.options.correlationId ?? generateCorrelationId();
+      const correlationId = req.options.correlationId ?? generateCorrelationId();
 
       // Inject headers
       req.headers[CORRELATION_ID_HEADER] = correlationId;
@@ -133,8 +130,7 @@ export function createCorrelationMiddleware(
 
       const correlationId =
         (req.options.context?.[CORRELATION_ID_KEY] as string) ?? res.requestId ?? '';
-      const startTime =
-        (req.options.context?.[START_TIME_KEY] as number) ?? Date.now();
+      const startTime = (req.options.context?.[START_TIME_KEY] as number) ?? Date.now();
       const durationMs = Date.now() - startTime;
 
       await telemetry.onResponse({

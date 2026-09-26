@@ -94,7 +94,11 @@ export function useCreateAgent(): UseMutationResult<Agent, Error, CreateAgentPar
  *
  * On settle the detail and list queries are invalidated.
  */
-export function useUpdateAgent(): UseMutationResult<Agent, Error, { id: string; params: UpdateAgentParams }> {
+export function useUpdateAgent(): UseMutationResult<
+  Agent,
+  Error,
+  { id: string; params: UpdateAgentParams }
+> {
   const astroid = useAstroidClient();
   const queryClient = useQueryClient();
 

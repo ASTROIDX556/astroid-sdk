@@ -14,22 +14,29 @@
  * @module
  */
 
-import { Account, Asset, Memo, Networks, Operation, TransactionBuilder } from '@stellar/stellar-base';
+import {
+  Account,
+  Asset,
+  Memo,
+  Networks,
+  Operation,
+  TransactionBuilder,
+} from '@stellar/stellar-base';
 import type { FeeBumpTransaction, Transaction, xdr } from '@stellar/stellar-base';
 import { ValidationError } from '@astroid/errors';
 
-import { assertValidMemoText, assertValidPositiveAmount, assertValidStellarPublicKey } from './validate.js';
+import {
+  assertValidMemoText,
+  assertValidPositiveAmount,
+  assertValidStellarPublicKey,
+} from './validate.js';
 
 /* -------------------------------------------------------------------------- */
 /* Public types                                                                */
 /* -------------------------------------------------------------------------- */
 
 /** Known Stellar network passphrases accepted by the builders. */
-const KNOWN_PASSPHRASES = new Set<string>([
-  Networks.PUBLIC,
-  Networks.TESTNET,
-  Networks.FUTURENET,
-]);
+const KNOWN_PASSPHRASES = new Set<string>([Networks.PUBLIC, Networks.TESTNET, Networks.FUTURENET]);
 
 /** Options common to every transaction built here. */
 export interface BuildTransactionOptions {
@@ -221,9 +228,7 @@ export function buildPaymentTransaction(options: PaymentTransactionOptions): Tra
  * @param source The transaction to encode.
  * @returns The base64 XDR envelope.
  */
-export function encodeTransaction(
-  source: string | Transaction | FeeBumpTransaction,
-): string {
+export function encodeTransaction(source: string | Transaction | FeeBumpTransaction): string {
   if (typeof source === 'string') {
     if (source.trim().length === 0) {
       throw new ValidationError('Transaction XDR must be a non-empty string.', {

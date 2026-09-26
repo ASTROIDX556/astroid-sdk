@@ -117,9 +117,7 @@ export function resolveCredentials(flags: GlobalFlags): ResolvedCredentials {
 export function createClient(flags: GlobalFlags): Astroid {
   const creds = resolveCredentials(flags);
   if (!creds.apiKey && !creds.accessToken) {
-    fail(
-      'Not authenticated. Run `astroid login`, set ASTROID_API_KEY, or pass --api-key.',
-    );
+    fail('Not authenticated. Run `astroid login`, set ASTROID_API_KEY, or pass --api-key.');
   }
   const config: AstroidClientConfig = {};
   if (creds.apiKey) config.apiKey = creds.apiKey;
@@ -434,9 +432,7 @@ function registerPolicyCommands(program: Command): void {
     .action(async (opts: { enabled?: boolean }, command: Command) => {
       await run(async () => {
         const astroid = createClient(command.optsWithGlobals() as GlobalFlags);
-        const page = await astroid.policies.list(
-          opts.enabled ? { enabled: true } : {},
-        );
+        const page = await astroid.policies.list(opts.enabled ? { enabled: true } : {});
         print(command, page);
       });
     });
@@ -472,9 +468,13 @@ function registerUtilityCommands(program: Command): void {
       const flags = command.optsWithGlobals() as GlobalFlags;
       const creds = resolveCredentials(flags);
       const lines: string[] = [];
-      lines.push(`config file : ${configPath()} ${existsSync(configPath()) ? '(present)' : '(absent)'}`);
+      lines.push(
+        `config file : ${configPath()} ${existsSync(configPath()) ? '(present)' : '(absent)'}`,
+      );
       lines.push(`base URL    : ${creds.baseUrl ?? 'https://api.astroid.finance (default)'}`);
-      lines.push(`credential  : ${creds.apiKey ? 'api key' : creds.accessToken ? 'access token' : 'none'} (source: ${creds.source})`);
+      lines.push(
+        `credential  : ${creds.apiKey ? 'api key' : creds.accessToken ? 'access token' : 'none'} (source: ${creds.source})`,
+      );
       lines.push(`SDK version : ${Astroid.version}`);
 
       if (!creds.apiKey && !creds.accessToken) {

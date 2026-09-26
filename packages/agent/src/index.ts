@@ -205,7 +205,9 @@ export class AgentResource extends Resource {
  * Drop `undefined` / `null` entries so they never reach the query string, and
  * serialise event-type filters as a comma-separated list.
  */
-function toAgentEventQuery(params?: ListAgentEventsParams): Record<string, string | number | boolean> | undefined {
+function toAgentEventQuery(
+  params?: ListAgentEventsParams,
+): Record<string, string | number | boolean> | undefined {
   if (!params) return undefined;
   const query: Record<string, string | number | boolean> = {};
   if (params.cursor !== undefined) query['cursor'] = params.cursor;

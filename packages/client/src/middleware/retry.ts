@@ -194,9 +194,7 @@ export function createRetryMiddleware(options: RetryMiddlewareConfig = {}): Midd
     onRequest(req: PreparedRequest): PreparedRequest {
       // Determine retryable flag: if retryAllMethods is set, force retryable
       // true unless the caller explicitly set it to false on the request.
-      const retryable = options.retryAllMethods
-        ? (req.options.retryable ?? true)
-        : req.retryable;
+      const retryable = options.retryAllMethods ? (req.options.retryable ?? true) : req.retryable;
 
       return {
         ...req,

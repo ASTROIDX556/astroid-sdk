@@ -49,7 +49,9 @@ export class AnalyticsResource {
    * Accepts optional {@link PaginationParams} (cursor / limit / order) when a
    * params object is supplied.
    */
-  async getVolumeSummary(timeframeOrParams?: string | AnalyticsQueryParams): Promise<VolumeSummary> {
+  async getVolumeSummary(
+    timeframeOrParams?: string | AnalyticsQueryParams,
+  ): Promise<VolumeSummary> {
     const searchParams = new URLSearchParams();
     if (typeof timeframeOrParams === 'string') {
       searchParams.set('timeframe', timeframeOrParams);

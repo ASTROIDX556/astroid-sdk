@@ -256,7 +256,9 @@ describe('useWalletMutation', () => {
 
     result.current.mutate({ action: 'create', input: { label: 'Ops' } });
 
-    await waitFor(() => expect(walletMethods(client).create).toHaveBeenCalledWith({ label: 'Ops' }));
+    await waitFor(() =>
+      expect(walletMethods(client).create).toHaveBeenCalledWith({ label: 'Ops' }),
+    );
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual(WALLET);
   });

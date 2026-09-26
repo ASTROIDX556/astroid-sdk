@@ -57,9 +57,7 @@ describe('BudgetResource', () => {
 
     const result = await resource.getBudget(BUDGET_ID);
 
-    expect(calls).toEqual([
-      { method: 'get', path: `/budgets/${BUDGET_ID}`, query: undefined },
-    ]);
+    expect(calls).toEqual([{ method: 'get', path: `/budgets/${BUDGET_ID}`, query: undefined }]);
     expect(result).toEqual(budget);
   });
 
@@ -81,7 +79,14 @@ describe('BudgetResource', () => {
       {
         method: 'get',
         path: '/budgets',
-        query: { period: 'MONTHLY', enabled: true, limit: 25, page: 2, order: 'desc', sort: 'spent' },
+        query: {
+          period: 'MONTHLY',
+          enabled: true,
+          limit: 25,
+          page: 2,
+          order: 'desc',
+          sort: 'spent',
+        },
       },
     ]);
     expect(result.data).toEqual([budget]);
@@ -101,7 +106,10 @@ describe('BudgetResource', () => {
     handler.mockResolvedValueOnce(resultData);
     const resource = new BudgetResource(client);
 
-    const result = await resource.simulateBudgetCheck(BUDGET_ID, { asset: 'USDC', amount: '25.00' });
+    const result = await resource.simulateBudgetCheck(BUDGET_ID, {
+      asset: 'USDC',
+      amount: '25.00',
+    });
 
     expect(calls).toEqual([
       {
@@ -120,14 +128,18 @@ describe('BudgetResource', () => {
       allowed: false,
       wouldExceed: true,
       remainingAfter: '10.00',
-      restriction: 'Spend of 9999.00 USDC would exceed the monthly budget limit of 1000.00 (remaining: 10.00).',
+      restriction:
+        'Spend of 9999.00 USDC would exceed the monthly budget limit of 1000.00 (remaining: 10.00).',
       windowStart: '2026-08-01T00:00:00.000Z',
       windowEnd: '2026-09-01T00:00:00.000Z',
     };
     handler.mockResolvedValueOnce(breach);
     const resource = new BudgetResource(client);
 
-    const result = await resource.simulateBudgetCheck(BUDGET_ID, { asset: 'USDC', amount: '9999.00' });
+    const result = await resource.simulateBudgetCheck(BUDGET_ID, {
+      asset: 'USDC',
+      amount: '9999.00',
+    });
 
     expect(result.allowed).toBe(false);
     expect(result.wouldExceed).toBe(true);

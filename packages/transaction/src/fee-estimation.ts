@@ -115,8 +115,9 @@ export async function queryFeeStats(options: QueryFeeStatsOptions = {}): Promise
  * @param options - Configuration including horizonUrl and fetch implementation.
  * @returns FeeStatsResult or null.
  */
-export async function queryFeeStatsSafe(options: QueryFeeStatsOptions = {}):
-  Promise<FeeStatsResult | null> {
+export async function queryFeeStatsSafe(
+  options: QueryFeeStatsOptions = {},
+): Promise<FeeStatsResult | null> {
   try {
     return await queryFeeStats(options);
   } catch {
