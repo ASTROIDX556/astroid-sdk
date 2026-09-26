@@ -14,13 +14,19 @@ import { AstroidError } from './base.js';
 export class AuthenticationError extends AstroidError {}
 
 /** 403 — authenticated but not permitted. */
-export class AuthorizationError extends AstroidError {}
+export class ForbiddenError extends AstroidError {}
+
+/** 403 — authenticated but not permitted (alias for ForbiddenError). */
+export const AuthorizationError = ForbiddenError;
+export type AuthorizationError = ForbiddenError;
 
 /** 400/422 — request failed schema or business validation. */
 export class ValidationError extends AstroidError {
   /** Field-level validation issues, when the API provides them. */
   get fieldErrors(): Record<string, string[]> | undefined {
-    return this.details?.fields as Record<string, string[]> | undefined;
+    return (this.details?.fields ?? this.details?.validationErrors) as
+      | Record<string, string[]>
+      | undefined;
   }
 }
 
@@ -63,8 +69,12 @@ export class NetworkError extends AstroidError {
 }
 
 /** 5xx — the API failed to handle a valid request. */
-export class ServerError extends AstroidError {
+export class InternalServerError extends AstroidError {
   override get isRetryable(): boolean {
     return true;
   }
 }
+
+/** Alias for InternalServerError — 5xx server-side failure. */
+export const ServerError = InternalServerError;
+export type ServerError = InternalServerError;

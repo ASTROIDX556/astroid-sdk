@@ -25,8 +25,16 @@ function makeClient() {
       const data = await handler('post', path, undefined, body);
       return { data };
     }),
-    patch: vi.fn(),
-    delete: vi.fn(),
+    patch: vi.fn(async (path: string, body?: unknown) => {
+      calls.push({ method: 'patch', path, body });
+      const data = await handler('patch', path, undefined, body);
+      return { data };
+    }),
+    delete: vi.fn(async (path: string) => {
+      calls.push({ method: 'delete', path });
+      const data = await handler('delete', path);
+      return { data };
+    }),
   } as unknown as HttpClient;
 
   return { client, calls, handler };
