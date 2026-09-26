@@ -2,12 +2,14 @@
  * Unit tests for the TanStack Query hooks in `@astroid/react`.
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createElement, type ReactNode } from 'react';
 import { act } from 'react-dom/test-utils';
 import { createRoot } from 'react-dom/client';
+import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Astroid } from '@astroid/client';
+import { Astroid, ValidationError } from '@astroid/client';
+import type { PolicySimulationRequest, PolicySimulationResult } from '@astroid/types';
 import {
   AstroidProvider,
   useAgent,
@@ -18,7 +20,6 @@ import {
   useSimulatePolicy,
   useWallets,
   queryKeys,
-  useAstroid,
   type AstroidProviderProps,
 } from '../index.js';
 
@@ -173,41 +174,94 @@ describe('Agent mutation hooks', () => {
 });
 
 describe('useSimulatePolicy', () => {
-  it('returns the simulated policy result and explanation', async () => {
-    const client = new Astroid({
-      apiKey: 'sk_test_hooks',
-      baseUrl: 'https://api.test',
-    }) as unknown as Astroid;
-    const simulated = {
-      allowed: false,
-      violations: [],
-      requiredApprovals: [],
-      risk: {
-        score: 75,
-        band: 'HIGH' as const,
-        factors: [{ factor: 'amount cap', score: 75, description: 'Exceeds daily limit policy PF_123.' }],
+  const SIMULATION: PolicySimulationResult = {
+    allowed: false,
+    violations: [
+      {
+        policyId: 'pol_1',
+        policyType: 'DAILY_BUDGET',
+        message: 'Exceeds daily limit policy pol_1.',
       },
-      budgetImpact: [],
-      explanation: 'Exceeds daily limit policy PF_123.',
+    ],
+    requiredApprovals: [],
+    risk: {
+      score: 75,
+      band: 'HIGH',
+      factors: [
+        { factor: 'amount cap', score: 75, description: 'Exceeds daily limit policy pol_1.' },
+      ],
+    },
+    budgetImpact: [],
+    explanation: 'Exceeds daily limit policy pol_1.',
+  };
+
+  const REQUEST: PolicySimulationRequest = { asset: 'USDC', amount: '1000', walletId: 'wal_1' };
+
+  /** Mock client whose policy resource methods are spies. */
+  function createMockClient(): Astroid {
+    return {
+      policies: {
+        simulatePolicy: vi.fn(async () => SIMULATION),
+        simulate: vi.fn(async () => SIMULATION),
+      },
+    } as unknown as Astroid;
+  }
+
+  /** Wrap a hook under a fresh QueryClient + AstroidProvider. */
+  function createWrapper(client: Astroid) {
+    const queryClient = new QueryClient({
+      defaultOptions: { mutations: { retry: false }, queries: { retry: false, gcTime: 0 } },
+    });
+    return function Wrapper({ children }: { children: ReactNode }): ReactNode {
+      return createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        createElement(AstroidProvider, { client, children } as AstroidProviderProps),
+      );
     };
-    (client.policies as { simulate: typeof client.policies.simulate }).simulate = async () => simulated;
+  }
 
-    let result: string | null = null;
-    function TestComponent() {
-      const { mutate } = useSimulatePolicy();
-      setTimeout(() => {
-        mutate({ asset: 'USDC', amount: '1000', walletId: 'wal_1' });
-      }, 0);
-      const client = useAstroid();
-      if (client.policies) result = 'wired';
-      return null;
-    }
+  it('calls policies.simulatePolicy with the payload and exposes the successful result', async () => {
+    const client = createMockClient();
+    const { result } = renderHook(() => useSimulatePolicy(), { wrapper: createWrapper(client) });
 
-    const { unmount } = renderInProviders(
-      createElement(TestComponent),
-      { client },
-    );
-    unmount();
-    expect(result).toBe('wired');
+    result.current.mutate(REQUEST);
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(client.policies.simulatePolicy).toHaveBeenCalledWith(REQUEST);
+    expect(client.policies.simulate).not.toHaveBeenCalled();
+    expect(result.current.data).toEqual(SIMULATION);
+    expect(result.current.data?.explanation).toContain('daily limit');
+  });
+
+  it('invokes the per-call onSuccess callback for easy component handling', async () => {
+    const client = createMockClient();
+    const { result } = renderHook(() => useSimulatePolicy(), { wrapper: createWrapper(client) });
+    const onSuccess = vi.fn();
+
+    result.current.mutate(REQUEST, { onSuccess });
+
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
+    expect(onSuccess.mock.calls[0]![0]).toEqual(SIMULATION);
+  });
+
+  it('surfaces API validation failures via isError, error, and onError', async () => {
+    const client = createMockClient();
+    const validationError = new ValidationError('amount must be a positive decimal', {
+      code: 'VALIDATION_ERROR',
+      status: 400,
+      details: { fields: { amount: ['must be a positive decimal'] } },
+    });
+    (client.policies.simulatePolicy as ReturnType<typeof vi.fn>).mockRejectedValueOnce(validationError);
+    const { result } = renderHook(() => useSimulatePolicy(), { wrapper: createWrapper(client) });
+    const onError = vi.fn();
+
+    result.current.mutate(REQUEST, { onError });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.error).toBe(validationError);
+    expect(result.current.data).toBeUndefined();
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(validationError.fieldErrors).toEqual({ amount: ['must be a positive decimal'] });
   });
 });

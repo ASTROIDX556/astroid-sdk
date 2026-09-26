@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { HttpClient } from '@astroid/core';
-import { NetworkError } from '@astroid/errors';
+import { NetworkError, ValidationError } from '@astroid/errors';
 import type { Policy, PolicySimulationResult } from '@astroid/types';
 
 import { PolicyResource } from '../src/index.js';
@@ -153,6 +153,39 @@ describe('PolicyResource — pre-flight simulation and dry-run helper', () => {
     expect(String(url)).toContain('/policies/simulate');
     expect((init as RequestInit).method).toBe('POST');
     expect(JSON.parse(String((init as RequestInit).body))).toEqual(input);
+  });
+
+  it('simulatePolicy surfaces API validation failures as a ValidationError', async () => {
+    const { resource, fetch } = client(async () =>
+      new Response(
+        JSON.stringify({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'amount must be a positive decimal',
+            details: { fields: { amount: ['must be a positive decimal'] } },
+          },
+        }),
+        { status: 400, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+
+    let caught: unknown;
+    try {
+      await resource.simulatePolicy({ walletId: 'w_1', asset: 'USDC', amount: '-5' });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(ValidationError);
+    expect((caught as ValidationError).code).toBe('VALIDATION_ERROR');
+    expect((caught as ValidationError).fieldErrors).toEqual({
+      amount: ['must be a positive decimal'],
+    });
+    // The invalid payload still went to the simulate endpoint exactly once.
+    const [url, init] = fetch.mock.calls[0]!;
+    expect(String(url)).toContain('/policies/simulate');
+    expect((init as RequestInit).method).toBe('POST');
+    expect(fetch.mock.calls).toHaveLength(1);
   });
 
   it('propagates network failures as a structured NetworkError', async () => {

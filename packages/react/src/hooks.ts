@@ -175,6 +175,27 @@ export function useAgent(id: string | undefined): UseQueryResult<Agent, Error> {
 
 /**
  * Mutation hook to simulate a policy against a proposed transaction.
+ *
+ * Wraps {@link PolicyResource.simulatePolicy} with TanStack Query so components
+ * get `isPending`/`isSuccess`/`isError`, the resolved simulation `data`, and the
+ * `error` for free. Per-call `onSuccess`/`onError` callbacks can be passed to
+ * `mutate` for component-level handling.
+ *
+ * @returns A TanStack Query mutation over a {@link PolicySimulationRequest}.
+ *
+ * @example
+ * ```tsx
+ * const simulate = useSimulatePolicy();
+ *
+ * simulate.mutate(
+ *   { walletId: 'wal_abc', asset: 'USDC', amount: '1500' },
+ *   {
+ *     onSuccess: (result) =>
+ *       result.allowed ? approve() : showViolations(result.violations),
+ *     onError: (error) => toast.error(error.message),
+ *   },
+ * );
+ * ```
  */
 export function useSimulatePolicy(): UseMutationResult<
   PolicySimulationResult,
@@ -183,6 +204,6 @@ export function useSimulatePolicy(): UseMutationResult<
 > {
   const astroid = useAstroidClient();
   return useMutation({
-    mutationFn: (params: PolicySimulationRequest) => astroid.policies.simulate(params),
+    mutationFn: (params: PolicySimulationRequest) => astroid.policies.simulatePolicy(params),
   });
 }

@@ -61,17 +61,26 @@ export class PolicyResource extends Resource {
 
   /**
    * Perform a pre-flight server-side policy simulation.
+   *
+   * Sends the simulation payload to `POST /policies/simulate` and returns the
+   * server's decision (allowed flag, violations, required approvals, risk
+   * assessment, budget impact and a human-readable explanation) without
+   * executing anything.
+   *
+   * This is the canonical simulation entry point; {@link PolicyResource.simulate}
+   * is kept as a backwards-compatible alias.
    */
-  async simulate(input: PolicySimulationRequest): Promise<PolicySimulationResult> {
+  async simulatePolicy(input: PolicySimulationRequest): Promise<PolicySimulationResult> {
     const res = await this.client.post<PolicySimulationResult>('/policies/simulate', input);
     return res.data;
   }
 
   /**
-   * Perform a policy simulation dry-run check against active spending policies.
+   * Alias of {@link PolicyResource.simulatePolicy}, retained for callers that
+   * used the shorter name before it became the canonical method.
    */
-  async simulatePolicy(input: PolicySimulationRequest): Promise<PolicySimulationResult> {
-    return this.simulate(input);
+  async simulate(input: PolicySimulationRequest): Promise<PolicySimulationResult> {
+    return this.simulatePolicy(input);
   }
 
   /**
