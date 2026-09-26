@@ -1,4 +1,5 @@
 export * from './calculator.js';
+export * from './budget.js';
 
 // `metrics.ts` and `validation.ts` both export a `SpendRequest` alias for the
 // same shape; re-export explicitly to avoid a duplicate-export ambiguity.

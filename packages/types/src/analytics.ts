@@ -252,3 +252,66 @@ export interface TransactionVolumeReport {
   transactionCount: number;
   points: TimeSeriesPoint[];
 }
+
+/* -------------------------------------------------------------------------- */
+/* Time-series query DTOs (issue #227)                                          */
+/* -------------------------------------------------------------------------- */
+
+/** The metric families the analytics service can aggregate over time. */
+export type TimeSeriesMetric =
+  | 'transaction_volume'
+  | 'fee_expenditure'
+  | 'agent_execution_count';
+
+/**
+ * Query DTO for `GET /analytics/time-series`.
+ *
+ * Time range filters (`startDate`/`endDate`) plus an `interval` bucket
+ * granularity and one or more `metric` families. Scoping filters (`agentId`,
+ * `walletId`, `asset`) are all optional and omitted from the query string when
+ * undefined.
+ */
+export interface TimeSeriesDataParams {
+  /** Inclusive start of the reporting window (ISO-8601). */
+  startDate?: string;
+  /** Exclusive end of the reporting window (ISO-8601). */
+  endDate?: string;
+  /** Bucket granularity for the report. */
+  interval?: MetricsInterval;
+  /** A single metric family to aggregate. */
+  metric?: TimeSeriesMetric;
+  /** Several metric families to aggregate in one request. */
+  metrics?: TimeSeriesMetric[];
+  /** Filter results to a single agent. */
+  agentId?: string;
+  /** Filter results to a single wallet. */
+  walletId?: string;
+  /** Filter results to a single asset code (e.g. `USDC`, `XLM`). */
+  asset?: string;
+}
+
+/** A single (timestamp, metric, value) point in a time series. */
+export interface TimeSeriesDataPoint {
+  /** Bucket start (ISO-8601). */
+  timestamp: string;
+  /** Which metric family this point belongs to. */
+  metric: TimeSeriesMetric;
+  /** Numeric metric value (count for execution metrics). */
+  value: number;
+  /** Decimal-string amount for monetary metrics (volume / fee). */
+  amount?: DecimalString;
+}
+
+/** `GET /analytics/time-series` — a multi-metric time series response. */
+export interface TimeSeriesDataResponse {
+  /** The bucket granularity the series was grouped by. */
+  interval: MetricsInterval;
+  /** Inclusive start of the reporting window, echoed back by the API. */
+  startDate?: string;
+  /** Exclusive end of the reporting window, echoed back by the API. */
+  endDate?: string;
+  /** Metric families included in `points`. */
+  metrics: TimeSeriesMetric[];
+  /** The bucketed data points, sorted chronologically. */
+  points: TimeSeriesDataPoint[];
+}
