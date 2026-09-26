@@ -1,127 +1,132 @@
-# feat(client): configurable retry with exponential backoff & jitter
+# feat: analytics metrics helpers, client retry module, budget hooks & typed core errors
 
-Makes `@astroid/client` resilient to transient network failures and rate limits
-by aligning the SDK's already-built retry pipeline with the exact policy
-required by the issue: retry on `429` and **all** `5xx`, never on any other
-`4xx`, with a default of **3** retries and exponential full-jitter backoff.
+A four-part developer-experience batch for the Astroid TypeScript SDK. Each
+issue is implemented on top of the existing resource/transport architecture, so
+there is **no new parallel infrastructure** — the additions slot into the
+conventions already used across the monorepo and reuse the shared
+`@astroid/types` DTOs.
 
-Closes #262
-
----
-
-## Background
-
-`@astroid/client` sends every request through the shared `HttpClient` in
-`@astroid/core`, which already owns the retry loop (`HttpClient.request`):
-it classifies each response, computes a backoff delay, sleeps, and re-attempts
-up to the configured limit. Policy is supplied by `backoffDelay`,
-`isRetryableStatus`, `RetryConfig`, and the opt-in `createRetryMiddleware`.
-
-This PR does **not** add a second, parallel retry stack. It corrects the two
-places where that pipeline diverged from the issue's requirements and hardens
-the client-level tests around them.
-
-### Gap 1 — default retry count was 2, issue requires 3
-
-`DEFAULT_RETRY.maxRetries` (`packages/core/src/config.ts`) and
-`DEFAULT_MAX_RETRIES` (`packages/client/src/middleware/retry.ts`) were both `2`.
-Because retries are **enabled by default**, a fresh
-`new Astroid({ apiKey })` made only two retry attempts.
-
-### Gap 2 — non-`429` 4xx statuses were retried
-
-`isRetryableStatus` used a fixed allow-list
-`{408, 425, 429, 500, 502, 503, 504}`. `408 Request Timeout` and `425 Too Early`
-are 4xx client errors, and the issue is explicit: *retry on 5xx and 429, but
-never retry on 4xx client errors (except 429)*. The allow-list also meant
-legitimate 5xx statuses such as `501` and `505` were never retried.
+Closes #78
+Closes #79
+Closes #82
+Closes #83
 
 ---
 
-## Changes
+## Issue #78 — analytics metrics aggregation helpers (`@astroid/analytics`)
 
-### `packages/core/src/backoff.ts` — retry predicate
+**New module:** `packages/analytics/src/analytics.ts`
 
-Replaces the allow-list with an explicit, documented rule:
+Implements typed query methods and time-range filtering helpers for aggregated
+financial metrics.
 
-```ts
-export function isRetryableStatus(status: number): boolean {
-  return status === 429 || (status >= 500 && status < 600);
-}
-```
+- **Query methods**
+  - `getTransactionVolume(client, filter)` → `VolumeSummary` (total volume for the window).
+  - `getFeeExpenditure(client, filter)` → `VolumeSummary` (aggregated fee spend).
+  - `getAgentExecutionCounts(client, filter)` → `AgentAnalytics` (per-agent execution counts).
+  - `AnalyticsQueryResource` class wraps all three for dependency-injection users.
+- **Time-range helpers**
+  - `toIso8601(value)` normalises `Date | string` to ISO-8601 UTC and drops invalid values.
+  - `resolveTimeRange(filter)` maps `startDate`/`endDate` **or** the `from`/`to` aliases and
+    `granularity` → `timeframe`.
+  - `buildAnalyticsQuery(filter, metric?)` and `buildAnalyticsPath(...)` serialise a
+    `URLSearchParams` with consistent ISO-8601 date encoding.
+- **Filter types:** `TimeRangeFilter`, `AnalyticsGranularity`, `AnalyticsMetricType`,
+  `TransactionVolumeFilter`, `FeeExpenditureFilter`, `AgentExecutionCountFilter`.
+- The existing `AnalyticsResource` gains `transactionVolume`, `feeExpenditure`, and
+  `agentExecutionCounts` methods that delegate to the standalone helpers.
+- `packages/analytics/src/index.ts` now also re-exports the local aggregation helpers
+  (`aggregateTransactionMetrics`) and the time-series query helpers, so consumers can
+  import everything from the package root.
 
-- `429 Too Many Requests` → retried (rate-limit window reopens).
-- **Every** `5xx` → retried (server-side failure, including `501`, `505`, …).
-- Every other `4xx` → never retried (client error: bad request, auth,
-  validation, not-found, `408`, `425`, …).
-- Full-jitter exponential backoff in `backoffDelay` is unchanged:
-  `floor(random() * min(baseDelayMs * 2 ** (attempt - 1), maxDelayMs))`.
+**Tests:** `packages/analytics/src/analytics.test.ts` (15 tests) mock the analytics API
+responses and cover ISO-8601 serialisation, alias resolution, metric selection,
+scope filters, and the resource wrapper.
 
-### `packages/core/src/config.ts` — default retries
+## Issue #79 — client retry with exponential backoff & jitter (`@astroid/client`)
 
-- `DEFAULT_RETRY.maxRetries`: `2` → **`3`**; `RetryConfig` doc updated.
-- `baseDelayMs` remains `250` (configurable), `maxDelayMs` remains `8000`.
+**New module:** `packages/client/src/retry.ts`
 
-### `packages/core/src/middleware.ts` — middleware default
+A single, modular entry point for the retry policy: `backoffDelay` (full-jitter
+exponential backoff), `isRetryableStatus` (`429` + any `5xx`, never other `4xx`),
+`computeRetryDelay` (honours `Retry-After` on `429`), and the
+`createRetryMiddleware` factory. The transport-level retry loop stays in
+`@astroid/core`; this module makes the policy independently unit-testable and
+reusable outside the transport.
 
-- `createRetryMiddleware()` default `maxRetries`: `2` → **`3`**.
+- `ClientOptions` type alias added for `AstroidClientConfig`, which already accepts
+  `retry: { maxRetries, baseDelayMs, maxDelayMs }`, the `retries` / `retryDelay`
+  shorthands, and `retry: false` to disable retries.
+- Non-idempotent `POST`/`PATCH` requests remain non-retryable unless
+  `retryAllMethods: true` or the request is explicitly marked `retryable`.
+- `computeRetryDelay` and `RetryMiddlewareConfig` are now re-exported from the package root.
 
-### `packages/client/src/middleware/retry.ts` — client middleware
+**Tests:** `packages/client/src/__tests__/retry-module.test.ts` pins the modular surface,
+plus the existing `src/__tests__/retry.test.ts` suite covers `503`/`504`/`502 → success`,
+`Retry-After`, retry exhaustion, and immediate non-retryal of `400`/`401`/`403`/`404`.
 
-- `DEFAULT_MAX_RETRIES`: `2` → **`3`**.
-- `@default` JSDoc and the retryable-status documentation updated to describe
-  `429` + any `5xx` rather than the old hard-coded list.
+## Issue #82 — TanStack Query budget hooks (`@astroid/react`)
 
-### `packages/client/src/middleware/error.ts` — doc accuracy
+**New module:** `packages/react/src/hooks/use-budgets.ts`
 
-- The error-translator comment no longer lists `408` among the statuses the
-  retry loop owns (`429`, `5xx`).
+- `useBudgets(params?)` — paginated budget list, cached under `queryKeys.budgets.list`.
+- `useBudget(id)` — single budget, disabled until an id is supplied.
+- `useBudgetUtilization(id)` — the budget's utilization snapshot.
+- `useCreateBudget()` — creates a budget and invalidates every cached budget list.
+- `useUpdateBudget()` — patches a budget and invalidates its detail, utilization, and
+  all list queries.
 
----
+All hooks carry TSDoc with usage examples, use the existing `queryKeys.budgets` key
+factory, and are re-exported from `packages/react/src/index.ts`.
 
-## Tests
+**Tests:** `packages/react/src/__tests__/use-budgets.test.tsx` renders the hooks inside a
+`QueryClientProvider` + `AstroidProvider` and asserts client calls plus cache
+invalidation on successful mutations.
 
-All added/extended in the client package (`vitest` + mocked `fetch`).
+## Issue #83 — typed error hierarchy & normalisation (`@astroid/core`)
 
-`packages/client/src/__tests__/retry.test.ts`
-- Default retry config is now asserted as `{ maxRetries: 3, baseDelayMs: 250,
-  maxDelayMs: 8000 }`.
-- New: `408` and `425` are **not** retried (exactly one `fetch` call).
-- New: `new Astroid({ apiKey })` resolves to `retry.maxRetries === 3` with a
-  `250ms` base delay when no retry config is supplied.
-- Existing coverage retained: `502 → 200` recovery, `503`/`504` retries,
-  `maxRetries` exhaustion throwing `ServerError`, `429` retry + `Retry-After`
-  honouring, `400`/`404`/`422` non-retryal, network-error retry,
-  `retry: false` disabling retries, and `onRetry` instrumentation.
+**New module:** `packages/core/src/errors.ts`
 
-`packages/client/src/retry.test.ts`
-- Extends the predicate test to cover `501`/`505` (retryable) and
-  `408`/`422`/`425` (non-retryable).
+Re-exports the shared `@astroid/errors` hierarchy from the core entry point and adds
+the parsing utilities the issue asks for:
 
----
+- `AstroidError` base plus `AstroidApiError`, `AuthenticationError`, `ValidationError`,
+  `RateLimitError`, `ServerError`, and the rest of the domain classes, now exportable
+  directly from `@astroid/core`.
+- `parseErrorResponse(response)` safely reads a non-2xx `Response` **once**, tolerates
+  malformed/non-JSON bodies, and returns the correct typed error with `statusCode`,
+  `errorCode`, and parsed `details` (never throws).
+- `toAstroidError(value)` normalises any caught value into a structured `AstroidError`.
+- The base class gained `statusCode` / `errorCode` accessors (additive aliases for the
+  existing `status` / `code`) in `@astroid/errors`.
+- `isRetryable` is preserved on the transient classes (`RateLimitError`, `NetworkError`,
+  `ServerError`).
 
-## Acceptance criteria
-
-- [x] Client automatically retries failed requests matching retryable statuses
-      (`429` and all `5xx`), enabled by default.
-- [x] Exponential backoff increases between attempts with full jitter applied.
-- [x] Non-retryable errors (`400`, `401`, `403`, `404`, `408`, `422`, `425`)
-      throw immediately without retrying.
-- [x] Configurable `maxRetries` (default **3**) and base backoff delay.
-- [x] Comprehensive unit tests in the client package using `vitest` and mocked
-      `fetch`, including a `502 Bad Gateway` followed by a `200 OK`.
+**Tests:** `packages/core/src/errors.test.ts` (11 tests) covers status → class mapping
+for `400`, `401`, `403`, `404`, `422`, `429`, `500`, `503`, request-id capture, malformed
+bodies, serialisation, and unknown-value normalisation.
 
 ---
 
 ## Validation
 
-| package | command | result |
-| --- | --- | --- |
-| `@astroid/client` | `pnpm test` | 221 passed (15 files) |
-| `@astroid/client` | `pnpm typecheck` | pass |
-| workspace | `pnpm test` | all packages pass |
-| workspace | `pnpm typecheck` | 16/16 packages pass |
+Run from the repository root after `pnpm install`:
 
-The retry mechanism itself was originally introduced in #186/#196/#171; this PR
-brings its defaults and status policy in line with #262 and adds the tests that
-pin that behaviour.
+| Command | Result |
+| --- | --- |
+| `pnpm build` | pass (16 packages) |
+| `pnpm typecheck` | pass (16/16 packages) |
+| `pnpm test` | pass — **all suites green** |
+| `pnpm lint` | pass |
+
+Package-level counts for the touched suites:
+
+| Package | Test files | Tests |
+| --- | --- | --- |
+| `@astroid/analytics` | 7 | 96 |
+| `@astroid/client` | 16 | 225 |
+| `@astroid/core` | 2 | 28 |
+| `@astroid/react` | 9 | 78 |
+
+All new code is written to the repository's strict TypeScript standard with **zero
+`any`** and passes the ESLint configuration.

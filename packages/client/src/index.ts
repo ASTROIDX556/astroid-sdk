@@ -71,6 +71,13 @@ export interface AstroidClientConfig extends CoreClientConfig {
   logging?: LoggingMiddlewareOptions;
 }
 
+/**
+ * Alias for {@link AstroidClientConfig} using the conventional `ClientOptions`
+ * name. Accepts the full retry surface (`retry`, `retries`, `retryDelay`) in
+ * addition to the core transport options.
+ */
+export type ClientOptions = AstroidClientConfig;
+
 /** The AI-native namespace: express intents, not low-level transfers. */
 export class AiResource {
   constructor(private readonly client: HttpClient) {}
@@ -400,6 +407,13 @@ export {
   type RetryConfig,
   type RetryMiddlewareOptions,
 } from '@astroid/core';
+// Retry policy helpers from the modular `retry` entry point. `createRetryMiddleware`
+// and `retryMiddleware` are already re-exported above; these add the pieces the
+// retry module owns directly.
+export {
+  computeRetryDelay,
+  type RetryMiddlewareConfig,
+} from './retry.js';
 export {
   createRateLimiterMiddleware,
   rateLimiterMiddleware,

@@ -20,7 +20,14 @@ import type {
   CashflowReport,
   Paginated,
   RiskReport,
+  VolumeSummary,
 } from '@astroid/types';
+import {
+  getAgentExecutionCounts,
+  getFeeExpenditure,
+  getTransactionVolume,
+  type TimeRangeFilter,
+} from './analytics.js';
 
 export {
   exportToCSV,
@@ -32,6 +39,46 @@ export {
   type CsvExportOptions,
   type JsonExportOptions,
 } from './exporter.js';
+
+// --- Local transaction-telemetry aggregation helpers -----------------------
+export {
+  aggregateTransactionMetrics,
+  type AggregateGranularity,
+  type AggregateTelemetryOptions,
+  type TransactionTelemetryBucket,
+  type AggregatedTelemetry,
+} from './aggregations.js';
+
+// --- Time-series query helpers + resource ----------------------------------
+export {
+  TimeSeriesResource,
+  TimeSeriesQueryError,
+  validateTimeSeriesQuery,
+  buildTimeSeriesQuery,
+  buildTimeSeriesPath,
+  INTERVAL_TO_TIMEFRAME,
+  type TimeSeriesInterval,
+  type TimeSeriesQueryParams,
+} from './time-series.js';
+
+// --- Aggregated metrics query methods + time-range filtering helpers --------
+export {
+  AnalyticsQueryResource,
+  getTransactionVolume,
+  getFeeExpenditure,
+  getAgentExecutionCounts,
+  buildAnalyticsQuery,
+  buildAnalyticsPath,
+  resolveTimeRange,
+  toIso8601,
+  type AnalyticsGranularity,
+  type AnalyticsMetricType,
+  type TimeRangeFilter,
+  type TransactionVolumeFilter,
+  type FeeExpenditureFilter,
+  type AgentExecutionCountFilter,
+  type ResolvedTimeRange,
+} from './analytics.js';
 
 /**
  * The `analytics` namespace on the Astroid client.
@@ -91,5 +138,35 @@ export class AnalyticsResource extends Resource {
    */
   async listBudgets(query: AnalyticsListParams = {}): Promise<Paginated<BudgetUtilizationRow>> {
     return this.listData<BudgetUtilizationRow>('/analytics/budgets', { ...query });
+  }
+
+  /**
+   * Aggregated transaction volume over a configurable time window.
+   *
+   * @param filter Time window (`Date` or ISO-8601) and optional scope filters.
+   * @see {@link getTransactionVolume} for the standalone equivalent.
+   */
+  async transactionVolume(filter: TimeRangeFilter = {}): Promise<VolumeSummary> {
+    return getTransactionVolume(this.client, filter);
+  }
+
+  /**
+   * Aggregated fee expenditure over a configurable time window.
+   *
+   * @param filter Time window (`Date` or ISO-8601) and optional scope filters.
+   * @see {@link getFeeExpenditure} for the standalone equivalent.
+   */
+  async feeExpenditure(filter: TimeRangeFilter = {}): Promise<VolumeSummary> {
+    return getFeeExpenditure(this.client, filter);
+  }
+
+  /**
+   * Per-agent execution counts over a configurable time window.
+   *
+   * @param filter Time window (`Date` or ISO-8601) and optional scope filters.
+   * @see {@link getAgentExecutionCounts} for the standalone equivalent.
+   */
+  async agentExecutionCounts(filter: TimeRangeFilter = {}): Promise<AgentAnalytics> {
+    return getAgentExecutionCounts(this.client, filter);
   }
 }
