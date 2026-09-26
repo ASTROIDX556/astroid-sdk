@@ -105,10 +105,13 @@ class TokenBucketLimiter {
   }
 
   /**
-   * Acquire one token. Resolves with `0` when granted immediately, or with the
-   * delay slept when the request had to wait. Rejects with a
-   * {@link RateLimitError} when the queue is full, when `queueTimeoutMs`
-   * elapses, or when the caller's signal aborts while waiting.
+   * Acquire one token, waiting in the FIFO queue when the bucket is empty.
+   *
+   * Resolves once the token is granted and the request may dispatch: with `0`
+   * when granted immediately, or with the time (ms) it spent waiting. The wait
+   * itself is handled here, so callers must **not** sleep the returned value
+   * again. Rejects with a {@link RateLimitError} when the queue is full, when
+   * `queueTimeoutMs` elapses, or when the caller's signal aborts while waiting.
    */
   async acquire(signal?: AbortSignal): Promise<number> {
     const now = Date.now();
@@ -265,11 +268,11 @@ function abortError(message: string): Error {
  * Create a token-bucket rate-limiting middleware.
  *
  * The middleware throttles `onRequest`: when the bucket has a token the request
- * passes through immediately (burst), otherwise it waits in a FIFO queue —
- * rejecting with a {@link RateLimitError} if the queue is full, the caller's
- * signal aborts, or `queueTimeoutMs` elapses. The applied delay is slept
- * before the request is dispatched, so the transport never sees bursts
- * exceeding the configured rate.
+ * passes through immediately (burst), otherwise it waits in a FIFO queue until
+ * the bucket refills — rejecting with a {@link RateLimitError} if the queue is
+ * full, the caller's signal aborts, or `queueTimeoutMs` elapses. Because the
+ * wait happens inside the bucket, the transport never sees bursts exceeding the
+ * configured rate — no extra sleep is layered on top.
  *
  * On 429 responses the middleware reads the `Retry-After` header and feeds it
  * into the bucket, so subsequent requests honour the server's back-off.
@@ -291,8 +294,9 @@ export function createRateLimiterMiddleware(
   return {
     name: 'rate-limiter',
     async onRequest(req: PreparedRequest): Promise<PreparedRequest> {
-      const delayMs = await limiter.acquire(req.signal);
-      if (delayMs > 0) await sleep(delayMs, req.signal);
+      // `acquire` already blocks until a token is available; do not sleep its
+      // return value again or the limiter would throttle at half the rate.
+      await limiter.acquire(req.signal);
       if (req.signal?.aborted) throw abortError('The rate-limit wait was aborted.');
       return {
         ...req,
@@ -314,22 +318,3 @@ export function createRateLimiterMiddleware(
 
 /** Alias of {@link createRateLimiterMiddleware}. */
 export const rateLimiterMiddleware = createRateLimiterMiddleware;
-
-/** Sleep for `ms`, aborting early when `signal` fires. */
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve) => {
-    if (signal?.aborted) {
-      resolve();
-      return;
-    }
-    const timer = setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort);
-      resolve();
-    }, ms);
-    const onAbort = (): void => {
-      clearTimeout(timer);
-      resolve();
-    };
-    signal?.addEventListener('abort', onAbort, { once: true });
-  });
-}
