@@ -629,3 +629,14 @@ export {
   serializePaginationParams,
   unwrapPaginatedResponse,
 } from './pagination.js';
+
+// Standardized query-parameter serialization (issue #264): strings, numbers,
+// booleans, Dates (ISO), arrays and nested objects; null/undefined omitted.
+export {
+  serializeQuery,
+  type QueryParams,
+  type QueryParamValue,
+  type QueryParamScalar,
+  type QueryArrayFormat,
+  type SerializeQueryOptions,
+} from './query.js';
