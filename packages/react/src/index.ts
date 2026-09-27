@@ -56,3 +56,16 @@ export {
   useBudgetUtilization,
   type UseBudgetQueryOptions,
 } from './hooks/use-budget.js';
+export {
+  usePolicies,
+  usePolicy,
+  useCreatePolicy,
+  useUpdatePolicy,
+  useDeletePolicy,
+  type UpdatePolicyVariables,
+} from './hooks/use-policies.js';
+export {
+  useTransactions,
+  useTransaction,
+  useCreateTransaction,
+} from './hooks/use-transactions.js';
