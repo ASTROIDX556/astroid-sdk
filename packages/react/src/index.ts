@@ -47,9 +47,12 @@ export {
 } from './hooks/useAgentWalletBalance.js';
 export {
   useBudgets,
-  useBudget,
-  useBudgetUtilization,
   useCreateBudget,
   useUpdateBudget,
   type UpdateBudgetVariables,
 } from './hooks/use-budgets.js';
+export {
+  useBudget,
+  useBudgetUtilization,
+  type UseBudgetQueryOptions,
+} from './hooks/use-budget.js';
