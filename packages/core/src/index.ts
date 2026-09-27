@@ -13,6 +13,7 @@ export { AstroidTimeoutError } from './timeout-error.js';
 export {
   resolveConfig,
   DEFAULT_BASE_URL,
+  DEFAULT_TIMEOUT_MS,
   type AstroidClientConfig,
   type ResolvedConfig,
   type AuthConfig,

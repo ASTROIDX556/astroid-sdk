@@ -501,6 +501,8 @@ export {
   backoffDelay,
   isRetryableStatus,
   DEFAULT_RETRYABLE_STATUSES,
+  DEFAULT_TIMEOUT_MS,
+  AstroidTimeoutError,
   type Middleware,
   type RateLimitConfig,
   type RetryConfig,
