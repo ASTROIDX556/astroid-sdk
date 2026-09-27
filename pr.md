@@ -1,117 +1,84 @@
-# feat(client): configurable request retry with exponential backoff
+# feat(policy,react): policy simulation method and useSimulatePolicy hook
 
-Adds an optional, configurable request-retry mechanism to `@astroid/client`
-for autonomous agents that hit transient network hiccups and rate limits.
-The client now accepts flat retry options (`retries`, `minTimeout`,
-`maxTimeout`, `retryableStatuses`, `jitter`), retries network failures plus
-`429`/`502`/`503`/`504`, and cancels pending retries immediately when the
-caller aborts via `AbortController`.
+Implements the policy-simulation workflow from the issue: a canonical
+`simulatePolicy` resource method in `@astroid/policy` and a
+`useSimulatePolicy` mutation hook in `@astroid/react` with success/error
+handling, both covered by unit and hook tests.
 
-Closes #272
+Closes #268
 
 ---
 
 ## Background
 
-`@astroid/client` routes every call through the shared `HttpClient` in
-`@astroid/core`, which already had a retry loop and a fixed retryable-status
-set. Issue #272 asks for a **first-class, documented configuration surface**
-and correct cancellation semantics. Three gaps existed:
+Before an agent executes a transaction, applications need to dry-run it against
+the account's spending and security policies. The policy simulation endpoint
+(`POST /policies/simulate`) returns the server's decision — allowed flag,
+violations, required approvals, risk assessment, budget impact and a
+human-readable explanation — without creating anything.
 
-1. Only `retries` / `retryDelay` were accepted — there was no `minTimeout`,
-   `maxTimeout`, or `retryableStatuses`.
-2. The retryable set was hard-coded (`408, 425, 429, 500, 502, 503, 504`) and
-   could not be configured; the issue specifies `429 / 502 / 503 / 504`.
-3. `isAbortError` used `value instanceof Error`, but `fetch`/`sleep` reject with
-   a `DOMException` that is **not** an `Error` in every runtime — so an abort
-   during the retry backoff was misclassified as a retryable network error and
-   retried instead of stopping.
+The plumbing for this issue was largely present but inverted/under-tested:
 
-The idempotency behaviour (GET/PUT/DELETE safely retried; POST/PATCH only when
-marked `retryable` or carrying an `Idempotency-Key`) already existed and is
-preserved.
+- `PolicyResource` exposed `simulate()` as the method that actually posted, with
+  `simulatePolicy()` merely delegating to it — the reverse of what the issue
+  specifies.
+- `useSimulatePolicy` called `astroid.policies.simulate()` rather than
+  `simulatePolicy()`, and its only test asserted that the client object
+  existed ("wired") instead of verifying a real success or failure path.
+
+This PR makes `simulatePolicy` the canonical method, points the hook at it, and
+replaces the placeholder test with real mutation tests.
 
 ---
 
 ## Changes
 
-### `packages/core/src/config.ts` — `RetryConfig`
+### `packages/policy/src/index.ts` — canonical `simulatePolicy`
 
-- Added `retryableStatuses?: number[]` — per-client status allow-list.
-- Added `jitter?: boolean` — full jitter on/off (default `true`).
+- `simulatePolicy(input)` now performs the `POST /policies/simulate` call and
+  returns the `PolicySimulationResult`.
+- `simulate(input)` is retained as a thin, documented backwards-compatible alias
+  that delegates to `simulatePolicy`, so existing callers keep working.
+- Full TSDoc describing the request/response contract.
 
-### `packages/core/src/backoff.ts`
+### `packages/react/src/hooks.ts` — `useSimulatePolicy`
 
-- `DEFAULT_RETRYABLE_STATUSES = [429, 502, 503, 504]`, exported.
-- `isRetryableStatus(status, statuses = DEFAULT_RETRYABLE_STATUSES)` — the
-  default set is now exactly the issue's list and callers can pass their own.
-- `backoffDelay` applies full jitter by default and returns the deterministic
-  capped exponential delay when `config.jitter === false`.
+- `mutationFn` now calls `astroid.policies.simulatePolicy(params)`, matching the
+  resource method the issue names.
+- Expanded TSDoc documenting TanStack Query state (`isPending` / `isSuccess` /
+  `isError`, `data`, `error`) and per-call `onSuccess` / `onError` callbacks for
+  component-level handling, with a usage example.
 
-### `packages/core/src/http-client.ts`
+### Tests
 
-- The retry loop selects its predicate with precedence: per-middleware
-  `shouldRetryStatus` → client `retryableStatuses` → SDK default.
-- `isAbortError` now matches any object whose `name === 'AbortError'`
-  (covering `DOMException`), so an abort stops the retry loop **immediately**.
+`packages/policy/__tests__/policy.test.ts`
+- **New:** `simulatePolicy` surfaces an API `400 VALIDATION_ERROR` as a typed
+  `ValidationError`, exposing `fieldErrors` and posting exactly once to
+  `/policies/simulate`.
+- Existing coverage retained: successful `simulate` / `simulatePolicy`
+  responses, payload/method assertions, and network-failure propagation.
 
-### `packages/core/src/middleware.ts`
-
-- `createRetryMiddleware` forwards `retryableStatuses` and `jitter` into the
-  request-scoped retry config.
-
-### `packages/client/src/index.ts`
-
-- `AstroidClientConfig` gains `minTimeout`, `maxTimeout`, `retryableStatuses`,
-  and `jitter`; `retryDelay` remains as a deprecated alias of `minTimeout`.
-- `normalizeConfig` merges the flat shorthand into the `retry` block, with
-  shorthand winning over an explicit `retry` object and `retry: false` always
-  disabling retries.
-- Re-exports `DEFAULT_RETRYABLE_STATUSES`.
-
-### `packages/client/src/middleware/retry.ts`
-
-- Forwards `retryableStatuses` / `jitter` and derives `shouldRetryStatus` from a
-  custom allow-list when supplied.
-
----
-
-## Tests
-
-`packages/client/src/__tests__/request-retry.test.ts` (new, 16 tests, mocked
-`fetch`):
-
-- **Config mapping** — `retries`/`minTimeout`/`maxTimeout`/`retryableStatuses`/
-  `jitter` land in `client.http.config.retry`; legacy `retryDelay` still works;
-  shorthand merges over an explicit `retry` object; `retry: false` wins.
-- **Retry behaviour** — success after a transient `503`; every default status
-  (`429`, `502`, `503`, `504`) retried; exhaustion throws the final
-  `ServerError` after `maxRetries + 1` attempts; custom `retryableStatuses`
-  allow-list respected; network-level failures retried; `400` not retried.
-- **Idempotency** — GET retried by default; POST not retried unless marked
-  `retryable` or carrying an `Idempotency-Key`.
-- **Backoff** — with `jitter: false`, delays grow exponentially (≈40ms then
-  ≈80ms for `minTimeout: 40`).
-- **Cancellation** — aborting during the backoff rejects with an `AbortError`
-  and performs no further fetch attempts.
-
-`packages/client/src/retry.test.ts` — updated `isRetryableStatus` expectations
-for the new default set and the custom-status override.
+`packages/react/src/__tests__/hooks.test.tsx`
+- Replaced the placeholder `useSimulatePolicy` test with three real hook tests
+  (using `renderHook` + `waitFor`, matching
+  `use-agent-mutations.test.tsx`):
+  1. calls `policies.simulatePolicy` with the payload (and **not** `simulate`),
+     and exposes the resolved `data`;
+  2. invokes the per-call `onSuccess` callback with the simulation result;
+  3. surfaces a `ValidationError` through `isError` / `error`, leaves `data`
+     undefined, and fires `onError`.
 
 ---
 
 ## Acceptance criteria
 
-- [x] Client configuration type accepts retry options (`retries`,
-      `minTimeout`, `maxTimeout`, `retryableStatuses`, and `jitter`).
-- [x] Retry loop with exponential backoff and optional jitter in the transport
-      layer.
-- [x] Retries network errors and `429`/`502`/`503`/`504` by default.
-- [x] Idempotent GET (and PUT/DELETE) retried safely; mutations only when
-      configured or safe (idempotency key).
-- [x] Unit tests mock network failures and rate-limit responses and assert retry
-      counts and backoff delays, plus retry exhaustion.
-- [x] `AbortSignal` aborts pending retries immediately.
+- [x] `simulatePolicy` method available in `@astroid/policy` (canonical; sends
+      the simulation payload to the API).
+- [x] `useSimulatePolicy` mutation hook exported from `@astroid/react`.
+- [x] Unit tests verify successful simulation responses and validation
+      failures.
+- [x] Hook tests verify successful simulation responses and validation
+      failures, including `onSuccess` / `onError` handling.
 
 ---
 
@@ -119,8 +86,7 @@ for the new default set and the custom-status override.
 
 | package | command | result |
 | --- | --- | --- |
-| `@astroid/client` | `pnpm test` | 234 passed (16 files) |
-| `@astroid/client` | `pnpm typecheck` | pass |
+| `@astroid/policy` | `pnpm test` | 82 passed (3 files) |
+| `@astroid/react` | `pnpm test` | 73 passed (8 files) |
 | workspace | `pnpm test` | all packages pass |
 | workspace | `pnpm typecheck` | 16/16 packages pass |
-| workspace | `pnpm build` | pass |

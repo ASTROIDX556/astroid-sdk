@@ -38,6 +38,40 @@ export function backoffDelay(
 export const DEFAULT_RETRYABLE_STATUSES: readonly number[] = [429, 502, 503, 504];
 
 /**
+ * Parse a `Retry-After` response header into a non-negative number of seconds.
+ *
+ * The header is defined (RFC 7231 §7.1.3) as either *delta-seconds* or an
+ * HTTP-date, so both forms are supported:
+ *
+ * - `"120"`        → `120`
+ * - `"Wed, 21 Oct 2026 07:28:00 GMT"` → whole seconds from now until that
+ *   instant (clamped at `0` when the date is in the past).
+ *
+ * Unparseable or empty values yield `undefined` rather than poisoning the
+ * retry computation.
+ *
+ * @param value  The raw header value (or `null` when the header is absent).
+ * @param now    Current time in epoch ms; injectable for deterministic tests.
+ */
+export function parseRetryAfter(
+  value: string | null | undefined,
+  now: number = Date.now(),
+): number | undefined {
+  if (value === null || value === undefined) return undefined;
+  const trimmed = value.trim();
+  if (trimmed === '') return undefined;
+
+  // Form 1: delta-seconds (a non-negative decimal integer per the RFC).
+  const seconds = Number(trimmed);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds);
+
+  // Form 2: HTTP-date — wait until that instant, clamped at 0 when past.
+  const target = Date.parse(trimmed);
+  if (Number.isNaN(target)) return undefined;
+  return Math.max(0, Math.ceil((target - now) / 1000));
+}
+
+/**
  * Whether a response status warrants a retry.
  *
  * @param status   The HTTP status code to classify.

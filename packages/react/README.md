@@ -47,6 +47,38 @@ createAgent.mutate({
 - `useAgents(params?)` — paginated list query, cached under `['astroid', 'agents', 'list', params]`.
 - `useAgent(id?)` — detail query, cached under `['astroid', 'agents', 'detail', id]` and disabled while `id` is undefined.
 - `useCreateAgent()` — optimistic create mutation. Companion mutations
-  `useUpdateAgent()` and `useDeleteAgent()` follow the same optimistic pattern.
+  `useUpdateAgent()`, `useUpdateAgentStatus()`, `useUpdateAgentMetadata()`, and
+  `useDeleteAgent()` follow the same optimistic pattern.
 - `queryKeys` and `invalidateQueries` are exported for direct cache access and
   typed invalidation.
+
+### Optimistic updates on agent mutations (issue #231)
+
+Every agent mutation hook updates the cache **instantly**, before the API
+round-trip completes, and follows one shared lifecycle:
+
+1. **`onMutate`** — awaits `queryClient.cancelQueries` over the agents domain
+   (an in-flight refetch can no longer clobber the optimistic value), snapshots
+   the previous detail and list caches into the mutation context, then writes
+   the optimistic value (a spread/merge strictly typed as `Agent`).
+2. **`onError`** — restores every snapshotted entry exactly, so a failed
+   request leaves the cache as it was.
+3. **`onSettled`** — invalidates the specific agent's detail key, every agent
+   list, and the whole agents domain (stale-only for derived keys), so the
+   cache reconciles with server truth on success *and* failure.
+
+```tsx
+const updateAgent = useUpdateAgent();
+updateAgent.mutate({ id: 'agent_123', params: { name: 'Renamed' } });
+// UI reflects “Renamed” immediately; rollback + refetch are automatic.
+
+const pauseAgent = useUpdateAgentStatus();
+pauseAgent.mutate({ id: 'agent_123', status: 'PAUSED' });
+
+const updateMetadata = useUpdateAgentMetadata();
+updateMetadata.mutate({ id: 'agent_123', metadata: { team: 'platform' } });
+```
+
+The shared helpers (`snapshotAgentCache`, `rollbackAgentCache`,
+`invalidateAgentQueries`) are exported for building custom optimistic
+mutations with the same contract.

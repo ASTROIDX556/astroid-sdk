@@ -39,6 +39,7 @@ import {
   NotFoundError,
   PolicyViolationError,
   RateLimitError,
+  ApiRateLimitError,
   ValidationError,
 } from './classes.js';
 
@@ -116,6 +117,24 @@ export function isInsufficientFundsError(value: unknown): value is InsufficientF
  */
 export function isRateLimitError(value: unknown): value is RateLimitError {
   return value instanceof RateLimitError;
+}
+
+/**
+ * Type guard for the issue-#76 alias class {@link ApiRateLimitError}.
+ *
+ * Note the class relationship: `ApiRateLimitError extends RateLimitError`, so
+ * {@link isRateLimitError} matches both. Use this guard only when the caller
+ * explicitly needs the alias class itself.
+ *
+ * @example
+ * ```ts
+ * if (isApiRateLimitError(err)) {
+ *   await sleep((err.retryAfter ?? 1) * 1000);
+ * }
+ * ```
+ */
+export function isApiRateLimitError(value: unknown): value is ApiRateLimitError {
+  return value instanceof ApiRateLimitError;
 }
 
 /** A transport-level failure: DNS, connection reset, offline, or timeout. */

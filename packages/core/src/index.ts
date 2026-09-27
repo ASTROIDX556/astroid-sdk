@@ -36,7 +36,7 @@ export {
 } from './http-types.js';
 export { Resource, type ListRequestOptions, type RequestOptionsExtras } from './resource.js';
 export { buildUrl, buildQueryString } from './url.js';
-export { backoffDelay, isRetryableStatus, sleep, DEFAULT_RETRYABLE_STATUSES } from './backoff.js';
+export { backoffDelay, isRetryableStatus, parseRetryAfter, sleep, DEFAULT_RETRYABLE_STATUSES } from './backoff.js';
 export {
   paginate,
   paginateCursor,

@@ -45,6 +45,18 @@ export {
 } from './simulator.js';
 
 /**
+ * Policy scope matchers — selecting which rules apply to a transaction
+ * context before simulation ({@link matchesPolicyScope}, {@link matchPolicies}).
+ */
+export {
+  matchesPolicyScope,
+  matchPolicies,
+  combineMatchers,
+  type PolicyMatcher,
+  type PolicyScope,
+} from './matchers.js';
+
+/**
  * Policy DTOs re-exported from `@astroid/types` so consumers of
  * `@astroid/policy` can name the simulation request/response types without a
  * second import.
@@ -160,6 +172,104 @@ export class PolicyResource extends Resource {
     await this.client.delete<void>(`/policies/${encodeURIComponent(id)}`);
   }
 
+  /**
+   * Create a new spending policy (`createPolicy` spelling).
+   *
+   * Identical to {@link PolicyResource.create}; provided so callers using the
+   * `createPolicy` / `getPolicy` / `listPolicies` naming from the API reference
+   * don't need to guess the shorthand.
+   *
+   * @param input The policy to create — a {@link PolicyCreateInput}.
+   * @returns     The created policy record.
+   * @throws      `ValidationError` when the API rejects the payload; the
+   *              structured error carries the API message and field details.
+   *
+   * @example
+   * ```ts
+   * const policy = await astroid.policies.createPolicy({
+   *   name: 'Max 500 USDC',
+   *   type: 'MAX_AMOUNT',
+   *   configuration: { maxAmount: 500 },
+   *   priority: 1,
+   *   enabled: true,
+   * });
+   * ```
+   */
+  async createPolicy(input: PolicyCreateInput): Promise<Policy> {
+    return this.create(input);
+  }
+
+  /**
+   * Retrieve a policy by ID (`getPolicy` spelling).
+   *
+   * Identical to {@link PolicyResource.get}.
+   *
+   * @param id The policy id.
+   * @returns  The policy record.
+   * @throws   `NotFoundError` when no policy has that id.
+   *
+   * @example
+   * ```ts
+   * const policy = await astroid.policies.getPolicy('pol_1');
+   * ```
+   */
+  async getPolicy(id: string): Promise<Policy> {
+    return this.get(id);
+  }
+
+  /**
+   * List policies with optional filtering (`listPolicies` spelling).
+   *
+   * Identical to {@link PolicyResource.list}.
+   *
+   * @param params Filters — `enabled`, `type`, `agentId`, `walletId`.
+   * @returns      The matching policies plus pagination metadata.
+   *
+   * @example
+   * ```ts
+   * const { data: policies } = await astroid.policies.listPolicies({ enabled: true });
+   * ```
+   */
+  async listPolicies(params: PolicyListParams = {}): Promise<Paginated<Policy>> {
+    return this.list(params);
+  }
+
+  /**
+   * Update an existing policy (`updatePolicy` spelling).
+   *
+   * Identical to {@link PolicyResource.update}.
+   *
+   * @param id    The policy id.
+   * @param input The fields to change — a {@link PolicyUpdateInput}.
+   * @returns     The updated policy record.
+   * @throws      `NotFoundError` when no policy has that id, `ValidationError`
+   *              when the API rejects the patch.
+   *
+   * @example
+   * ```ts
+   * const updated = await astroid.policies.updatePolicy('pol_1', { enabled: false });
+   * ```
+   */
+  async updatePolicy(id: string, input: PolicyUpdateInput): Promise<Policy> {
+    return this.update(id, input);
+  }
+
+  /**
+   * Delete a policy (`deletePolicy` spelling).
+   *
+   * Identical to {@link PolicyResource.delete}.
+   *
+   * @param id The policy id.
+   * @throws   `NotFoundError` when no policy has that id.
+   *
+   * @example
+   * ```ts
+   * await astroid.policies.deletePolicy('pol_1');
+   * ```
+   */
+  async deletePolicy(id: string): Promise<void> {
+    await this.delete(id);
+  }
   /**
    * Simulate a proposed transaction against the organization's policy rules on
    * the server, **without committing it**.

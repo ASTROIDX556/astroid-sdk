@@ -23,7 +23,7 @@ import {
   type RequestOptions,
 } from './http-types.js';
 import { buildUrl } from './url.js';
-import { backoffDelay, isRetryableStatus, sleep } from './backoff.js';
+import { backoffDelay, isRetryableStatus, parseRetryAfter, sleep } from './backoff.js';
 import { AstroidTimeoutError } from './timeout-error.js';
 
 /** Methods considered safe to retry by default (idempotent verbs). */
@@ -391,23 +391,53 @@ export class HttpClient {
   private toError(raw: RawResponse): AstroidError {
     const envelope = raw.body as { error?: ApiError; requestId?: string } | undefined;
     const requestId = envelope?.requestId ?? raw.requestId;
-    if (envelope?.error) {
-      return fromApiError(envelope.error, { status: raw.status, requestId });
+
+    // Surface the server-advised wait on rate-limit / maintenance responses so
+    // callers can honour it (e.g. `RateLimitError.retryAfter`) even when the
+    // body is missing or non-JSON. A body-supplied `retryAfter` is more
+    // precise, so the header value only fills the gap when the envelope did
+    // not already provide one.
+    let retryAfterDetails: Record<string, unknown> | undefined;
+    if (raw.status === 429 || raw.status === 503) {
+      const seconds = parseRetryAfter(raw.headers.get('retry-after'));
+      if (seconds !== undefined) retryAfterDetails = { retryAfter: seconds };
     }
-    return fromStatus(raw.status, `Request failed with status ${raw.status}`, { requestId });
+
+    if (envelope?.error) {
+      // The body-enveloped `retryAfter` is more precise than the header, so the
+      // header value only fills the gap when the envelope did not supply one
+      // (fromApiError would otherwise let `context.details` win).
+      const envelopeRetryAfter = envelope.error.details?.retryAfter;
+      return fromApiError(envelope.error, {
+        status: raw.status,
+        requestId,
+        details: envelopeRetryAfter !== undefined ? undefined : retryAfterDetails,
+      });
+    }
+    return fromStatus(raw.status, `Request failed with status ${raw.status}`, {
+      requestId,
+      details: retryAfterDetails,
+    });
   }
 
-  /** Honour `Retry-After` (seconds) on 429s, else exponential backoff. */
+  /**
+   * Compute the wait before the next attempt.
+   *
+   * A server-supplied `Retry-After` header — on `429` rate limits and `503`
+   * maintenance/maintenance-window responses alike — is authoritative and
+   * overrides the computed exponential backoff (capped at `maxDelayMs`), in
+   * both delta-seconds and HTTP-date forms (issue #222). Otherwise the delay
+   * grows exponentially with jitter via {@link backoffDelay}.
+   */
   private retryDelay(
     attempt: number,
     raw: RawResponse,
     retry: RetryConfig | null = this.config.retry,
   ): number {
     if (!retry) return 0;
-    if (raw.status === 429) {
-      const header = raw.headers.get('retry-after');
-      const seconds = header ? Number(header) : NaN;
-      if (Number.isFinite(seconds) && seconds >= 0) {
+    if (raw.status === 429 || raw.status === 503) {
+      const seconds = parseRetryAfter(raw.headers.get('retry-after'));
+      if (seconds !== undefined) {
         return Math.min(seconds * 1000, retry.maxDelayMs);
       }
     }

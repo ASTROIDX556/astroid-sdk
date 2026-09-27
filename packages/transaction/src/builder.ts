@@ -229,8 +229,17 @@ function resolveMemo(options: BuildTransactionOptions): Memo | undefined {
   return undefined;
 }
 
-/** Shared construction of a `TransactionBuilder` primed with memo + timeout. */
-function createBuilder(options: BuildTransactionOptions): TransactionBuilder {
+/**
+ * Shared construction of a `TransactionBuilder` primed with memo + timeout.
+ *
+ * Exported for the multi-operation builders in `multi-operation.ts`, which
+ * need to assemble a transaction from a declarative bundle before the final
+ * fee bid is known (stellar-base treats the builder fee as a per-operation
+ * base fee and multiplies it by the operation count on build).
+ *
+ * @internal
+ */
+export function createBuilder(options: BuildTransactionOptions): TransactionBuilder {
   const { source, networkPassphrase } = options;
   if (!(source instanceof Account)) {
     throw new ValidationError('source must be a stellar-base Account instance.', {
