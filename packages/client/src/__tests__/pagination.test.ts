@@ -1,11 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import type { AstroidResponse } from '@astroid/core';
 import {
+  buildPaginationQuery,
+  buildPaginationQueryString,
   paginateCursor,
   serializePaginationParams,
   unwrapPaginatedResponse,
 } from '../pagination.js';
-import { Astroid, paginateCursor as paginateCursorFromEntry } from '../index.js';
+import {
+  Astroid,
+  buildPaginationQuery as buildPaginationQueryFromEntry,
+  buildPaginationQueryString as buildPaginationQueryStringFromEntry,
+  paginateCursor as paginateCursorFromEntry,
+} from '../index.js';
 
 interface Row {
   id: string;
@@ -52,6 +59,53 @@ describe('pagination serialization and helpers', () => {
     };
     const items = unwrapPaginatedResponse(response);
     expect(items).toEqual([{ id: '1' }, { id: '2' }]);
+  });
+
+  it('buildPaginationQuery serialises cursor, limit, and order', () => {
+    const query = buildPaginationQuery({ cursor: 'cur_123', limit: 50, order: 'asc' });
+    expect(query).toBeInstanceOf(URLSearchParams);
+    expect(query.get('cursor')).toBe('cur_123');
+    expect(query.get('limit')).toBe('50');
+    expect(query.get('order')).toBe('asc');
+    expect(query.toString()).toBe('cursor=cur_123&limit=50&order=asc');
+  });
+
+  it('buildPaginationQuery omits undefined, null, and empty values without empty segments', () => {
+    const query = buildPaginationQuery({
+      cursor: undefined,
+      limit: undefined,
+      order: undefined,
+      page: undefined,
+    });
+    expect(query.toString()).toBe('');
+
+    const withNulls = buildPaginationQuery({
+      cursor: null as unknown as string,
+      limit: null as unknown as number,
+      order: null as unknown as 'asc',
+    });
+    expect(withNulls.toString()).toBe('');
+  });
+
+  it('buildPaginationQuery encodes a page-based (offset) request', () => {
+    expect(buildPaginationQuery({ page: 2, limit: 25 }).toString()).toBe('limit=25&page=2');
+  });
+
+  it('buildPaginationQueryString returns a leading-? query string or empty string', () => {
+    expect(buildPaginationQueryString({ limit: 25 })).toBe('?limit=25');
+    expect(buildPaginationQueryString()).toBe('');
+    expect(buildPaginationQueryString({})).toBe('');
+  });
+
+  it('exposes the pagination builders from the package entry point', () => {
+    expect(buildPaginationQueryFromEntry).toBe(buildPaginationQuery);
+    expect(buildPaginationQueryStringFromEntry).toBe(buildPaginationQueryString);
+  });
+
+  it('serializePaginationParams omits null/empty cursor values', () => {
+    expect(
+      serializePaginationParams({ cursor: '' as unknown as string, limit: 10, page: 3 }),
+    ).toEqual({ limit: 10, page: 3 });
   });
 
   it('client buildQuery combines pagination and custom query parameters', () => {

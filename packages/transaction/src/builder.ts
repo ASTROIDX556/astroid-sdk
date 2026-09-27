@@ -14,7 +14,14 @@
  * @module
  */
 
-import { Account, Asset, Memo, Networks, Operation, TransactionBuilder } from '@stellar/stellar-base';
+import {
+  Account,
+  Asset,
+  Memo,
+  Networks,
+  Operation,
+  TransactionBuilder,
+} from '@stellar/stellar-base';
 import type { FeeBumpTransaction, Transaction, xdr } from '@stellar/stellar-base';
 import { ValidationError } from '@astroid/errors';
 
@@ -23,18 +30,19 @@ import {
   MAX_TOTAL_FEE_STROOPS,
   MIN_BASE_FEE_STROOPS,
 } from './validator.js';
-import { assertValidMemoText, assertValidPositiveAmount, assertValidStellarPublicKey } from './validate.js';
+import {
+  assertValidMemoHash,
+  assertValidMemoText,
+  assertValidPositiveAmount,
+  assertValidStellarPublicKey,
+} from './validate.js';
 
 /* -------------------------------------------------------------------------- */
 /* Public types                                                                */
 /* -------------------------------------------------------------------------- */
 
 /** Known Stellar network passphrases accepted by the builders. */
-const KNOWN_PASSPHRASES = new Set<string>([
-  Networks.PUBLIC,
-  Networks.TESTNET,
-  Networks.FUTURENET,
-]);
+const KNOWN_PASSPHRASES = new Set<string>([Networks.PUBLIC, Networks.TESTNET, Networks.FUTURENET]);
 
 /** Options common to every transaction built here. */
 export interface BuildTransactionOptions {
@@ -58,6 +66,21 @@ export interface BuildTransactionOptions {
   timeout?: number;
   /** Optional standard text memo (max 28 bytes). */
   memoText?: string;
+  /**
+   * Optional `MEMO_HASH` value: 32 bytes encoded as 64 hexadecimal characters.
+   * Mutually exclusive with the other memo options.
+   */
+  memoHash?: string;
+  /**
+   * Optional `MEMO_RETURN` value: 32 bytes encoded as 64 hexadecimal characters.
+   * Mutually exclusive with the other memo options.
+   */
+  memoReturn?: string;
+  /**
+   * Optional `MEMO_ID` value: a non-negative 64-bit unsigned integer.
+   * Mutually exclusive with the other memo options.
+   */
+  memoId?: string | number;
 }
 
 /** Options for {@link buildPaymentTransaction}. */
@@ -165,6 +188,47 @@ export function parseAsset(asset: string): Asset {
 /* Builders                                                                    */
 /* -------------------------------------------------------------------------- */
 
+/** Resolve the configured memo (text/hash/return/id), enforcing at-most-one. */
+function resolveMemo(options: BuildTransactionOptions): Memo | undefined {
+  const configured = [
+    options.memoText !== undefined,
+    options.memoHash !== undefined,
+    options.memoReturn !== undefined,
+    options.memoId !== undefined,
+  ].filter(Boolean).length;
+
+  if (configured > 1) {
+    throw new ValidationError(
+      'At most one memo may be supplied (memoText, memoHash, memoReturn, or memoId).',
+      { code: 'CONFLICTING_MEMO' },
+    );
+  }
+
+  if (options.memoText !== undefined) {
+    assertValidMemoText(options.memoText);
+    return Memo.text(options.memoText);
+  }
+  if (options.memoHash !== undefined) {
+    assertValidMemoHash(options.memoHash, 'memoHash');
+    return Memo.hash(options.memoHash.trim());
+  }
+  if (options.memoReturn !== undefined) {
+    assertValidMemoHash(options.memoReturn, 'memoReturn');
+    return Memo.return(options.memoReturn.trim());
+  }
+  if (options.memoId !== undefined) {
+    const id = String(options.memoId).trim();
+    if (!/^\d{1,20}$/.test(id) || BigInt(id) > 18_446_744_073_709_551_615n) {
+      throw new ValidationError('memoId must be a uint64 value.', {
+        code: 'INVALID_MEMO',
+        details: { field: 'memoId' },
+      });
+    }
+    return Memo.id(id);
+  }
+  return undefined;
+}
+
 /** Shared construction of a `TransactionBuilder` primed with memo + timeout. */
 function createBuilder(options: BuildTransactionOptions): TransactionBuilder {
   const { source, networkPassphrase } = options;
@@ -181,10 +245,8 @@ function createBuilder(options: BuildTransactionOptions): TransactionBuilder {
     fee: String(numericFee),
     networkPassphrase,
   });
-  if (options.memoText) {
-    assertValidMemoText(options.memoText);
-    builder = builder.addMemo(Memo.text(options.memoText));
-  }
+  const memo = resolveMemo(options);
+  if (memo) builder = builder.addMemo(memo);
   builder = builder.setTimeout(options.timeout ?? 300);
   return builder;
 }
@@ -303,9 +365,7 @@ export function buildPaymentTransaction(options: PaymentTransactionOptions): Tra
  * const same = encodeTransaction(xdr);     // returns the string unchanged
  * ```
  */
-export function encodeTransaction(
-  source: string | Transaction | FeeBumpTransaction,
-): string {
+export function encodeTransaction(source: string | Transaction | FeeBumpTransaction): string {
   if (typeof source === 'string') {
     if (source.trim().length === 0) {
       throw new ValidationError('Transaction XDR must be a non-empty string.', {
