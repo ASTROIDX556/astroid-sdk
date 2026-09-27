@@ -1,12 +1,16 @@
 /**
- * Exponential backoff with full jitter, and the retry decision helper.
+ * Exponential backoff with jitter, and the retry decision helper.
  */
 
 import type { RetryConfig } from './config.js';
 
 /**
  * Compute the delay (ms) before retry `attempt` (1-based) using exponential
- * backoff with full jitter, capped at `maxDelayMs`.
+ * backoff capped at `maxDelayMs`.
+ *
+ * By default the capped delay is passed through full jitter (a random point in
+ * `[0, capped]`) so fleets of agents do not retry in lockstep. Set
+ * `config.jitter` to `false` for deterministic, un-jittered delays.
  *
  * The growth rate is `config.backoffFactor` (default `2`, i.e. doubling).
  * A `random` function is injected so callers/tests stay deterministic; it
@@ -20,23 +24,31 @@ export function backoffDelay(
   const factor = config.backoffFactor ?? 2;
   const exponential = config.baseDelayMs * factor ** (attempt - 1);
   const capped = Math.min(exponential, config.maxDelayMs);
-  // Full jitter: a random point in [0, capped].
-  return Math.floor(random() * capped);
+  // Full jitter unless explicitly disabled.
+  return config.jitter === false ? capped : Math.floor(random() * capped);
 }
 
 /**
- * Whether an HTTP status warrants a retry.
+ * HTTP statuses retried by default: rate limiting (`429`) and the gateway /
+ * transient server errors (`502`, `503`, `504`).
  *
- * Only transient server-side conditions are retryable:
- * - `429 Too Many Requests` — a rate-limit window that will reopen.
- * - Any `5xx` — the server failed to fulfil an otherwise valid request.
- *
- * Every other `4xx` is a client error (bad request, auth, validation, …):
- * retrying it cannot succeed and only burns the caller's latency budget and
- * the API's rate limit, so those statuses are never retried.
+ * Every other status — including `4xx` client errors and `500` — is treated as
+ * non-transient unless the caller supplies their own `retryableStatuses`.
  */
-export function isRetryableStatus(status: number): boolean {
-  return status === 429 || (status >= 500 && status < 600);
+export const DEFAULT_RETRYABLE_STATUSES: readonly number[] = [429, 502, 503, 504];
+
+/**
+ * Whether a response status warrants a retry.
+ *
+ * @param status   The HTTP status code to classify.
+ * @param statuses The allow-list of retryable statuses. Defaults to
+ *                 {@link DEFAULT_RETRYABLE_STATUSES}.
+ */
+export function isRetryableStatus(
+  status: number,
+  statuses: readonly number[] = DEFAULT_RETRYABLE_STATUSES,
+): boolean {
+  return statuses.includes(status);
 }
 
 /** Sleep for `ms`, resolving early (rejecting) if the signal aborts. */

@@ -104,6 +104,8 @@ export function createRetryMiddleware(options: RetryMiddlewareOptions = {}): Mid
     maxRetries: options.maxRetries ?? 3,
     baseDelayMs: options.baseDelayMs ?? 250,
     maxDelayMs: options.maxDelayMs ?? 8000,
+    ...(options.retryableStatuses ? { retryableStatuses: options.retryableStatuses } : {}),
+    ...(options.jitter !== undefined ? { jitter: options.jitter } : {}),
     ...(options.backoffFactor !== undefined ? { backoffFactor: options.backoffFactor } : {}),
     ...(options.retryableStatusCodes !== undefined
       ? { retryableStatusCodes: options.retryableStatusCodes }

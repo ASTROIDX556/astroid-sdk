@@ -715,24 +715,6 @@ describe('Astroid client — configurable retryable status codes', () => {
     await expect(client.wallets.get('w_cfg500')).rejects.toBeDefined();
     expect(calls).toBe(1);
   });
-
-  it('retries every 5xx by default when no status list is configured', async () => {
-    let calls = 0;
-    const mockFetch = vi.fn().mockImplementation(async () => {
-      calls++;
-      if (calls === 1) return errorResponse(500, 'SERVER_ERROR', 'Server Error');
-      return okResponse({ id: 'w_default5xx' });
-    });
-
-    const client = new Astroid({
-      ...BASE_CONFIG,
-      fetch: mockFetch as unknown as typeof fetch,
-      retry: { maxRetries: 2, baseDelayMs: 5, maxDelayMs: 20 },
-    });
-
-    await expect(client.wallets.get('w_default5xx')).resolves.toMatchObject({ id: 'w_default5xx' });
-    expect(calls).toBe(2);
-  });
 });
 
 /* -------------------------------------------------------------------------- */
