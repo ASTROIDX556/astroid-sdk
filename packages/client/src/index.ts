@@ -575,6 +575,7 @@ export {
   retryMiddleware,
   backoffDelay,
   isRetryableStatus,
+  parseRetryAfter,
   DEFAULT_RETRYABLE_STATUSES,
   type Middleware,
   type RateLimitConfig,
