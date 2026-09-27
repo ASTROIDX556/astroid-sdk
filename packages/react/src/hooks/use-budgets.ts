@@ -9,11 +9,19 @@ import { queryKeys, useAstroidClient } from '../hooks.js';
 import type { BudgetListParams } from '@astroid/client';
 import type {
   Budget,
-  BudgetUtilization,
   CreateBudgetInput,
   Paginated,
   UpdateBudgetInput,
 } from '@astroid/types';
+
+// `useBudget` / `useBudgetUtilization` live in their own module (issue #74);
+// re-exported here so the long-standing `use-budgets.ts` import path keeps
+// working for existing consumers.
+export {
+  useBudget,
+  useBudgetUtilization,
+  type UseBudgetQueryOptions,
+} from './use-budget.js';
 
 /**
  * Fetch a paginated list of budgets.
@@ -37,56 +45,6 @@ export function useBudgets(params?: BudgetListParams): UseQueryResult<Paginated<
   return useQuery({
     queryKey: queryKeys.budgets.list(params),
     queryFn: () => astroid.budgets.list(params),
-  });
-}
-
-/**
- * Fetch a single budget by id.
- *
- * The query is disabled until a non-empty `id` is supplied, so the hook is safe
- * to call while an id is still loading.
- *
- * @param id The budget id to fetch, or `undefined` to disable the query.
- * @returns A TanStack Query result with `data` (a {@link Budget}), `isLoading`,
- *   `error`, etc.
- *
- * @example
- * ```tsx
- * const { data } = useBudget('bud_abc123');
- * return <p>{data?.name} — {data?.remaining} remaining</p>;
- * ```
- */
-export function useBudget(id: string | undefined): UseQueryResult<Budget, Error> {
-  const astroid = useAstroidClient();
-  return useQuery({
-    queryKey: queryKeys.budgets.detail(id ?? ''),
-    queryFn: () => astroid.budgets.get(id as string),
-    enabled: Boolean(id),
-  });
-}
-
-/**
- * Fetch the current utilization snapshot for a budget.
- *
- * Disabled until a non-empty id is supplied. Cached under the budget's
- * utilization key, which {@link useUpdateBudget} invalidates.
- *
- * @param id The budget whose utilization to fetch.
- *
- * @example
- * ```tsx
- * const { data } = useBudgetUtilization('bud_abc123');
- * return <progress value={data?.percent ?? 0} max={100} />;
- * ```
- */
-export function useBudgetUtilization(
-  id: string | undefined,
-): UseQueryResult<BudgetUtilization, Error> {
-  const astroid = useAstroidClient();
-  return useQuery({
-    queryKey: queryKeys.budgets.utilization(id ?? ''),
-    queryFn: () => astroid.budgets.utilization(id as string),
-    enabled: Boolean(id),
   });
 }
 
