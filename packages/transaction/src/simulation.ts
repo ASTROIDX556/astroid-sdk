@@ -81,7 +81,8 @@ export function simulateTransactionFee(
     };
   } catch (error) {
     const normalized = normalizeTransactionError(error, 'Failed to simulate transaction XDR', {
-      transactionXdr: xdrString || (typeof transactionOrXdr === 'string' ? transactionOrXdr : undefined),
+      transactionXdr:
+        xdrString || (typeof transactionOrXdr === 'string' ? transactionOrXdr : undefined),
       isSimulation: true,
     });
     return {

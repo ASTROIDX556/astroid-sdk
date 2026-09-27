@@ -7,6 +7,49 @@ settings:
 importers:
 
   .:
+    dependencies:
+      '@astroid/agent':
+        specifier: workspace:*
+        version: link:packages/agent
+      '@astroid/analytics':
+        specifier: workspace:*
+        version: link:packages/analytics
+      '@astroid/auth':
+        specifier: workspace:*
+        version: link:packages/auth
+      '@astroid/budget':
+        specifier: workspace:*
+        version: link:packages/budget
+      '@astroid/client':
+        specifier: workspace:*
+        version: link:packages/client
+      '@astroid/core':
+        specifier: workspace:*
+        version: link:packages/core
+      '@astroid/errors':
+        specifier: workspace:*
+        version: link:packages/errors
+      '@astroid/notification':
+        specifier: workspace:*
+        version: link:packages/notification
+      '@astroid/policy':
+        specifier: workspace:*
+        version: link:packages/policy
+      '@astroid/transaction':
+        specifier: workspace:*
+        version: link:packages/transaction
+      '@astroid/types':
+        specifier: workspace:*
+        version: link:packages/types
+      '@astroid/utils':
+        specifier: workspace:*
+        version: link:packages/utils
+      '@astroid/wallet':
+        specifier: workspace:*
+        version: link:packages/wallet
+      '@astroid/webhook':
+        specifier: workspace:*
+        version: link:packages/webhook
     devDependencies:
       '@types/node':
         specifier: 22.10.5

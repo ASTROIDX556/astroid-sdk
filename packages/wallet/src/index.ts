@@ -178,4 +178,3 @@ export class WalletResource extends Resource {
 }
 
 export * from './multisig.js';
-

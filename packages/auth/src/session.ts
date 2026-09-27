@@ -309,7 +309,7 @@ export class SessionManager {
    * encounter an expired token concurrently.
    */
   async refreshSession(
-    refreshFn: (refreshToken: string) => Promise<AuthTokens>
+    refreshFn: (refreshToken: string) => Promise<AuthTokens>,
   ): Promise<AuthTokens> {
     if (this.authMode === 'apiKey') {
       throw new AuthenticationError(
@@ -421,7 +421,7 @@ export function wireSessionToHttpClient(
  */
 export function createSessionMiddleware(
   sessionManager: SessionManager,
-  refreshFn: (refreshToken: string) => Promise<AuthTokens>
+  refreshFn: (refreshToken: string) => Promise<AuthTokens>,
 ): Middleware {
   return {
     name: 'session-auto-refresh',
