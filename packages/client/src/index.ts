@@ -32,8 +32,15 @@ import {
   type QueryValue,
   type RetryConfig,
 } from '@astroid/core';
-import type { PaginationParams } from '@astroid/types';
-import { serializePaginationParams } from './pagination.js';
+import type { PaginatedResponse, PaginationParams, ResponseMeta } from '@astroid/types';
+import {
+  extractNextCursor,
+  extractPaginationCursors,
+  extractPrevCursor,
+  serializePaginationParams,
+} from './pagination.js';
+import { buildFilterQuery, buildListQuery } from './filters.js';
+import type { CommonListFilters } from './filters.js';
 import { createCorrelationMiddleware } from './middleware/correlation.js';
 import { createRateLimiterMiddleware } from './middleware/rate-limiter.js';
 import { createLoggingMiddleware, type LoggingMiddlewareOptions } from './middleware/logging.js';
@@ -429,9 +436,77 @@ export class Astroid {
   /**
    * Merge pagination parameters with arbitrary query parameters into a single
    * serialisable record, ready to pass as the `query` option of any request.
+   *
+   * Pagination fields (`cursor`, `limit`, `order`, `page`) are normalized via
+   * {@link serializePaginationParams} — `limit` is clamped into `[1, 200]`,
+   * empty cursors and invalid `order` values are dropped — while every other
+   * key passes through untouched.
    */
-  buildQuery(params: PaginationParams & Record<string, QueryValue>): Record<string, QueryValue> {
-    return { ...serializePaginationParams(params), ...params };
+  buildQuery(
+    params: PaginationParams & Record<string, QueryValue>,
+  ): Record<string, QueryValue> {
+    const { cursor, limit, order, page, ...rest } = params;
+    return {
+      ...rest,
+      ...serializePaginationParams(
+        cursor !== undefined || limit !== undefined || order !== undefined || page !== undefined
+          ? { cursor, limit, order, page }
+          : undefined,
+      ),
+    };
+  }
+
+  /**
+   * Merge list filters (pagination + common filters) onto an optional base
+   * query without mutating either input. Filter values win over colliding
+   * base keys. Ready to pass as the `query` option of any request.
+   *
+   * ```ts
+   * astroid.http.get('/agents', {
+   *   query: astroid.buildListQuery({ status: 'ACTIVE', limit: 50 }),
+   * });
+   * ```
+   */
+  buildListQuery(
+    filters?: CommonListFilters | null,
+    baseQuery?: Record<string, QueryValue> | null,
+  ): Record<string, QueryValue> {
+    return buildListQuery(filters, baseQuery);
+  }
+
+  /**
+   * Serialize list filters to a query-parameter record (pure, no mutation).
+   */
+  buildFilterQuery(filters?: CommonListFilters | null): Record<string, QueryValue> {
+    return buildFilterQuery(filters);
+  }
+
+  /**
+   * Extract the `next_cursor` pagination cursor from response headers.
+   *
+   * Returns `null` when the header is missing, empty, or malformed — never throws.
+   */
+  getNextCursor(headers: Headers | Record<string, string | string[] | null | undefined> | null | undefined): string | null {
+    return extractNextCursor(headers);
+  }
+
+  /**
+   * Extract the `prev_cursor` pagination cursor from response headers.
+   *
+   * Returns `null` when the header is missing, empty, or malformed — never throws.
+   */
+  getPrevCursor(headers: Headers | Record<string, string | string[] | null | undefined> | null | undefined): string | null {
+    return extractPrevCursor(headers);
+  }
+
+  /**
+   * Extract both `next_cursor` / `prev_cursor` cursors from response headers.
+   */
+  getPaginationCursors(headers: Headers | Record<string, string | string[] | null | undefined> | null | undefined): {
+    nextCursor: string | null;
+    prevCursor: string | null;
+  } {
+    return extractPaginationCursors(headers);
   }
 }
 
@@ -615,6 +690,7 @@ export {
 
 // Shared auto-pagination helpers — cursor (keyset) iteration for any list
 // endpoint, plus query-parameter builders for standalone list requests.
+export type { PaginationParams, PaginatedResponse, ResponseMeta };
 export {
   paginateCursor,
   normalizeCursorPage,
@@ -628,6 +704,23 @@ export {
   buildPaginationQueryString,
   serializePaginationParams,
   unwrapPaginatedResponse,
+  clampPaginationLimit,
+  normalizePaginationCursor,
+  normalizePaginationOrder,
+  resolvePaginationParams,
+  extractPaginationCursors,
+  extractNextCursor,
+  extractPrevCursor,
+  hasNextPage,
+  hasPrevPage,
+  normalizePaginatedResponse,
+  MIN_PAGE_LIMIT,
+  MAX_PAGE_LIMIT,
+  DEFAULT_PAGE_LIMIT,
+  DEFAULT_PAGE_ORDER,
+  DEFAULT_PAGINATION_PARAMS,
+  type PaginationCursors,
+  type PaginationHeadersInput,
 } from './pagination.js';
 
 // Standardized query-parameter serialization (issue #264): strings, numbers,
@@ -640,3 +733,31 @@ export {
   type QueryArrayFormat,
   type SerializeQueryOptions,
 } from './query.js';
+
+// Typed list-filter builders and cursor-iteration helpers: pagination
+// (`limit`, `cursor`, `order`/`direction`) plus common filters (`search`,
+// `status`, `asset`, `walletId`, `agentId`, date ranges, `sort`).
+export {
+  buildFilterQuery,
+  buildListQuery,
+  buildListQueryString,
+  normalizeSortDirection,
+  normalizeFilterString,
+  normalizeFilterDate,
+  normalizeStatusFilter,
+  parsePaginatedResponse,
+  iterateCursorPages,
+  collectCursorPages,
+  MAX_LIST_PAGES,
+  type SortDirection,
+  type CursorPaginationInput,
+  type SearchFilter,
+  type SortingFilter,
+  type DateRangeFilter,
+  type StatusFilter,
+  type EntityScopeFilter,
+  type CommonListFilters,
+  type ListQueryParams,
+  type ListPageFetcher,
+  type IterateCursorPagesOptions,
+} from './filters.js';
