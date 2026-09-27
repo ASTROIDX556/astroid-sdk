@@ -10,7 +10,23 @@ import type {
   PolicySimulationResult,
 } from '@astroid/types';
 
-export { useCreateAgent, useUpdateAgent, useDeleteAgent } from './hooks/useAgents.js';
+export {
+  useCreateAgent,
+  useUpdateAgent,
+  useUpdateAgentStatus,
+  useUpdateAgentMetadata,
+  useDeleteAgent,
+  type UpdateAgentVariables,
+  type UpdateAgentStatusVariables,
+  type UpdateAgentMetadataVariables,
+} from './hooks/useAgents.js';
+export {
+  snapshotAgentCache,
+  rollbackAgentCache,
+  invalidateAgentQueries,
+  type OptimisticCacheEntry,
+  type OptimisticAgentContext,
+} from './hooks/optimistic-agent.js';
 export {
   useWallet,
   useWallets,
