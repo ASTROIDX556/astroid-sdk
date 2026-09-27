@@ -27,6 +27,17 @@ import { useUpdateAgent, useUpdateAgentStatus, useUpdateAgentMetadata, useDelete
 import { useAgent, useAgents, queryKeys } from '../hooks.js';
 import { createWrapper, AGENT_A, AGENT_B, AGENT_PAGE } from './test-utils.js';
 import type { Agent, Paginated, UpdateAgentParams } from '@astroid/types';
+import type { Astroid } from '@astroid/client';
+
+/** Spy-typed view of the agents resource on the mock client. */
+interface AgentsMock {
+  agents: {
+    get: ReturnType<typeof vi.fn>;
+    list: ReturnType<typeof vi.fn>;
+    update: ReturnType<typeof vi.fn>;
+    delete: ReturnType<typeof vi.fn>;
+  };
+}
 
 /* -------------------------------------------------------------------------- */
 /* Fixtures                                                                    */
@@ -62,14 +73,7 @@ function createClient() {
       update: vi.fn(async (_id: string, _params: UpdateAgentParams): Promise<Agent> => UPDATED_AGENT),
       delete: vi.fn(async (): Promise<void> => undefined),
     },
-  } as unknown as {
-    agents: {
-      get: ReturnType<typeof vi.fn>;
-      list: ReturnType<typeof vi.fn>;
-      update: ReturnType<typeof vi.fn>;
-      delete: ReturnType<typeof vi.fn>;
-    };
-  } & import('@astroid/client').Astroid;
+  } as unknown as AgentsMock & Astroid;
 }
 
 /** Read the primed agents-list entry from the cache. */
