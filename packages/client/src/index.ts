@@ -30,6 +30,7 @@ import {
   type AstroidClientConfig as CoreClientConfig,
   type Middleware,
   type QueryValue,
+  type RetryConfig,
 } from '@astroid/core';
 import type { PaginationParams } from '@astroid/types';
 import { serializePaginationParams } from './pagination.js';
@@ -68,12 +69,37 @@ import { createTokenRefreshInterceptor } from './token-refresh.js';
  * Configuration accepted by `new Astroid({ ... })`.
  *
  * Extends the core client config with shorthand retry options
- * (`retries` / `retryDelay`) for convenience.
+ * (`retries` / `minTimeout` / `maxTimeout` / `retryableStatuses` / `jitter`) for
+ * convenience. Each is merged into the `retry` block, so the full
+ * {@link RetryConfig} remains available for advanced use.
  */
 export interface AstroidClientConfig extends CoreClientConfig {
   /** Maximum number of retries after the first attempt (shorthand for `retry.maxRetries`). */
   retries?: number;
-  /** Base retry delay in ms (shorthand for `retry.baseDelayMs`). */
+  /**
+   * Minimum (base) backoff delay in ms before the first retry — the delay grows
+   * exponentially from here (shorthand for `retry.baseDelayMs`).
+   */
+  minTimeout?: number;
+  /**
+   * Maximum backoff delay in ms for any single retry (shorthand for
+   * `retry.maxDelayMs`).
+   */
+  maxTimeout?: number;
+  /**
+   * HTTP statuses that should be retried (shorthand for
+   * `retry.retryableStatuses`). Defaults to `[429, 502, 503, 504]`.
+   */
+  retryableStatuses?: number[];
+  /**
+   * Apply full jitter to each backoff delay (shorthand for `retry.jitter`).
+   * Default `true`; set to `false` for deterministic delays.
+   */
+  jitter?: boolean;
+  /**
+   * Base retry delay in ms. Legacy alias for {@link AstroidClientConfig.minTimeout}.
+   * @deprecated Prefer `minTimeout`.
+   */
   retryDelay?: number;
   /** Request/response logging hooks with automatic header redaction. */
   logging?: LoggingMiddlewareOptions;
@@ -411,20 +437,34 @@ export class Astroid {
 
 export default Astroid;
 
-/** Normalise the shorthand `retries` / `retryDelay` options into core retry config. */
+/**
+ * Normalise the flat retry shorthand options
+ * (`retries` / `minTimeout` / `maxTimeout` / `retryableStatuses` / `jitter`)
+ * into a single core `retry` block, merging with any explicit `retry` object.
+ *
+ * Shorthand keys win over the corresponding `retry.*` field; `retry: false`
+ * always disables retries. When no shorthand is supplied the config is returned
+ * untouched so core defaults apply.
+ */
 function normalizeConfig(config: AstroidClientConfig): CoreClientConfig {
-  if (config.retries === undefined) return config;
-  const existingRetry = typeof config.retry === 'object' ? config.retry : {};
+  const { retries, retryDelay, minTimeout, maxTimeout, retryableStatuses, jitter, retry, ...rest } =
+    config;
+
+  const shorthand: Partial<RetryConfig> = {};
+  if (retries !== undefined) shorthand.maxRetries = retries;
+  const baseDelayMs = minTimeout ?? retryDelay;
+  if (baseDelayMs !== undefined) shorthand.baseDelayMs = baseDelayMs;
+  if (maxTimeout !== undefined) shorthand.maxDelayMs = maxTimeout;
+  if (retryableStatuses !== undefined) shorthand.retryableStatuses = retryableStatuses;
+  if (jitter !== undefined) shorthand.jitter = jitter;
+
+  // Nothing to merge, or retries explicitly disabled: leave the config as-is.
+  if (Object.keys(shorthand).length === 0 || retry === false) return config;
+
+  const baseRetry: Partial<RetryConfig> = retry && typeof retry === 'object' ? retry : {};
   return {
-    ...config,
-    retry: {
-      // Keep any explicitly configured retry options (e.g. `backoffFactor`,
-      // `retryableStatusCodes`) alongside the shorthand fields.
-      ...existingRetry,
-      maxRetries: config.retries,
-      baseDelayMs: config.retryDelay ?? existingRetry.baseDelayMs ?? 250,
-      maxDelayMs: existingRetry.maxDelayMs ?? 8000,
-    },
+    ...rest,
+    retry: { ...baseRetry, ...shorthand },
   };
 }
 
@@ -460,6 +500,7 @@ export {
   retryMiddleware,
   backoffDelay,
   isRetryableStatus,
+  DEFAULT_RETRYABLE_STATUSES,
   type Middleware,
   type RateLimitConfig,
   type RetryConfig,
