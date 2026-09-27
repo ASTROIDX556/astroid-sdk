@@ -21,6 +21,7 @@
 export {
   backoffDelay,
   isRetryableStatus,
+  parseRetryAfter,
   sleep,
   type RetryConfig,
   type RetryMiddlewareOptions,

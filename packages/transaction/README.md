@@ -61,3 +61,43 @@ Violations throw a structured `ValidationError` with a machine-readable
 The default fee is `'100'` (single-operation network floor). Transactions come
 back unsigned — sign locally (wallet package offline signer) and submit via the
 transaction resource or `submit.ts`.
+
+## Transaction simulation (pre-flight)
+
+Simulate a transaction **before** broadcasting it to avoid wasting fees on a
+rejection. `simulateTransaction` accepts a built `Transaction`, a
+`FeeBumpTransaction`, or a base64 XDR envelope, and never throws — every
+failure comes back as a structured `viable: false` result:
+
+```ts
+import { simulateTransaction } from '@astroid/transaction';
+
+const result = await simulateTransaction(unsignedTx, {
+  networkPassphrase: Networks.TESTNET,
+  client: astroid.http, // optional remote dry-run via /transactions/simulate
+  horizonUrl: 'https://horizon-testnet.stellar.org', // optional live fee sample
+});
+
+if (!result.viable) {
+  // result.errorCode / result.errorMessage / result.diagnostics explain why.
+}
+```
+
+The remote simulation response is parsed into the typed views from
+`@astroid/types` (`TransactionSimulationRemoteResult`,
+`TransactionSimulationDiagnostics`, `TransactionResourceEstimate`,
+`TransactionFeeBumpSuggestion`) — never returned raw:
+
+- **Failed simulations** surface `result.diagnostics` with the Stellar result
+  codes (`tx_failed`, per-operation codes), the failing operation index and any
+  API-provided detail.
+- **Fee-bump requirements** surface `result.feeBumpSuggestion`
+  (`required`, `suggestedFee`, `suggestedBaseFee`, optional `suggestedFeeSource`
+  and `reason`) and set `errorCode: 'FEE_BUMP_REQUIRED'`. A reported minimum
+  fee above the envelope's current bid is treated the same way — it is never
+  silently swallowed. Suggested amounts appear exactly as the backend reported
+  them; nothing is invented when a field is missing.
+- **Resource estimation anomalies** (partial, malformed or missing resource
+  blocks) keep only the well-formed metrics on `result.resourceUsage` — missing
+  fields are omitted rather than zero-filled — and a non-object API body
+  returns `errorCode: 'MALFORMED_RESPONSE'` instead of crashing.

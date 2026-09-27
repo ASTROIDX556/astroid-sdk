@@ -69,3 +69,10 @@ export {
   useTransaction,
   useCreateTransaction,
 } from './hooks/use-transactions.js';
+export {
+  useAgentList,
+  type UseAgentListParams,
+  type UseAgentListOptions,
+  type UseAgentListResult,
+  type AgentListPageParam,
+} from './hooks/useAgentList.js';
