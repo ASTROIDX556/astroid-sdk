@@ -134,7 +134,7 @@ function mockFetch(body: unknown, ok = true): typeof fetch {
 }
 
 /** A mock Astroid HTTP client that records `/transactions/simulate` calls. */
-function mockSimulateClient(payload: Record<string, unknown>): {
+function mockSimulateClient(payload: unknown): {
   client: SimulateTransactionClient;
   calls: Array<{ path: string; body?: unknown }>;
 } {
@@ -203,7 +203,7 @@ describe('simulateTransaction', () => {
     });
 
     expect(result.viable).toBe(true);
-    expect(result.remote).toEqual({ performed: true, success: true, data: { ok: true } });
+    expect(result.remote).toMatchObject({ performed: true, success: true, data: { ok: true } });
     expect(calls).toHaveLength(1);
     expect(calls[0]?.path).toBe('/transactions/simulate');
     expect(calls[0]?.body).toEqual({ transactionXdr: xdr });
@@ -263,5 +263,245 @@ describe('simulateTransaction', () => {
 
     expect(result.viable).toBe(true);
     expect(result.estimatedFee).toBe(100);
+  });
+});
+
+describe('simulateTransaction — typed remote simulation responses', () => {
+  it('parses a successful remote simulation into the typed result', async () => {
+    const { client, calls } = mockSimulateClient({
+      status: 'success',
+      resourceUsage: {
+        cpuInstructions: 1_234_567,
+        memoryBytes: 40_960,
+        readBytes: 2_048,
+        writeBytes: 512,
+        readEntries: 3,
+        writeEntries: 1,
+        resourceFee: 12_345,
+        transactionSizeBytes: 640,
+      },
+    });
+
+    const result = await simulateTransaction(buildPaymentXdr(100), {
+      networkPassphrase: TESTNET,
+      client,
+    });
+
+    expect(result.viable).toBe(true);
+    expect(result.remote?.status).toBe('success');
+    expect(result.resourceUsage).toEqual({
+      cpuInstructions: 1_234_567,
+      memoryBytes: 40_960,
+      readBytes: 2_048,
+      writeBytes: 512,
+      readEntries: 3,
+      writeEntries: 1,
+      resourceFee: 12_345,
+      transactionSizeBytes: 640,
+    });
+    expect(result.error).toBeUndefined();
+    expect(calls).toHaveLength(1);
+  });
+
+  it('parses a failed remote simulation with structured diagnostic info', async () => {
+    const { client } = mockSimulateClient({
+      status: 'failed',
+      error: {
+        stellarCode: 'tx_failed',
+        operationCode: 'op_underfunded',
+        operationResultCodes: ['op_underfunded', 'op_no_trust'],
+        failedOperationIndex: 0,
+        detail: 'Destination account trustline for the asset is missing.',
+      },
+    });
+
+    const result = await simulateTransaction(buildPaymentXdr(500), {
+      networkPassphrase: TESTNET,
+      client,
+    });
+
+    expect(result.viable).toBe(false);
+    expect(result.errorCode).toBe('SIMULATION_FAILED');
+    expect(result.remote?.status).toBe('failed');
+    expect(result.diagnostics).toEqual({
+      stellarCode: 'tx_failed',
+      operationCode: 'op_underfunded',
+      operationResultCodes: ['op_underfunded', 'op_no_trust'],
+      failedOperationIndex: 0,
+      detail: 'Destination account trustline for the asset is missing.',
+    });
+    expect(result.errorMessage).toContain('trustline');
+  });
+
+  it('surfaces a fee-bump-required simulation with the typed suggestion', async () => {
+    const { client } = mockSimulateClient({
+      status: 'fee_bump_required',
+      feeBump: {
+        required: true,
+        suggestedFee: 1_500,
+        suggestedFeeSource: Keypair.random().publicKey(),
+        reason: 'Ledger congestion: the bid of 100 stroops is below the required inclusion fee.',
+      },
+    });
+
+    const result = await simulateTransaction(buildPaymentXdr(100), {
+      networkPassphrase: TESTNET,
+      client,
+    });
+
+    expect(result.viable).toBe(false);
+    expect(result.errorCode).toBe('FEE_BUMP_REQUIRED');
+    expect(result.feeBumpSuggestion).toMatchObject({
+      required: true,
+      suggestedFee: 1_500,
+      reason: 'Ledger congestion: the bid of 100 stroops is below the required inclusion fee.',
+    });
+    expect(result.feeBumpSuggestion?.suggestedBaseFee).toBe(1_500); // ceil(1500 / 1 op)
+    expect(result.remote?.status).toBe('fee_bump_required');
+  });
+
+  it('flags a fee bump when the reported minimum fee exceeds the current bid', async () => {
+    const { client } = mockSimulateClient({
+      status: 'success',
+      minimumFee: 2_000,
+      currentFee: 100,
+    });
+
+    const result = await simulateTransaction(buildPaymentXdr(100), {
+      networkPassphrase: TESTNET,
+      client,
+    });
+
+    // The transaction as built would be rejected — it must not look viable.
+    expect(result.viable).toBe(false);
+    expect(result.errorCode).toBe('FEE_BUMP_REQUIRED');
+    expect(result.feeBumpSuggestion?.required).toBe(true);
+    expect(result.feeBumpSuggestion?.suggestedFee).toBe(2_000);
+    expect(result.feeBumpSuggestion?.suggestedBaseFee).toBe(2_000);
+  });
+
+  it('returns a typed MALFORMED_RESPONSE for a non-object remote payload', async () => {
+    const { client } = mockSimulateClient('gateway timeout');
+
+    const result = await simulateTransaction(buildPaymentXdr(100), {
+      networkPassphrase: TESTNET,
+      client,
+    });
+
+    expect(result.viable).toBe(false);
+    expect(result.errorCode).toBe('MALFORMED_RESPONSE');
+    expect(result.remote?.success).toBe(false);
+    expect(result.remote?.errorMessage).toMatch(/non-object/i);
+    expect(result.resourceUsage).toBeUndefined();
+  });
+
+  it('keeps partial resource-usage data instead of fabricating missing fields', async () => {
+    const { client } = mockSimulateClient({
+      status: 'success',
+      resourceUsage: {
+        cpuInstructions: 9_999,
+        // memoryBytes deliberately missing
+        readBytes: 'not-a-number', // malformed value is dropped
+        writeEntries: 2,
+        resourceFee: -5, // negative is invalid and dropped
+      },
+    });
+
+    const result = await simulateTransaction(buildPaymentXdr(100), {
+      networkPassphrase: TESTNET,
+      client,
+    });
+
+    expect(result.viable).toBe(true);
+    expect(result.resourceUsage).toEqual({
+      cpuInstructions: 9_999,
+      writeEntries: 2,
+    });
+  });
+
+  it('returns no resourceUsage at all when the block is entirely malformed', async () => {
+    const { client } = mockSimulateClient({
+      status: 'success',
+      resourceUsage: 'garbage',
+    });
+
+    const result = await simulateTransaction(buildPaymentXdr(100), {
+      networkPassphrase: TESTNET,
+      client,
+    });
+
+    expect(result.viable).toBe(true);
+    expect(result.resourceUsage).toBeUndefined();
+  });
+
+  it('extracts diagnostics from a Horizon-style extras.result_codes payload', async () => {
+    const { client } = mockSimulateClient({
+      status: 'failed',
+      extras: {
+        result_codes: {
+          transaction: 'tx_failed',
+          operations: ['op_no_destination', 'op_underfunded'],
+        },
+      },
+    });
+
+    const result = await simulateTransaction(buildPaymentXdr(500), {
+      networkPassphrase: TESTNET,
+      client,
+    });
+
+    expect(result.viable).toBe(false);
+    expect(result.diagnostics?.stellarCode).toBe('tx_failed');
+    expect(result.diagnostics?.operationResultCodes).toEqual([
+      'op_no_destination',
+      'op_underfunded',
+    ]);
+    expect(result.diagnostics?.operationCode).toBe('op_no_destination');
+  });
+
+  it('flags a fee bump from tx_insufficient_fee without an explicit feeBump block', async () => {
+    const { client } = mockSimulateClient({
+      status: 'failed',
+      error: { stellarCode: 'tx_insufficient_fee' },
+    });
+
+    const result = await simulateTransaction(buildPaymentXdr(100), {
+      networkPassphrase: TESTNET,
+      client,
+    });
+
+    expect(result.viable).toBe(false);
+    expect(result.feeBumpSuggestion?.required).toBe(true);
+    // No minimum fee was reported — the suggestion must not invent one.
+    expect(result.feeBumpSuggestion?.suggestedFee).toBeUndefined();
+    expect(result.feeBumpSuggestion?.suggestedBaseFee).toBeUndefined();
+    expect(result.errorCode).toBe('FEE_BUMP_REQUIRED');
+  });
+
+  it('does not derive a suggestedBaseFee when the operation count is unknown', async () => {
+    const { client } = mockSimulateClient({
+      status: 'fee_bump_required',
+      feeBump: { required: true, suggestedFee: 1_000 },
+    });
+
+    // A fee-bump envelope is wrapped around an inner transaction; the
+    // operation count is still known, so use an unusual multi-op transaction
+    // and assert the per-op derivation divides cleanly.
+    const keypair = Keypair.random();
+    const account = new Account(keypair.publicKey(), '1');
+    const multiOp = new TransactionBuilder(account, { fee: '100', networkPassphrase: TESTNET })
+      .addOperation(
+        Operation.payment({ destination: keypair.publicKey(), asset: Asset.native(), amount: '1' }),
+      )
+      .addOperation(
+        Operation.payment({ destination: keypair.publicKey(), asset: Asset.native(), amount: '2' }),
+      )
+      .setTimeout(30)
+      .build();
+
+    const result = await simulateTransaction(multiOp, { networkPassphrase: TESTNET, client });
+
+    expect(result.operationCount).toBe(2);
+    expect(result.feeBumpSuggestion?.suggestedBaseFee).toBe(500); // ceil(1000 / 2)
   });
 });

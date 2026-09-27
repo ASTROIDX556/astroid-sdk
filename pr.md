@@ -1,126 +1,93 @@
-# feat(client): configurable request retry with exponential backoff
+# feat(client): add token bucket rate limiter and retry middleware
 
-Adds an optional, configurable request-retry mechanism to `@astroid/client`
-for autonomous agents that hit transient network hiccups and rate limits.
-The client now accepts flat retry options (`retries`, `minTimeout`,
-`maxTimeout`, `retryableStatuses`, `jitter`), retries network failures plus
-`429`/`502`/`503`/`504`, and cancels pending retries immediately when the
-caller aborts via `AbortController`.
+Hardens the `@astroid/client` token-bucket rate limiter so it throttles at the
+**configured** refill rate (it previously slept the queue wait a second time),
+and adds the deterministic `vi.useFakeTimers()` test suite the issue calls for
+to verify token refill, queue draining, `Retry-After` cooldowns and 429 retry
+backoff without slowing the test suite.
 
-Closes #272
+Closes #230
 
 ---
 
 ## Background
 
-`@astroid/client` routes every call through the shared `HttpClient` in
-`@astroid/core`, which already had a retry loop and a fixed retryable-status
-set. Issue #272 asks for a **first-class, documented configuration surface**
-and correct cancellation semantics. Three gaps existed:
+`@astroid/client` already shipped a token-bucket rate-limiter middleware
+(`packages/client/src/middleware/rate-limiter.ts`) and the shared `HttpClient`
+retry loop with `Retry-After` support. While validating the limiter against
+issue #230's acceptance criteria, two gaps surfaced:
 
-1. Only `retries` / `retryDelay` were accepted — there was no `minTimeout`,
-   `maxTimeout`, or `retryableStatuses`.
-2. The retryable set was hard-coded (`408, 425, 429, 500, 502, 503, 504`) and
-   could not be configured; the issue specifies `429 / 502 / 503 / 504`.
-3. `isAbortError` used `value instanceof Error`, but `fetch`/`sleep` reject with
-   a `DOMException` that is **not** an `Error` in every runtime — so an abort
-   during the retry backoff was misclassified as a retryable network error and
-   retried instead of stopping.
+1. **Double throttling.** `TokenBucketLimiter.acquire()` already *waits* until a
+   token refills before resolving, but `createRateLimiterMiddleware.onRequest`
+   then slept the returned wait duration again. A request that should dispatch
+   the instant a token refills was delayed by an extra full wait interval — so
+   the limiter effectively ran at **half** the configured rate.
+2. **Real timers in tests.** The existing rate-limiter suite asserted loose
+   wall-clock bounds with real `setTimeout`, taking seconds and making refill /
+   backoff behaviour hard to pin down. Issue #230 explicitly asks for
+   `vi.useFakeTimers()`.
 
-The idempotency behaviour (GET/PUT/DELETE safely retried; POST/PATCH only when
-marked `retryable` or carrying an `Idempotency-Key`) already existed and is
-preserved.
+This PR fixes the throttle and adds the fast, deterministic tests.
 
 ---
 
 ## Changes
 
-### `packages/core/src/config.ts` — `RetryConfig`
+### `packages/client/src/middleware/rate-limiter.ts`
 
-- Added `retryableStatuses?: number[]` — per-client status allow-list.
-- Added `jitter?: boolean` — full jitter on/off (default `true`).
+- `onRequest` now just `await limiter.acquire(req.signal)` — the wait already
+  happens inside the bucket, so the redundant `sleep(delayMs)` is removed. The
+  limiter now dispatches queued requests exactly when tokens refill.
+- Removed the now-unused `sleep` helper.
+- Updated the `acquire` and `createRateLimiterMiddleware` TSDoc to state that
+  the wait is handled inside the bucket and callers must not sleep the returned
+  value again.
 
-### `packages/core/src/backoff.ts`
+No behaviour change to capacity, refill rate, queue limits, `Retry-After`
+handling or `@astroid/errors` typing — all of which were already correct.
 
-- `DEFAULT_RETRYABLE_STATUSES = [429, 502, 503, 504]`, exported.
-- `isRetryableStatus(status, statuses = DEFAULT_RETRYABLE_STATUSES)` — the
-  default set is now exactly the issue's list and callers can pass their own.
-- `backoffDelay` applies full jitter by default and returns the deterministic
-  capped exponential delay when `config.jitter === false`.
+### `packages/client/src/__tests__/rate-limiter-fake-timers.test.ts` (new, 7 tests)
 
-### `packages/core/src/http-client.ts`
+Deterministic tests using `vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })`:
 
-- The retry loop selects its predicate with precedence: per-middleware
-  `shouldRetryStatus` → client `retryableStatuses` → SDK default.
-- `isAbortError` now matches any object whose `name === 'AbortError'`
-  (covering `DOMException`), so an abort stops the retry loop **immediately**.
-
-### `packages/core/src/middleware.ts`
-
-- `createRetryMiddleware` forwards `retryableStatuses` and `jitter` into the
-  request-scoped retry config.
-
-### `packages/client/src/index.ts`
-
-- `AstroidClientConfig` gains `minTimeout`, `maxTimeout`, `retryableStatuses`,
-  and `jitter`; `retryDelay` remains as a deprecated alias of `minTimeout`.
-- `normalizeConfig` merges the flat shorthand into the `retry` block, with
-  shorthand winning over an explicit `retry` object and `retry: false` always
-  disabling retries.
-- Re-exports `DEFAULT_RETRYABLE_STATUSES`.
-
-### `packages/client/src/middleware/retry.ts`
-
-- Forwards `retryableStatuses` / `jitter` and derives `shouldRetryStatus` from a
-  custom allow-list when supplied.
-
----
-
-## Tests
-
-`packages/client/src/__tests__/request-retry.test.ts` (new, 16 tests, mocked
-`fetch`):
-
-- **Config mapping** — `retries`/`minTimeout`/`maxTimeout`/`retryableStatuses`/
-  `jitter` land in `client.http.config.retry`; legacy `retryDelay` still works;
-  shorthand merges over an explicit `retry` object; `retry: false` wins.
-- **Retry behaviour** — success after a transient `503`; every default status
-  (`429`, `502`, `503`, `504`) retried; exhaustion throws the final
-  `ServerError` after `maxRetries + 1` attempts; custom `retryableStatuses`
-  allow-list respected; network-level failures retried; `400` not retried.
-- **Idempotency** — GET retried by default; POST not retried unless marked
-  `retryable` or carrying an `Idempotency-Key`.
-- **Backoff** — with `jitter: false`, delays grow exponentially (≈40ms then
-  ≈80ms for `minTimeout: 40`).
-- **Cancellation** — aborting during the backoff rejects with an `AbortError`
-  and performs no further fetch attempts.
-
-`packages/client/src/retry.test.ts` — updated `isRetryableStatus` expectations
-for the new default set and the custom-status override.
+- A burst up to `burstCapacity` passes through with **zero** elapsed virtual
+  time.
+- With `maxRequestsPerSecond: 2`, queued requests are released exactly at the
+  500ms refill boundaries, in FIFO order.
+- A request is rejected with `RateLimitError` when `maxQueueLength` is exceeded.
+- A request is rejected with `RateLimitError` (`RATE_LIMIT_QUEUE_TIMEOUT`) once
+  `queueTimeoutMs` elapses.
+- A queued request rejects with an `AbortError` when its signal aborts.
+- A `429` with `Retry-After: 1` pauses refills for the full cooldown window.
+- At the client level, a `429` carrying `Retry-After: 0.2` is **not** retried
+  before 200ms of virtual time elapse, then succeeds.
 
 ---
 
 ## Acceptance criteria
 
-- [x] Client configuration type accepts retry options (`retries`,
-      `minTimeout`, `maxTimeout`, `retryableStatuses`, and `jitter`).
-- [x] Retry loop with exponential backoff and optional jitter in the transport
-      layer.
-- [x] Retries network errors and `429`/`502`/`503`/`504` by default.
-- [x] Idempotent GET (and PUT/DELETE) retried safely; mutations only when
-      configured or safe (idempotency key).
-- [x] Unit tests mock network failures and rate-limit responses and assert retry
-      counts and backoff delays, plus retry exhaustion.
-- [x] `AbortSignal` aborts pending retries immediately.
+- [x] Token-bucket rate limiter in `@astroid/client` that respects the
+      configured capacity and refill rate (and now dispatches at that rate).
+- [x] `429` responses drive automatic retries and `Retry-After` is honoured up
+      to the configured `maxRetries`.
+- [x] Exponential backoff with jitter applied to transient failures (shared
+      `HttpClient` retry loop).
+- [x] Errors typed/mapped via `@astroid/errors` (`RateLimitError`).
+- [x] Vitest unit tests cover rate-limiter behaviour and retry logic, using
+      mock timers to verify refill and backoff delays.
+- [x] Burst scenarios exceeding the threshold queue and dispatch on delay.
 
 ---
 
 ## Validation
 
-| package | command | result |
+| check | command | result |
 | --- | --- | --- |
-| `@astroid/client` | `pnpm test` | 234 passed (16 files) |
-| `@astroid/client` | `pnpm typecheck` | pass |
-| workspace | `pnpm test` | all packages pass |
-| workspace | `pnpm typecheck` | 16/16 packages pass |
-| workspace | `pnpm build` | pass |
+| client tests | `pnpm --filter @astroid/client test` | 225 passed (16 files) |
+| workspace tests | `pnpm test` | all packages pass |
+| workspace typecheck | `pnpm typecheck` | 16/16 packages pass |
+| workspace build | `pnpm build` | pass |
+| workspace lint | `pnpm lint` | pass (no warnings) |
+
+The real-timer `rate-limiter.test.ts` suite also got faster (≈3.3s → ≈2.2s) as
+a side effect of removing the extra sleep.
