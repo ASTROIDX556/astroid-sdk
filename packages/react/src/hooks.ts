@@ -21,7 +21,17 @@ export {
   type WalletMutationResult,
   type TransferVariables,
   type UseWalletBalanceOptions,
+  type WalletMutationOptions,
+  type UseTransferOptions,
+  type UseWalletMutationOptions,
 } from './hooks/useWallets.js';
+export {
+  useWalletBalances,
+  useInvalidateWalletBalances,
+  walletBalancesKeys,
+  type UseWalletBalancesOptions,
+  type UseWalletBalancesResult,
+} from './hooks/useWalletBalances.js';
 
 /**
  * Retrieve the active {@link Astroid} client instance from the React context.

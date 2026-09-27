@@ -17,7 +17,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { RateLimitError, ServerError } from '@astroid/errors';
-import { Astroid } from '../index.js';
+import { Astroid, backoffDelay } from '../index.js';
 import {
   createRetryMiddleware,
   retryMiddleware,
@@ -90,7 +90,7 @@ describe('createRetryMiddleware', () => {
 
     const ctx = prepared.options.context as Record<string, unknown>;
     expect(ctx._retryConfig).toMatchObject({
-      maxRetries: 2,
+      maxRetries: 3,
       baseDelayMs: 250,
       maxDelayMs: 8000,
     });
@@ -438,6 +438,36 @@ describe('Astroid client — non-retryable errors', () => {
     await expect(client.wallets.get('w_422')).rejects.toBeDefined();
     expect(mockFetch).toHaveBeenCalledTimes(1); // no retries
   });
+
+  it('does not retry on 408 (Request Timeout) despite the transient-sounding name', async () => {
+    const mockFetch = vi.fn().mockImplementation(async () =>
+      errorResponse(408, 'REQUEST_TIMEOUT', 'Request Timeout'),
+    );
+
+    const client = new Astroid({
+      ...BASE_CONFIG,
+      fetch: mockFetch as unknown as typeof fetch,
+    });
+    client.use(createRetryMiddleware({ maxRetries: 3, baseDelayMs: 5, maxDelayMs: 50 }));
+
+    await expect(client.wallets.get('w_408')).rejects.toBeDefined();
+    expect(mockFetch).toHaveBeenCalledTimes(1); // no retries
+  });
+
+  it('does not retry on 425 (Too Early)', async () => {
+    const mockFetch = vi.fn().mockImplementation(async () =>
+      errorResponse(425, 'TOO_EARLY', 'Too Early'),
+    );
+
+    const client = new Astroid({
+      ...BASE_CONFIG,
+      fetch: mockFetch as unknown as typeof fetch,
+    });
+    client.use(createRetryMiddleware({ maxRetries: 3, baseDelayMs: 5, maxDelayMs: 50 }));
+
+    await expect(client.wallets.get('w_425')).rejects.toBeDefined();
+    expect(mockFetch).toHaveBeenCalledTimes(1); // no retries
+  });
 });
 
 /* -------------------------------------------------------------------------- */
@@ -492,6 +522,19 @@ describe('Astroid client — retry disabled', () => {
 /* -------------------------------------------------------------------------- */
 
 describe('Astroid client — retry from config', () => {
+  it('defaults to 3 retries and a 250ms base delay when no retry config is supplied', () => {
+    const client = new Astroid({
+      apiKey: 'sk_test_default',
+      baseUrl: 'https://api.astroid.test',
+      fetch: vi.fn() as unknown as typeof fetch,
+    });
+
+    expect(client.http.config.retry).toMatchObject({
+      maxRetries: 3,
+      baseDelayMs: 250,
+    });
+  });
+
   it('retries using config passed to new Astroid()', async () => {
     let callCount = 0;
     const mockFetch = vi.fn().mockImplementation(async () => {
@@ -510,6 +553,138 @@ describe('Astroid client — retry from config', () => {
     const wallet = await client.wallets.get('w_cfg');
     expect(wallet).toMatchObject({ id: 'w_config' });
     expect(callCount).toBe(2);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Configurable backoff factor                                                */
+/* -------------------------------------------------------------------------- */
+
+describe('backoffDelay — configurable factor', () => {
+  it('defaults to doubling when backoffFactor is omitted', () => {
+    const config = { maxRetries: 3, baseDelayMs: 100, maxDelayMs: 10_000 };
+    expect(backoffDelay(1, config, () => 0.5)).toBe(50);
+    expect(backoffDelay(2, config, () => 0.5)).toBe(100);
+    expect(backoffDelay(3, config, () => 0.5)).toBe(200);
+  });
+
+  it('grows by the configured backoffFactor', () => {
+    const config = { maxRetries: 4, baseDelayMs: 100, maxDelayMs: 10_000, backoffFactor: 3 };
+    expect(backoffDelay(1, config, () => 0.5)).toBe(50); // 100 * 3^0 = 100
+    expect(backoffDelay(2, config, () => 0.5)).toBe(150); // 100 * 3^1 = 300
+    expect(backoffDelay(3, config, () => 0.5)).toBe(450); // 100 * 3^2 = 900
+  });
+
+  it('caps backoff at maxDelayMs regardless of factor', () => {
+    const config = { maxRetries: 10, baseDelayMs: 100, maxDelayMs: 500, backoffFactor: 5 };
+    expect(backoffDelay(10, config, () => 1)).toBe(500);
+  });
+
+  it('honours backoffFactor through computeRetryDelay', () => {
+    const config = { maxRetries: 3, baseDelayMs: 100, maxDelayMs: 10_000, backoffFactor: 4 };
+    // attempt 2: 100 * 4^1 = 400, jittered by 0.5 → 200
+    expect(computeRetryDelay(2, config, 503, undefined, () => 0.5)).toBe(200);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Configurable retryable status codes                                        */
+/* -------------------------------------------------------------------------- */
+
+describe('createRetryMiddleware — configurable retry options', () => {
+  it('forwards backoffFactor into the per-request retry config', () => {
+    const mw = createRetryMiddleware({ backoffFactor: 4 });
+    const prepared = mw.onRequest!(makeRequest('GET')) as PreparedRequest;
+    const ctx = prepared.options.context as Record<string, unknown>;
+    expect(ctx._retryConfig).toMatchObject({ backoffFactor: 4 });
+  });
+
+  it('forwards retryableStatusCodes into the per-request retry options', () => {
+    const mw = createRetryMiddleware({ retryableStatusCodes: [429, 503] });
+    const prepared = mw.onRequest!(makeRequest('GET')) as PreparedRequest;
+    const ctx = prepared.options.context as Record<string, unknown>;
+    const opts = ctx._retryOptions as RetryMiddlewareConfig;
+    expect(opts.retryableStatusCodes).toEqual([429, 503]);
+  });
+});
+
+describe('Astroid client — configurable retryable status codes', () => {
+  it('retries a configured status code', async () => {
+    let calls = 0;
+    const mockFetch = vi.fn().mockImplementation(async () => {
+      calls++;
+      if (calls === 1) return errorResponse(503, 'SERVICE_UNAVAILABLE', 'Unavailable');
+      return okResponse({ id: 'w_cfg503' });
+    });
+
+    const client = new Astroid({
+      ...BASE_CONFIG,
+      fetch: mockFetch as unknown as typeof fetch,
+      retry: { maxRetries: 2, baseDelayMs: 5, maxDelayMs: 20, retryableStatusCodes: [503] },
+    });
+
+    await expect(client.wallets.get('w_cfg503')).resolves.toMatchObject({ id: 'w_cfg503' });
+    expect(calls).toBe(2);
+  });
+
+  it('does not retry a status outside the configured list', async () => {
+    let calls = 0;
+    const mockFetch = vi.fn().mockImplementation(async () => {
+      calls++;
+      return errorResponse(500, 'SERVER_ERROR', 'Server Error');
+    });
+
+    const client = new Astroid({
+      ...BASE_CONFIG,
+      fetch: mockFetch as unknown as typeof fetch,
+      retry: { maxRetries: 3, baseDelayMs: 5, maxDelayMs: 20, retryableStatusCodes: [503] },
+    });
+
+    await expect(client.wallets.get('w_cfg500')).rejects.toBeDefined();
+    expect(calls).toBe(1);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Idempotency gating                                                         */
+/* -------------------------------------------------------------------------- */
+
+describe('Astroid client — idempotency gating', () => {
+  it('does not retry a non-idempotent POST by default', async () => {
+    let calls = 0;
+    const mockFetch = vi.fn().mockImplementation(async () => {
+      calls++;
+      return errorResponse(503, 'SERVICE_UNAVAILABLE', 'Unavailable');
+    });
+
+    const client = new Astroid({
+      ...BASE_CONFIG,
+      fetch: mockFetch as unknown as typeof fetch,
+      retry: { maxRetries: 3, baseDelayMs: 5, maxDelayMs: 20 },
+    });
+
+    await expect(client.http.post('/wallets', { name: 'x' })).rejects.toBeDefined();
+    expect(calls).toBe(1);
+  });
+
+  it('retries a POST explicitly marked idempotent via idempotencyKey', async () => {
+    let calls = 0;
+    const mockFetch = vi.fn().mockImplementation(async () => {
+      calls++;
+      if (calls === 1) return errorResponse(503, 'SERVICE_UNAVAILABLE', 'Unavailable');
+      return okResponse({ id: 'w_idem' });
+    });
+
+    const client = new Astroid({
+      ...BASE_CONFIG,
+      fetch: mockFetch as unknown as typeof fetch,
+      retry: { maxRetries: 2, baseDelayMs: 5, maxDelayMs: 20 },
+    });
+
+    await expect(
+      client.http.post('/wallets', { name: 'x' }, { idempotencyKey: 'key-1' }),
+    ).resolves.toBeDefined();
+    expect(calls).toBe(2);
   });
 });
 

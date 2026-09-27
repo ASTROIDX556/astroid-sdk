@@ -12,6 +12,7 @@ import type { RetryConfig } from './config.js';
  * `[0, capped]`) so fleets of agents do not retry in lockstep. Set
  * `config.jitter` to `false` for deterministic, un-jittered delays.
  *
+ * The growth rate is `config.backoffFactor` (default `2`, i.e. doubling).
  * A `random` function is injected so callers/tests stay deterministic; it
  * defaults to `Math.random`.
  */
@@ -20,7 +21,8 @@ export function backoffDelay(
   config: RetryConfig,
   random: () => number = Math.random,
 ): number {
-  const exponential = config.baseDelayMs * 2 ** (attempt - 1);
+  const factor = config.backoffFactor ?? 2;
+  const exponential = config.baseDelayMs * factor ** (attempt - 1);
   const capped = Math.min(exponential, config.maxDelayMs);
   // Full jitter unless explicitly disabled.
   return config.jitter === false ? capped : Math.floor(random() * capped);

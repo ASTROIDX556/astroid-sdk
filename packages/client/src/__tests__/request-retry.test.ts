@@ -65,6 +65,7 @@ describe('#272 — retry configuration options', () => {
       maxDelayMs: 900,
       retryableStatuses: [503, 429],
       jitter: false,
+      backoffFactor: 2,
     });
   });
 
@@ -72,7 +73,7 @@ describe('#272 — retry configuration options', () => {
     const client = new Astroid({ ...BASE, fetch: noFetch, retryDelay: 123 });
 
     expect(client.http.config.retry).toMatchObject({
-      maxRetries: 2,
+      maxRetries: 3,
       baseDelayMs: 123,
       maxDelayMs: 8000,
     });
@@ -91,6 +92,7 @@ describe('#272 — retry configuration options', () => {
       maxRetries: 5,
       baseDelayMs: 10,
       maxDelayMs: 2000,
+      backoffFactor: 2,
     });
   });
 
