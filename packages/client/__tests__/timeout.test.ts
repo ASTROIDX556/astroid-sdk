@@ -98,7 +98,10 @@ describe('Client Timeout and AbortSignal Support', () => {
       fetch: fetchMock as unknown as typeof fetch,
     });
 
-    await expect(client.get('/test')).rejects.toBeInstanceOf(AstroidTimeoutError);
+    // `retryable: false` keeps this to a single attempt: without it the default
+    // retry policy re-issues the timed-out GET, so `toHaveBeenCalledOnce()`
+    // below would be asserting retry behaviour rather than abort propagation.
+    await expect(client.get('/test', { retryable: false })).rejects.toBeInstanceOf(AstroidTimeoutError);
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 

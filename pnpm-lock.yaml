@@ -291,6 +291,64 @@ importers:
         specifier: 2.1.8
         version: 2.1.8(@types/node@22.10.5)(jsdom@30.0.1(@noble/hashes@1.8.0))
 
+  packages/integration:
+    dependencies:
+      '@astroid/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@astroid/analytics':
+        specifier: workspace:*
+        version: link:../analytics
+      '@astroid/auth':
+        specifier: workspace:*
+        version: link:../auth
+      '@astroid/budget':
+        specifier: workspace:*
+        version: link:../budget
+      '@astroid/client':
+        specifier: workspace:*
+        version: link:../client
+      '@astroid/core':
+        specifier: workspace:*
+        version: link:../core
+      '@astroid/errors':
+        specifier: workspace:*
+        version: link:../errors
+      '@astroid/notification':
+        specifier: workspace:*
+        version: link:../notification
+      '@astroid/policy':
+        specifier: workspace:*
+        version: link:../policy
+      '@astroid/transaction':
+        specifier: workspace:*
+        version: link:../transaction
+      '@astroid/types':
+        specifier: workspace:*
+        version: link:../types
+      '@astroid/utils':
+        specifier: workspace:*
+        version: link:../utils
+      '@astroid/wallet':
+        specifier: workspace:*
+        version: link:../wallet
+      '@astroid/webhook':
+        specifier: workspace:*
+        version: link:../webhook
+      '@stellar/stellar-base':
+        specifier: ^15.0.0
+        version: 15.0.0
+    devDependencies:
+      '@types/node':
+        specifier: 22.10.5
+        version: 22.10.5
+      typescript:
+        specifier: 5.7.3
+        version: 5.7.3
+      vitest:
+        specifier: 2.1.8
+        version: 2.1.8(@types/node@22.10.5)(jsdom@30.0.1(@noble/hashes@1.8.0))
+
   packages/notification:
     dependencies:
       '@astroid/core':

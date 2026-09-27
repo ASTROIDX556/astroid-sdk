@@ -96,6 +96,22 @@ export interface BudgetAllocationThresholds {
 /* Simulation                                                                  */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Why a simulated spend was rejected.
+ *
+ * - `LIMIT_OVERFLOW` — the spend (plus any converted draw) would push the
+ *   budget past its remaining allowance.
+ * - `EXPIRED_BUDGET` — the budget's active window has already closed.
+ * - `DISABLED` — the budget is disabled, so nothing can be drawn from it.
+ * - `CURRENCY_MISMATCH` — the requested asset is not the budget currency and
+ *   no accepted conversion rate was supplied.
+ */
+export type BudgetSimulationRejectionReason =
+  | 'LIMIT_OVERFLOW'
+  | 'EXPIRED_BUDGET'
+  | 'DISABLED'
+  | 'CURRENCY_MISMATCH';
+
 /** A prospective spend to simulate against a budget. */
 export interface BudgetSimulationRequest {
   /** Asset identifier (e.g. `"USDC"`, `"XLM"`). */
@@ -106,6 +122,38 @@ export interface BudgetSimulationRequest {
   agentId?: string;
   /** Optional originating transaction. */
   transactionId?: string;
+  /**
+   * Optional fixed conversion rate applied when the requested asset differs
+   * from the budget's currency.
+   *
+   * Expressed as "budget currency units per one unit of `asset`" (e.g. `0.5`
+   * when spending 100 XLM against a USDC budget means a 50 USDC draw). When
+   * omitted, a mismatched asset is rejected with `CURRENCY_MISMATCH` instead of
+   * being silently converted.
+   *
+   * This supports the multi-asset edge case from the simulation contract:
+   * agents that quote their own rates can still dry-run against a single-
+   * currency budget, while the conversion stays explicit and auditable.
+   */
+  conversionRate?: DecimalString | number;
+}
+
+/** A single rule/reason the dry-run rejected the proposed spend. */
+export interface BudgetSimulationViolation {
+  /** Machine-readable reason for the rejection. */
+  reason: BudgetSimulationRejectionReason;
+  /** Human-readable description of the violated rule. */
+  message: string;
+  /** Limit checked when the reason is `LIMIT_OVERFLOW` (decimal string). */
+  limit?: DecimalString;
+  /** Total projected spend when the reason is `LIMIT_OVERFLOW` (decimal string). */
+  projectedSpend?: DecimalString;
+  /** Remaining allowance checked when the reason is `LIMIT_OVERFLOW` (decimal string). */
+  remaining?: DecimalString;
+  /** Budget currency evaluated for this violation. */
+  currency?: string;
+  /** ISO-8601 instant the window closed, when the reason is `EXPIRED_BUDGET`. */
+  expiredAt?: IsoDateTime;
 }
 
 /** The outcome of a policy/budget check simulation (`simulateBudgetCheck`). */
@@ -125,6 +173,47 @@ export interface BudgetCheckResult {
   violations: string[];
   /** Human-readable explanation of the outcome. */
   explanation: string;
+}
+
+/**
+ * Structured dry-run outcome for the budget simulation resource method
+ * (`BudgetResource.simulateBudgetCheck`).
+ *
+ * A sibling of the wire shape {@link BudgetCheckResult} with a typed
+ * `violations` list covering the API's edge cases — expired budgets,
+ * multi-asset conversions and limit overflows — so agents can branch on
+ * machine-readable reasons instead of parsing the `explanation` string.
+ */
+export interface BudgetSimulationCheckResult {
+  /** The id of the budget the simulation ran against. */
+  budgetId: string;
+  /** Whether the proposed spend is allowed under the budget's rules. */
+  allowed: boolean;
+  /** Whether the spend would push the budget past its limit. */
+  wouldExceed: boolean;
+  /** Remaining headroom after the simulated spend (decimal string). */
+  afterRemaining: DecimalString;
+  /** Utilization fraction after the simulated spend, `0`–`1`. */
+  utilizationAfter: number;
+  /** Bucketed health after the simulated spend. */
+  state: BudgetAllocationState;
+  /** Human-readable explanation of the outcome. */
+  explanation: string;
+  /** Typed violation list (empty when {@link allowed} is true). */
+  violations: BudgetSimulationViolation[];
+  /** Whether the budget was past its active window when evaluated. */
+  expired: boolean;
+  /**
+   * The converted draw in budget-currency terms, when a `conversionRate` was
+   * applied to a cross-asset request.
+   */
+  convertedAmount?: DecimalString;
+  /** The conversion rate used, if any. */
+  appliedConversionRate?: DecimalString;
+  /** The budget currency the draw was evaluated in. */
+  currency: string;
+  /** ISO-8601 instant the simulation was evaluated at. */
+  evaluatedAt: IsoDateTime;
 }
 
 /* -------------------------------------------------------------------------- */

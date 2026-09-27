@@ -207,14 +207,19 @@ export class HttpClient {
         await this.middleware.applyError(error, prepared);
         // Resolve the retryable-status predicate. Precedence:
         //   1. a custom predicate supplied to the retry middleware,
-        //   2. an explicit `retryableStatusCodes` list (per-request or global),
-        //   3. the SDK-wide default (`429` + any `5xx`).
-        const statusCodes = contextOptions?.retryableStatusCodes ?? retry?.retryableStatusCodes;
+        //   2. an explicit `retryableStatusCodes` list,
+        //   3. an explicit `retryableStatuses` list,
+        //   4. the SDK-wide default.
+        const retryableStatusCodes =
+          contextOptions?.retryableStatusCodes ?? retry?.retryableStatusCodes;
+        const retryableStatuses = retry?.retryableStatuses;
         const shouldRetryStatus =
           contextOptions?.shouldRetryStatus ??
-          (statusCodes
-            ? (status: number) => statusCodes.includes(status)
-            : isRetryableStatus);
+          (retryableStatusCodes
+            ? (status: number) => retryableStatusCodes.includes(status)
+            : retryableStatuses && retryableStatuses.length > 0
+              ? (status: number) => retryableStatuses.includes(status)
+              : isRetryableStatus);
         if (retry && prepared.retryable && attempt < maxAttempts && shouldRetryStatus(raw.status)) {
           lastError = error;
           const delay = this.retryDelay(attempt, raw, retry);
@@ -410,9 +415,20 @@ export class HttpClient {
   }
 }
 
-/** Whether an unknown value is a DOMException-style abort. */
+/**
+ * Whether an unknown value is an abort error.
+ *
+ * `fetch` and our `sleep` reject with a `DOMException` named `AbortError`,
+ * which is **not** an `instanceof Error` in every runtime, so we match on the
+ * `name` property instead. This guarantees an abort stops pending retries
+ * immediately rather than being mistaken for a retryable network failure.
+ */
 function isAbortError(value: unknown): boolean {
-  return value instanceof Error && value.name === 'AbortError';
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (value as { name?: unknown }).name === 'AbortError'
+  );
 }
 
 /** Build a DOM-compatible abort error regardless of runtime. */

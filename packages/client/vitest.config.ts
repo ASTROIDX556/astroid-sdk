@@ -23,7 +23,6 @@ export default defineConfig({
       '@astroid/transaction': resolve(__dirname, '../transaction/src'),
       '@astroid/notification': resolve(__dirname, '../notification/src'),
       '@astroid/webhook': resolve(__dirname, '../webhook/src'),
-      '@stellar/stellar-base': '/workspaces/astroid-sdk/node_modules/.pnpm/@stellar+stellar-base@15.0.0/node_modules/@stellar/stellar-base',
     },
   },
 });
