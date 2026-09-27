@@ -20,6 +20,63 @@ export interface AstroidErrorOptions {
 }
 
 /**
+ * Whether {@link AstroidError.toJSON} serializes the stack trace.
+ *
+ * Defaults to `true` so local development keeps full diagnostics. Production
+ * entrypoints should set it to `false` **before** any error is constructed so
+ * serialized error payloads never leak internal paths, hostnames or source
+ * lines to logs, wire responses, or third-party collectors (issue #76).
+ *
+ * @example
+ * ```ts
+ * // process entrypoint, before handling any request:
+ * import { setIncludeStackInErrors } from '@astroid/errors';
+ * setIncludeStackInErrors(process.env.NODE_ENV === 'development');
+ * ```
+ */
+let includeStackInErrors = true;
+
+/** Configure whether {@link AstroidError.toJSON} serializes the stack trace. */
+export function setIncludeStackInErrors(include: boolean): void {
+  includeStackInErrors = include;
+}
+
+/** Read the current stack-serialization setting (mostly for tests). */
+export function getIncludeStackInErrors(): boolean {
+  return includeStackInErrors;
+}
+
+/**
+ * Serialisable form of an {@link AstroidError}, matching the API error payload
+ * structure (`ApiError` in `@astroid/types`) so error envelopes can be relayed
+ * to callers or telemetry backends verbatim (issue #76).
+ */
+export interface SerializedAstroidError {
+  name: string;
+  message: string;
+  /** Machine-readable error code. */
+  code: string;
+  /** HTTP status, when the error originated from an HTTP response. */
+  status?: number;
+  /**
+   * HTTP status alias of {@link status}, always the same value. Consumers can
+   * read either name, mirroring the `error.statusCode` field used by some
+   * API error payloads.
+   */
+  statusCode?: number;
+  /** API request id for correlating with backend logs, when known. */
+  requestId?: string;
+  /** Structured, machine-readable detail, when present. */
+  details?: Record<string, unknown>;
+  /**
+   * Stack trace — only present when stack serialization is enabled via
+   * {@link setIncludeStackInErrors} (enabled by default, disabled in
+   * production so internal paths never leak).
+   */
+  stack?: string;
+}
+
+/**
  * Base class for all Astroid SDK errors.
  *
  * Consumers can branch on `instanceof` for any subclass, and inspect
@@ -73,14 +130,33 @@ export class AstroidError extends Error {
     return this.code;
   }
 
+  /**
+   * Whether this error instance is safe to retry.
+   *
+   * Alias of {@link isRetryable} using the `retryable` spelling common in API
+   * error envelopes, so callers can branch on either name.
+   */
+  get retryable(): boolean {
+    return this.isRetryable;
+  }
+
   /** Whether retrying the request could plausibly succeed. */
   get isRetryable(): boolean {
     return false;
   }
 
-  /** A plain, serialisable representation (safe to log — no secrets). */
-  toJSON(): Record<string, unknown> {
-    return {
+  /**
+   * A plain, serialisable representation matching the API error payload
+   * structure — safe to log and to relay to callers as an `ApiError`-shaped
+   * envelope.
+   *
+   * The stack trace is included only while stack serialization is enabled
+   * (default). Call {@link setIncludeStackInErrors}(false) at the production
+   * entrypoint so internal paths never leak through serialized payloads
+   * (issue #76). No secrets are ever serialized.
+   */
+  toJSON(): SerializedAstroidError {
+    const payload: SerializedAstroidError = {
       name: this.name,
       message: this.message,
       code: this.code,
@@ -88,7 +164,10 @@ export class AstroidError extends Error {
       statusCode: this.statusCode,
       requestId: this.requestId,
       details: this.details,
-      stack: this.stack,
     };
+    if (includeStackInErrors) {
+      payload.stack = this.stack;
+    }
+    return payload;
   }
 }

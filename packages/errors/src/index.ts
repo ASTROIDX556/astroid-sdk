@@ -21,13 +21,17 @@ export {
   isPolicyViolationError,
   isInsufficientFundsError,
   isRateLimitError,
+  isApiRateLimitError,
   isNetworkError,
   isServerError,
 } from './guards.js';
 
 export {
   AstroidError,
+  setIncludeStackInErrors,
+  getIncludeStackInErrors,
   type AstroidErrorOptions,
+  type SerializedAstroidError,
 } from './base.js';
 import { AstroidError } from './base.js';
 
@@ -47,6 +51,7 @@ export {
   BudgetExceededError,
   ApprovalRequiredError,
   RateLimitError,
+  ApiRateLimitError,
   NetworkError,
   ServerError,
   InternalServerError,
@@ -104,6 +109,14 @@ export function errorClassForCode(code: string): typeof AstroidError {
       return InsufficientFundsError;
     case ApiErrorCode.APPROVAL_REQUIRED:
       return ApprovalRequiredError;
+    case ApiErrorCode.PROPOSAL_EXPIRED:
+      // An expired proposal is a resource-state conflict: the entity existed
+      // but is no longer actionable, mirroring a 409-style stale-state error.
+      return ConflictError;
+    case ApiErrorCode.INVALID_SIGNATURE:
+      // A signature the API could not verify is a malformed-request class
+      // failure: retrying the identical payload cannot succeed.
+      return ValidationError;
     case ApiErrorCode.RATE_LIMITED:
       return RateLimitError;
     case ApiErrorCode.NETWORK_ERROR:
