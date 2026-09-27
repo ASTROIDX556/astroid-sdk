@@ -30,6 +30,7 @@ import {
   type AstroidClientConfig as CoreClientConfig,
   type Middleware,
   type QueryValue,
+  type RetryConfig,
 } from '@astroid/core';
 import type { PaginationParams } from '@astroid/types';
 import { serializePaginationParams } from './pagination.js';
@@ -37,6 +38,13 @@ import { createCorrelationMiddleware } from './middleware/correlation.js';
 import { createRateLimiterMiddleware } from './middleware/rate-limiter.js';
 import { createLoggingMiddleware, type LoggingMiddlewareOptions } from './middleware/logging.js';
 import { createErrorParserMiddleware } from './error-parser-middleware.js';
+import {
+  createDebugLogger,
+  createInterceptorMiddleware,
+  type DebugLoggerOptions,
+  type RequestInterceptor,
+  type ResponseInterceptor,
+} from './interceptors.js';
 import { AgentResource } from '@astroid/agent';
 import { AnalyticsResource } from '@astroid/analytics';
 import { AuthResource, SessionManager, createSessionMiddleware } from '@astroid/auth';
@@ -55,21 +63,81 @@ import type {
   WebhookEventName,
 } from '@astroid/types';
 import { createErrorTranslatorMiddleware } from './middleware/error.js';
+import { createTokenRefreshInterceptor } from './token-refresh.js';
 
 /**
  * Configuration accepted by `new Astroid({ ... })`.
  *
  * Extends the core client config with shorthand retry options
- * (`retries` / `retryDelay`) for convenience.
+ * (`retries` / `minTimeout` / `maxTimeout` / `retryableStatuses` / `jitter`) for
+ * convenience. Each is merged into the `retry` block, so the full
+ * {@link RetryConfig} remains available for advanced use.
  */
 export interface AstroidClientConfig extends CoreClientConfig {
   /** Maximum number of retries after the first attempt (shorthand for `retry.maxRetries`). */
   retries?: number;
-  /** Base retry delay in ms (shorthand for `retry.baseDelayMs`). */
+  /**
+   * Minimum (base) backoff delay in ms before the first retry — the delay grows
+   * exponentially from here (shorthand for `retry.baseDelayMs`).
+   */
+  minTimeout?: number;
+  /**
+   * Maximum backoff delay in ms for any single retry (shorthand for
+   * `retry.maxDelayMs`).
+   */
+  maxTimeout?: number;
+  /**
+   * HTTP statuses that should be retried (shorthand for
+   * `retry.retryableStatuses`). Defaults to `[429, 502, 503, 504]`.
+   */
+  retryableStatuses?: number[];
+  /**
+   * Apply full jitter to each backoff delay (shorthand for `retry.jitter`).
+   * Default `true`; set to `false` for deterministic delays.
+   */
+  jitter?: boolean;
+  /**
+   * Base retry delay in ms. Legacy alias for {@link AstroidClientConfig.minTimeout}.
+   * @deprecated Prefer `minTimeout`.
+   */
   retryDelay?: number;
   /** Request/response logging hooks with automatic header redaction. */
   logging?: LoggingMiddlewareOptions;
+  /**
+   * Request interceptors executed, in order, before each request is dispatched.
+   * Each interceptor receives a mutable {@link RequestConfig} and may return a
+   * replacement config to rewrite the URL, method, headers, or body.
+   */
+  requestInterceptors?: RequestInterceptor[];
+  /**
+   * Response interceptors executed, in order, as each response is received.
+   * Each interceptor receives a mutable {@link ResponseConfig} and may return a
+   * replacement config to transform the response.
+   */
+  responseInterceptors?: ResponseInterceptor[];
+  /**
+   * Enable the built-in debug logger. Pass `true` for defaults or a
+   * {@link DebugLoggerOptions} object to tune the log sink, body inclusion, and
+   * header redaction.
+   */
+  debug?: boolean | DebugLoggerOptions;
+  /**
+   * Custom correlation/tracing headers applied to every outbound request
+   * (issue #255). Shorthand for the core `tracingHeaders` option: use this to
+   * stamp a fixed deployment- or tenant-level `X-Correlation-ID`, or to set the
+   * `X-Request-ID` / `X-Astroid-Correlation-ID` header names with static values.
+   * Per-request `options.headers`, `options.correlationId` and
+   * `options.requestId` always take precedence.
+   */
+  tracingHeaders?: Record<string, string>;
 }
+
+/**
+ * Alias for {@link AstroidClientConfig} using the conventional `ClientOptions`
+ * name. Accepts the full retry surface (`retry`, `retries`, `retryDelay`) in
+ * addition to the core transport options.
+ */
+export type ClientOptions = AstroidClientConfig;
 
 /** The AI-native namespace: express intents, not low-level transfers. */
 export class AiResource {
@@ -220,29 +288,25 @@ export class Astroid {
     // Installed by default so consumers get high-fidelity errors without manual middleware wiring.
     this.use(createErrorTranslatorMiddleware());
 
+    // Token refresh interceptor (issue #103): a single-flight refresh shared
+    // by all concurrent 401s, plus a middleware that queues requests issued
+    // while a refresh is in flight so they don't race it with a stale token.
+    const refreshTokens = async (refreshToken: string): Promise<AuthTokens> => {
+      const res = await this.http.post<AuthTokens>('/auth/refresh', { refreshToken });
+      this.setAccessToken(res.data.accessToken);
+      return res.data;
+    };
+
     this.use(
-      createSessionMiddleware(this.sessionManager, async (refreshToken: string) => {
-        const res = await this.http.post<AuthTokens>('/auth/refresh', { refreshToken });
-        this.setAccessToken(res.data.accessToken);
-        return res.data;
-      }),
+      createSessionMiddleware(this.sessionManager, refreshTokens),
     );
 
-    this.http.set401Handler(async () => {
-      if (!this.sessionManager.getRefreshToken()) {
-        return false;
-      }
-      try {
-        await this.sessionManager.refreshSession(async (refreshToken: string) => {
-          const res = await this.http.post<AuthTokens>('/auth/refresh', { refreshToken });
-          this.setAccessToken(res.data.accessToken);
-          return res.data;
-        });
-        return true;
-      } catch {
-        return false;
-      }
+    const tokenRefresh = createTokenRefreshInterceptor({
+      sessionManager: this.sessionManager,
+      refresh: refreshTokens,
     });
+    this.use(tokenRefresh.middleware);
+    this.http.set401Handler(tokenRefresh.handleUnauthorized);
 
     // Wire up the dynamic token provider (called before every request;
     // the HttpClient deduplicates concurrent calls automatically).
@@ -259,11 +323,34 @@ export class Astroid {
 
     // Correlation ID + telemetry: every outbound request carries a
     // X-Astroid-Correlation-ID header and fires onRequest/onResponse hooks.
-    this.http.use(createCorrelationMiddleware(clientConfig?.telemetry));
+    // Static tracing headers from the config are honoured as defaults and are
+    // overridden by per-request options.
+    this.http.use(createCorrelationMiddleware(clientConfig?.telemetry, clientConfig?.tracingHeaders));
 
     // Request/response logging with header redaction (opt-in via config).
     if (clientConfig?.logging) {
       this.http.use(createLoggingMiddleware(clientConfig.logging));
+    }
+
+    // Pluggable request/response interceptors. When `debug` is enabled the
+    // built-in debug logger interceptors are appended so callers get visibility
+    // without wiring them by hand.
+    const debugInterceptors =
+      clientConfig?.debug === true
+        ? createDebugLogger()
+        : clientConfig?.debug && typeof clientConfig.debug === 'object'
+          ? createDebugLogger(clientConfig.debug)
+          : undefined;
+    const requestInterceptors = [
+      ...(clientConfig?.requestInterceptors ?? []),
+      ...(debugInterceptors ? [debugInterceptors.requestInterceptor] : []),
+    ];
+    const responseInterceptors = [
+      ...(clientConfig?.responseInterceptors ?? []),
+      ...(debugInterceptors ? [debugInterceptors.responseInterceptor] : []),
+    ];
+    if (requestInterceptors.length > 0 || responseInterceptors.length > 0) {
+      this.http.use(createInterceptorMiddleware({ requestInterceptors, responseInterceptors }));
     }
 
     // Auto-register the error parser middleware so all responses are routed
@@ -350,16 +437,34 @@ export class Astroid {
 
 export default Astroid;
 
-/** Normalise the shorthand `retries` / `retryDelay` options into core retry config. */
+/**
+ * Normalise the flat retry shorthand options
+ * (`retries` / `minTimeout` / `maxTimeout` / `retryableStatuses` / `jitter`)
+ * into a single core `retry` block, merging with any explicit `retry` object.
+ *
+ * Shorthand keys win over the corresponding `retry.*` field; `retry: false`
+ * always disables retries. When no shorthand is supplied the config is returned
+ * untouched so core defaults apply.
+ */
 function normalizeConfig(config: AstroidClientConfig): CoreClientConfig {
-  if (config.retries === undefined) return config;
+  const { retries, retryDelay, minTimeout, maxTimeout, retryableStatuses, jitter, retry, ...rest } =
+    config;
+
+  const shorthand: Partial<RetryConfig> = {};
+  if (retries !== undefined) shorthand.maxRetries = retries;
+  const baseDelayMs = minTimeout ?? retryDelay;
+  if (baseDelayMs !== undefined) shorthand.baseDelayMs = baseDelayMs;
+  if (maxTimeout !== undefined) shorthand.maxDelayMs = maxTimeout;
+  if (retryableStatuses !== undefined) shorthand.retryableStatuses = retryableStatuses;
+  if (jitter !== undefined) shorthand.jitter = jitter;
+
+  // Nothing to merge, or retries explicitly disabled: leave the config as-is.
+  if (Object.keys(shorthand).length === 0 || retry === false) return config;
+
+  const baseRetry: Partial<RetryConfig> = retry && typeof retry === 'object' ? retry : {};
   return {
-    ...config,
-    retry: {
-      maxRetries: config.retries,
-      baseDelayMs: config.retryDelay ?? 250,
-      maxDelayMs: 8000,
-    },
+    ...rest,
+    retry: { ...baseRetry, ...shorthand },
   };
 }
 
@@ -395,11 +500,19 @@ export {
   retryMiddleware,
   backoffDelay,
   isRetryableStatus,
+  DEFAULT_RETRYABLE_STATUSES,
   type Middleware,
   type RateLimitConfig,
   type RetryConfig,
   type RetryMiddlewareOptions,
 } from '@astroid/core';
+// Retry policy helpers from the modular `retry` entry point. `createRetryMiddleware`
+// and `retryMiddleware` are already re-exported above; these add the pieces the
+// retry module owns directly.
+export {
+  computeRetryDelay,
+  type RetryMiddlewareConfig,
+} from './retry.js';
 export {
   createRateLimiterMiddleware,
   rateLimiterMiddleware,
@@ -410,6 +523,7 @@ export {
   AstroidError,
   AuthenticationError,
   AuthorizationError,
+  ForbiddenError,
   ValidationError,
   NotFoundError,
   ConflictError,
@@ -418,6 +532,7 @@ export {
   ApprovalRequiredError,
   RateLimitError,
   NetworkError,
+  InternalServerError,
   ServerError,
   isAstroidError,
 } from '@astroid/errors';
@@ -428,6 +543,20 @@ export {
   AstroidApiError,
   AstroidValidationError,
   AstroidNetworkError,
+} from '@astroid/errors';
+// Centralized Stellar domain errors and mapping (issue #253).
+export {
+  InsufficientBalanceError,
+  TrustlineMissingError,
+  StellarAuthError,
+  SequenceConflictError,
+  TransactionExpiredError,
+  StellarMalformedError,
+  StellarNetworkError,
+  mapStellarError,
+  extractStellarResultCodes,
+  errorClassForStellarCode,
+  isStellarError,
 } from '@astroid/errors';
 export {
   createErrorTranslatorMiddleware,
@@ -440,6 +569,8 @@ export {
   correlationMiddleware,
   CORRELATION_ID_HEADER,
   REQUEST_ID_HEADER,
+  X_CORRELATION_ID_HEADER,
+  type CorrelationTracingConfig,
 } from './middleware/correlation.js';
 
 // Re-export telemetry types for consumers
@@ -459,7 +590,30 @@ export {
 } from './errors.js';
 export { createErrorParserMiddleware } from './error-parser-middleware.js';
 
-// Shared auto-pagination helpers — cursor (keyset) iteration for any list endpoint.
+// Pluggable request/response interceptors and the built-in debug logger.
+export {
+  createInterceptorMiddleware,
+  createDebugLogger,
+  redactDebugHeaders,
+  type RequestConfig,
+  type ResponseConfig,
+  type RequestInterceptor,
+  type ResponseInterceptor,
+  type InterceptorOptions,
+  type DebugLogger,
+  type DebugLoggerOptions,
+} from './interceptors.js';
+
+// Token refresh interceptor — single-flight refresh + request queueing.
+export {
+  createTokenRefreshInterceptor,
+  type TokenRefreshInterceptor,
+  type TokenRefreshInterceptorOptions,
+  type UnauthorizedHandler,
+} from './token-refresh.js';
+
+// Shared auto-pagination helpers — cursor (keyset) iteration for any list
+// endpoint, plus query-parameter builders for standalone list requests.
 export {
   paginateCursor,
   normalizeCursorPage,
@@ -468,3 +622,20 @@ export {
   type CursorPageFetcher,
   type PaginateCursorOptions,
 } from './pagination.js';
+export {
+  buildPaginationQuery,
+  buildPaginationQueryString,
+  serializePaginationParams,
+  unwrapPaginatedResponse,
+} from './pagination.js';
+
+// Standardized query-parameter serialization (issue #264): strings, numbers,
+// booleans, Dates (ISO), arrays and nested objects; null/undefined omitted.
+export {
+  serializeQuery,
+  type QueryParams,
+  type QueryParamValue,
+  type QueryParamScalar,
+  type QueryArrayFormat,
+  type SerializeQueryOptions,
+} from './query.js';

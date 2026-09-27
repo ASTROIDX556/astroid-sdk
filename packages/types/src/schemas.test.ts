@@ -304,12 +304,12 @@ describe('Zod schemas — DTO inputs', () => {
 
   it('CreateBudgetInputSchema requires name and limitAmount', () => {
     expect(CreateBudgetInputSchema.safeParse({}).success).toBe(false);
-    expect(
-      CreateBudgetInputSchema.safeParse({ name: 'Budget', limitAmount: 1000 }).success,
-    ).toBe(true);
-    expect(
-      CreateBudgetInputSchema.safeParse({ name: 'Budget', limitAmount: '1000' }).success,
-    ).toBe(true);
+    expect(CreateBudgetInputSchema.safeParse({ name: 'Budget', limitAmount: 1000 }).success).toBe(
+      true,
+    );
+    expect(CreateBudgetInputSchema.safeParse({ name: 'Budget', limitAmount: '1000' }).success).toBe(
+      true,
+    );
   });
 
   it('CreateTransactionInputSchema requires walletId, asset, amount, recipientAddress', () => {
