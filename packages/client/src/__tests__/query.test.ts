@@ -32,8 +32,9 @@ describe('serializeQuery', () => {
       status: ['active', 'pending'],
       tags: ['ai', null, 'stellar', ''],
     });
+    // Null/empty items are omitted and indices are compacted.
     expect(query).toBe(
-      '?status%5B0%5D=active&status%5B1%5D=pending&tags%5B0%5D=ai&tags%5B2%5D=stellar',
+      '?status%5B0%5D=active&status%5B1%5D=pending&tags%5B0%5D=ai&tags%5B1%5D=stellar',
     );
   });
 
@@ -50,5 +51,37 @@ describe('serializeQuery', () => {
     expect(query).toBe(
       '?filter%5Basset%5D=USDC&filter%5BminAmount%5D=100&filter%5Bnested%5D%5Bdeep%5D=true',
     );
+  });
+
+  it('serializes Dates to ISO strings and drops invalid dates', () => {
+    const query = serializeQuery({
+      from: new Date('2026-01-01T00:00:00.000Z'),
+      to: new Date('not-a-date'),
+    });
+    expect(query).toBe('?from=2026-01-01T00%3A00%3A00.000Z');
+  });
+
+  it('serializes Date arrays and nested Dates', () => {
+    const query = serializeQuery({
+      filter: { since: new Date('2026-02-01T00:00:00.000Z') },
+    });
+    expect(query).toBe('?filter%5Bsince%5D=2026-02-01T00%3A00%3A00.000Z');
+  });
+
+  it('supports repeat and comma array formats', () => {
+    expect(serializeQuery({ tag: ['a', 'b'] }, { arrayFormat: 'repeat' })).toBe('?tag=a&tag=b');
+    expect(serializeQuery({ tag: ['a', 'b'] }, { arrayFormat: 'comma' })).toBe('?tag=a%2Cb');
+  });
+
+  it('percent-encodes special characters', () => {
+    const query = serializeQuery({ search: 'a&b=c d/e+ü' });
+    expect(query).toBe(`?${new URLSearchParams({ search: 'a&b=c d/e+ü' }).toString()}`);
+    expect(query).toContain('search=');
+    expect(query).not.toContain(' ');
+  });
+
+  it('omits empty arrays, empty objects and non-finite numbers', () => {
+    expect(serializeQuery({ tags: [], filter: {}, a: Number.NaN, b: Infinity })).toBe('');
+    expect(serializeQuery({ page: 0, active: false })).toBe('?page=0&active=false');
   });
 });
