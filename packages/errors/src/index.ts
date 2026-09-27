@@ -8,134 +8,74 @@
  */
 
 import { ApiErrorCode, type ApiError } from '@astroid/types';
+export { errorClassForStatus, statusCodeToCode, mapStatusToError, errorFromStatus, extractApiError, type ErrorEnvelopeInput } from './mapper.js';
+import { extractApiError, mapStatusToError } from './mapper.js';
 
-/** Structured context available on every Astroid error. */
-export interface AstroidErrorOptions {
-  code: string;
-  status?: number;
-  requestId?: string;
-  details?: Record<string, unknown>;
-  cause?: unknown;
-}
+export {
+  isAstroidError,
+  isAuthenticationError,
+  isForbiddenError,
+  isValidationError,
+  isNotFoundError,
+  isConflictError,
+  isPolicyViolationError,
+  isInsufficientFundsError,
+  isRateLimitError,
+  isApiRateLimitError,
+  isNetworkError,
+  isServerError,
+} from './guards.js';
 
-/**
- * Base class for all Astroid SDK errors.
- *
- * @example
- * ```ts
- * try {
- *   await astroid.transactions.create(input);
- * } catch (err) {
- *   if (err instanceof BudgetExceededError) {
- *     console.error(err.code, err.details);
- *   }
- * }
- * ```
- */
-export class AstroidError extends Error {
-  /** Machine-readable error code (mirrors the API error code where possible). */
-  readonly code: string;
-  /** HTTP status code, when the error originated from an HTTP response. */
-  readonly status: number | undefined;
-  /** The API request id, for correlating with backend logs. */
-  readonly requestId: string | undefined;
-  /** Structured, machine-readable detail. */
-  readonly details: Record<string, unknown> | undefined;
+export {
+  AstroidError,
+  setIncludeStackInErrors,
+  getIncludeStackInErrors,
+  type AstroidErrorOptions,
+  type SerializedAstroidError,
+} from './base.js';
+import { AstroidError } from './base.js';
 
-  constructor(message: string, options: AstroidErrorOptions) {
-    super(message, options.cause !== undefined ? { cause: options.cause } : undefined);
-    this.name = new.target.name;
-    this.code = options.code;
-    this.status = options.status;
-    this.requestId = options.requestId;
-    this.details = options.details;
-    // Restore prototype chain for reliable `instanceof` across transpile targets.
-    Object.setPrototypeOf(this, new.target.prototype);
-  }
+/* -------------------------------------------------------------------------- */
+/* Specialized HTTP/API error classes                                          */
+/* -------------------------------------------------------------------------- */
 
-  /** Whether retrying the request could plausibly succeed. */
-  get isRetryable(): boolean {
-    return false;
-  }
-
-  /** A plain, serialisable representation (safe to log — no secrets). */
-  toJSON(): Record<string, unknown> {
-  return {
-    name: this.name,
-    message: this.message,
-    code: this.code,
-    status: this.status,
-    requestId: this.requestId,
-    details: this.details,
-    stack: this.stack,
-  };
-  }
-}
-
-/** 401 — missing/invalid credentials, expired token, or invalid API key. */
-export class AuthenticationError extends AstroidError {}
-
-/** 403 — authenticated but not permitted. */
-export class AuthorizationError extends AstroidError {}
-
-/** 400/422 — request failed schema or business validation. */
-export class ValidationError extends AstroidError {
-  /** Field-level validation issues, when the API provides them. */
-  get fieldErrors(): Record<string, string[]> | undefined {
-    return this.details?.fields as Record<string, string[]> | undefined;
-  }
-}
-
-/** 404 — the requested resource does not exist. */
-export class NotFoundError extends AstroidError {}
-
-/** 409 — the request conflicts with the current resource state. */
-export class ConflictError extends AstroidError {}
-
-/** A transaction was blocked because it violates one or more spending policies. */
-export class PolicyViolationError extends AstroidError {}
-
-/** A transaction was blocked because the source account lacks sufficient funds. */
-export class InsufficientFundsError extends AstroidError {}
+export {
+  AuthenticationError,
+  AuthorizationError,
+  ForbiddenError,
+  ValidationError,
+  NotFoundError,
+  ConflictError,
+  PolicyViolationError,
+  InsufficientFundsError,
+  BudgetExceededError,
+  ApprovalRequiredError,
+  RateLimitError,
+  ApiRateLimitError,
+  NetworkError,
+  ServerError,
+  InternalServerError,
+} from './classes.js';
+import {
+  AuthenticationError,
+  ForbiddenError,
+  ValidationError,
+  NotFoundError,
+  ConflictError,
+  PolicyViolationError,
+  InsufficientFundsError,
+  BudgetExceededError,
+  ApprovalRequiredError,
+  RateLimitError,
+  NetworkError,
+  InternalServerError,
+} from './classes.js';
 
 /** Alias for {@link InsufficientFundsError} — matches the naming used in API docs and client middleware. */
 export const AstroidInsufficientFundsError = InsufficientFundsError;
 
 /** Alias for {@link PolicyViolationError} — matches the naming used in API docs and client middleware. */
 export const AstroidPolicyViolationError = PolicyViolationError;
-
-/** A transaction was blocked because it would exceed an available budget. */
-export class BudgetExceededError extends AstroidError {}
-
-/** A transaction requires human approval before it can execute. */
-export class ApprovalRequiredError extends AstroidError {}
-
-/** 429 — rate limit exceeded. Inspect `retryAfter` before retrying. */
-export class RateLimitError extends AstroidError {
-  /** Seconds to wait before retrying, from the `Retry-After` header if present. */
-  get retryAfter(): number | undefined {
-    const value = this.details?.retryAfter;
-    return typeof value === 'number' ? value : undefined;
-  }
-
-  override get isRetryable(): boolean {
-    return true;
-  }
-}
-
-/** A transport-level failure: DNS, connection reset, offline, or timeout. */
-export class NetworkError extends AstroidError {
-  override get isRetryable(): boolean {
-    return true;
-  }
-}
-
-/** 5xx — the API failed to handle a valid request. */
-export class ServerError extends AstroidError {
-  override get isRetryable(): boolean {
-    return true;
-  }
-}
 
 /**
  * Maps an API error code to its concrete error class. Unknown codes fall back to
@@ -149,7 +89,7 @@ export function errorClassForCode(code: string): typeof AstroidError {
     case ApiErrorCode.TOKEN_EXPIRED:
       return AuthenticationError;
     case ApiErrorCode.FORBIDDEN:
-      return AuthorizationError;
+      return ForbiddenError;
     case ApiErrorCode.VALIDATION_ERROR:
     case ApiErrorCode.BAD_REQUEST:
       return ValidationError;
@@ -169,6 +109,14 @@ export function errorClassForCode(code: string): typeof AstroidError {
       return InsufficientFundsError;
     case ApiErrorCode.APPROVAL_REQUIRED:
       return ApprovalRequiredError;
+    case ApiErrorCode.PROPOSAL_EXPIRED:
+      // An expired proposal is a resource-state conflict: the entity existed
+      // but is no longer actionable, mirroring a 409-style stale-state error.
+      return ConflictError;
+    case ApiErrorCode.INVALID_SIGNATURE:
+      // A signature the API could not verify is a malformed-request class
+      // failure: retrying the identical payload cannot succeed.
+      return ValidationError;
     case ApiErrorCode.RATE_LIMITED:
       return RateLimitError;
     case ApiErrorCode.NETWORK_ERROR:
@@ -176,10 +124,14 @@ export function errorClassForCode(code: string): typeof AstroidError {
       return NetworkError;
     case ApiErrorCode.INTERNAL_ERROR:
     case ApiErrorCode.SERVICE_UNAVAILABLE:
-      return ServerError;
+      return InternalServerError;
     default:
       // Also support direct Horizon codes that may leak as API codes
-      if (code === 'op_underfunded' || code === 'op_low_reserve' || code === 'tx_insufficient_balance') {
+      if (
+        code === 'op_underfunded' ||
+        code === 'op_low_reserve' ||
+        code === 'tx_insufficient_balance'
+      ) {
         return InsufficientFundsError;
       }
       return AstroidError;
@@ -222,7 +174,10 @@ export interface NormalizeErrorContext {
  * err instanceof PolicyViolationError; // true
  * ```
  */
-export function fromApiError(apiError: ApiError, context: NormalizeErrorContext = {}): AstroidError {
+export function fromApiError(
+  apiError: ApiError,
+  context: NormalizeErrorContext = {},
+): AstroidError {
   const ErrorClass = errorClassForCode(apiError.code);
   const details = { ...(apiError.details ?? {}), ...(context.details ?? {}) };
   return new ErrorClass(apiError.message, {
@@ -263,11 +218,104 @@ export function toNetworkError(cause: unknown, message = 'Network request failed
 }
 
 /**
+ * Read a failed response body as JSON, tolerating anything a gateway can throw
+ * at us.
+ *
+ * Returns `undefined` — rather than throwing — for the whole class of hostile
+ * inputs: an HTML error page from a reverse proxy, an empty body, a body that
+ * has already been consumed (the stream is locked), or a `content-type` that
+ * lies about being JSON. Callers then fall back to mapping the HTTP status.
+ */
+async function readErrorBody(response: Response): Promise<unknown> {
+  try {
+    const text = await response.text();
+    return text ? (JSON.parse(text) as unknown) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Parse a `Retry-After` header into a non-negative number of seconds.
+ *
+ * The header is defined as either *delta-seconds* or an HTTP-date, so both
+ * forms are supported. Unparseable values yield `undefined` rather than
+ * poisoning `details`.
+ */
+function parseRetryAfterHeader(value: string | null): number | undefined {
+  if (value === null) return undefined;
+  const trimmed = value.trim();
+  if (trimmed === '') return undefined;
+
+  const seconds = Number(trimmed);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds);
+
+  const target = Date.parse(trimmed);
+  if (Number.isNaN(target)) return undefined;
+  return Math.max(0, Math.ceil((target - Date.now()) / 1000));
+}
+
+/**
+ * Build the typed {@link AstroidError} for a failed HTTP `Response`.
+ *
+ * This is the canonical entry point for turning a non-2xx response into a
+ * strongly-typed error. It never throws and never returns a plain `Error` — you
+ * decide whether to `throw` the result, hand it to a caller, or branch on it
+ * with a guard such as {@link isRateLimitError}.
+ *
+ * Resolution order:
+ * 1. The machine-readable `code` in the body envelope (highest fidelity).
+ * 2. The HTTP `status` alone, for bodies with no usable envelope.
+ * 3. The base {@link AstroidError} catch-all for unmapped statuses.
+ *
+ * `status`, `statusCode`, `code`, `requestId` (from the `x-request-id`
+ * header), and the raw API `details` are all populated on the result. A
+ * `Retry-After` header is folded into `details.retryAfter` for 429s that do not
+ * already carry it in the body, so `RateLimitError.retryAfter` is populated even
+ * when the body is missing or non-JSON.
+ *
+ * The `body` argument is optional: when omitted the response body is read and
+ * parsed for you. Pass it explicitly when the body was already consumed
+ * elsewhere (e.g. logged), or when you want to supply a pre-parsed value.
+ *
+ * Malformed input is expected, not exceptional — an HTML 502 page from a load
+ * balancer still produces a correctly-typed `InternalServerError` rather than a
+ * `SyntaxError` from `JSON.parse`.
+ *
+ * @example
+ * ```ts
+ * const res = await fetch('/api/wallets/wal_123');
+ * if (!res.ok) throw await toAstroidError(res);
+ *
+ * // Or with a pre-read body:
+ * const body = await res.json().catch(() => undefined);
+ * if (!res.ok) throw await toAstroidError(res, body);
+ * ```
+ */
+export async function toAstroidError(response: Response, body?: unknown): Promise<AstroidError> {
+  const parsedBody = body === undefined ? await readErrorBody(response) : body;
+  const requestId = response.headers.get('x-request-id') ?? undefined;
+
+  // A body-supplied `retryAfter` is more precise than the header, so only fill
+  // in the header value when the envelope did not already provide one.
+  const envelopeRetryAfter = extractApiError(parsedBody)?.details?.retryAfter;
+  const retryAfter =
+    typeof envelopeRetryAfter === 'number'
+      ? envelopeRetryAfter
+      : parseRetryAfterHeader(response.headers.get('retry-after'));
+
+  return mapStatusToError(response.status, undefined, {
+    body: parsedBody,
+    requestId,
+    details: retryAfter === undefined ? undefined : { retryAfter },
+  });
+}
+
+/**
  * Parse an HTTP `Response` and throw the corresponding typed error.
  *
- * Reads the response body once, parses the JSON envelope, and builds a
- * typed `AstroidError` via {@link fromApiError} or {@link fromStatus}.
- * Useful as a one-liner in fetch-based code:
+ * Thin wrapper over {@link toAstroidError} for the common fetch one-liner, so
+ * there is exactly one implementation of envelope parsing in the package.
  *
  * @example
  * ```ts
@@ -278,36 +326,7 @@ export function toNetworkError(cause: unknown, message = 'Network request failed
  * @throws {AstroidError} always — the function never returns.
  */
 export async function fromErrorResponse(response: Response): Promise<never> {
-  const status = response.status;
-  const requestId = response.headers.get('x-request-id') ?? undefined;
-
-  let body: unknown;
-  try {
-    const text = await response.text();
-    body = text ? JSON.parse(text) : undefined;
-  } catch {
-    body = undefined;
-  }
-
-  const envelope = body as
-    | { error?: { code?: string; message?: string; details?: Record<string, unknown> } }
-    | undefined;
-
-  if (envelope?.error) {
-    const apiError = {
-      code: envelope.error.code ?? codeForStatus(status),
-      message: envelope.error.message ?? `Request failed with status ${status}`,
-      details: envelope.error.details,
-    };
-    throw fromApiError(apiError, { status, requestId });
-  }
-
-  throw fromStatus(status, `Request failed with status ${status}`, { requestId });
-}
-
-/** Type guard: is this value an Astroid SDK error? */
-export function isAstroidError(value: unknown): value is AstroidError {
-  return value instanceof AstroidError;
+  throw await toAstroidError(response);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -326,3 +345,27 @@ export const AstroidValidationError = ValidationError;
 
 /** Alias for {@link NetworkError} — transport failures and timeouts. */
 export const AstroidNetworkError = NetworkError;
+
+/* -------------------------------------------------------------------------- */
+/* Structured Stellar error mapping (issue #253)                               */
+/* -------------------------------------------------------------------------- */
+
+export {
+  InsufficientBalanceError,
+  TrustlineMissingError,
+  StellarAuthError,
+  SequenceConflictError,
+  TransactionExpiredError,
+  StellarMalformedError,
+  StellarNetworkError,
+  STELLAR_OPERATION_CODE_MAP,
+  STELLAR_TRANSACTION_CODE_MAP,
+  STELLAR_CODE_STATUS_MAP,
+  extractStellarResultCodes,
+  errorClassForStellarCode,
+  mapStellarError,
+  stellarCodeToApiError,
+  isStellarError,
+  type StellarResultCodes,
+  type StellarMappingContext,
+} from './stellar.js';

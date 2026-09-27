@@ -205,7 +205,21 @@ export class HttpClient {
         // Non-2xx: decide whether to retry, otherwise throw a typed error.
         const error = this.toError(raw);
         await this.middleware.applyError(error, prepared);
-        const shouldRetryStatus = contextOptions?.shouldRetryStatus ?? isRetryableStatus;
+        // Resolve the retryable-status predicate. Precedence:
+        //   1. a custom predicate supplied to the retry middleware,
+        //   2. an explicit `retryableStatusCodes` list,
+        //   3. an explicit `retryableStatuses` list,
+        //   4. the SDK-wide default.
+        const retryableStatusCodes =
+          contextOptions?.retryableStatusCodes ?? retry?.retryableStatusCodes;
+        const retryableStatuses = retry?.retryableStatuses;
+        const shouldRetryStatus =
+          contextOptions?.shouldRetryStatus ??
+          (retryableStatusCodes
+            ? (status: number) => retryableStatusCodes.includes(status)
+            : retryableStatuses && retryableStatuses.length > 0
+              ? (status: number) => retryableStatuses.includes(status)
+              : isRetryableStatus);
         if (retry && prepared.retryable && attempt < maxAttempts && shouldRetryStatus(raw.status)) {
           lastError = error;
           const delay = this.retryDelay(attempt, raw, retry);
@@ -219,8 +233,27 @@ export class HttpClient {
       } catch (err) {
         if (isAbortError(err)) throw err;
         // Transport-level failure (DNS, reset, timeout): retry if allowed.
-        const isTyped = isAstroidErrorLike(err);
-        if (isTyped) throw err; // already thrown above, propagate
+        //
+        // Errors that carry an HTTP status were already given their retry
+        // decision by the non-2xx branch above, so they propagate untouched.
+        // Status-less typed errors (i.e. no response was ever received) such as
+        // `AstroidTimeoutError` are transient transport failures and must go
+        // through the same backoff as a raw `TypeError` would.
+        if (isAstroidErrorLike(err)) {
+          const typed = err as AstroidError;
+          if (!isTransportFailure(typed)) throw typed;
+          if (retry && prepared.retryable && attempt < maxAttempts) {
+            lastError = typed;
+            const delay = backoffDelay(attempt, retry);
+            if (contextOptions?.onRetry) {
+              contextOptions.onRetry(attempt, typed, delay, prepared);
+            }
+            await sleep(delay, prepared.signal);
+            continue;
+          }
+          await this.middleware.applyError(typed, prepared);
+          throw typed;
+        }
         const networkError = toNetworkError(err);
         if (retry && prepared.retryable && attempt < maxAttempts) {
           lastError = networkError;
@@ -382,9 +415,20 @@ export class HttpClient {
   }
 }
 
-/** Whether an unknown value is a DOMException-style abort. */
+/**
+ * Whether an unknown value is an abort error.
+ *
+ * `fetch` and our `sleep` reject with a `DOMException` named `AbortError`,
+ * which is **not** an `instanceof Error` in every runtime, so we match on the
+ * `name` property instead. This guarantees an abort stops pending retries
+ * immediately rather than being mistaken for a retryable network failure.
+ */
 function isAbortError(value: unknown): boolean {
-  return value instanceof Error && value.name === 'AbortError';
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (value as { name?: unknown }).name === 'AbortError'
+  );
 }
 
 /** Build a DOM-compatible abort error regardless of runtime. */
@@ -399,4 +443,16 @@ function abortError(reason: unknown): Error {
 /** Loose check: was this error already produced by our error layer? */
 function isAstroidErrorLike(value: unknown): boolean {
   return value instanceof Error && 'code' in value && 'isRetryable' in value;
+}
+
+/**
+ * Whether a typed error is a transport-level failure — no HTTP response was
+ * ever received, so the request may still succeed on a later attempt.
+ *
+ * `AstroidTimeoutError` is the canonical example. Errors mapped from a non-2xx
+ * response carry an HTTP `status` and have already had their retry decision
+ * made against `isRetryableStatus`, so they are excluded here.
+ */
+function isTransportFailure(error: AstroidError): boolean {
+  return error.status === undefined && error.isRetryable;
 }

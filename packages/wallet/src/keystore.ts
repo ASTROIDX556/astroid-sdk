@@ -253,10 +253,7 @@ export class SecureKeystore {
    * @returns The original secret key plaintext string.
    * @throws {ValidationError} When decryption fails (wrong passphrase, bad payload, or auth tag mismatch).
    */
-  async decryptKey(
-    payload: EncryptedPayload | string,
-    passphrase: string,
-  ): Promise<string> {
+  async decryptKey(payload: EncryptedPayload | string, passphrase: string): Promise<string> {
     assertPassphrase(passphrase);
 
     const resolved: EncryptedPayload =
@@ -334,7 +331,9 @@ export class SecureKeystore {
     }
 
     if (typeof obj !== 'object' || obj === null) {
-      throw new ValidationError('Invalid payload: expected an object.', { code: 'INVALID_PAYLOAD' });
+      throw new ValidationError('Invalid payload: expected an object.', {
+        code: 'INVALID_PAYLOAD',
+      });
     }
     const p = obj as Record<string, unknown>;
     if (

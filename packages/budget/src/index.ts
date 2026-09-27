@@ -1,4 +1,5 @@
 export * from './calculator.js';
+export * from './budget.js';
 
 // `metrics.ts` and `validation.ts` both export a `SpendRequest` alias for the
 // same shape; re-export explicitly to avoid a duplicate-export ambiguity.
@@ -13,20 +14,70 @@ export {
 } from './metrics.js';
 export { checkBudgetLimit, type BudgetValidationResult } from './validation.js';
 
+export {
+  assertValidThresholdPercent,
+  createBudgetAlert,
+  deleteBudgetAlert,
+  getBudgetAlert,
+  isValidBudgetAlertChannel,
+  listBudgetAlerts,
+  updateBudgetAlert,
+  BudgetAlertValidationError,
+  BUDGET_ALERT_THRESHOLDS,
+  type BudgetAlert,
+  type BudgetAlertChannel,
+  type CreateBudgetAlertInput,
+  type UpdateBudgetAlertInput,
+  type ListBudgetAlertsParams,
+} from './alerts.js';
+export {
+  BudgetClient,
+  classifyAllocation,
+  deriveAllocationStatus,
+  isAllocationExhausted,
+  toBudgetQuery,
+  DEFAULT_ALLOCATION_THRESHOLDS,
+  type BudgetHttpClient,
+  type BudgetQuery,
+  type BudgetRequestOptions,
+  type DeriveAllocationOptions,
+  type ListBudgetsParams,
+} from './budget.js';
+export {
+  validateSimulationRequest,
+  resolveBudgetWindow,
+  resolveBudgetRemaining,
+  isBudgetExpired,
+  toBudgetCheckResult,
+  type ValidateSimulationOptions,
+} from './simulation.js';
+
 import { Resource } from '@astroid/core';
 import type {
   Budget,
+  BudgetAlert,
   BudgetHistoryEntry,
   BudgetPeriod,
+  BudgetSimulationCheckResult,
   BudgetSimulationInput,
   BudgetSimulationResult,
   BudgetUtilization,
   ConsumeBudgetInput,
+  CreateBudgetAlertInput,
   CreateBudgetInput,
+  ListBudgetAlertsParams,
   Paginated,
+  PaginatedResponse,
   PaginationParams,
+  UpdateBudgetAlertInput,
   UpdateBudgetInput,
 } from '@astroid/types';
+import { validateSimulationRequest, type ValidateSimulationOptions } from './simulation.js';
+import {
+  assertValidThresholdPercent,
+  isValidBudgetAlertChannel,
+  BudgetAlertValidationError,
+} from './alerts.js';
 
 /** Filters accepted by {@link BudgetResource.list}. */
 export interface BudgetListParams extends PaginationParams {
@@ -103,10 +154,9 @@ export class BudgetResource extends Resource {
     budgetId: string,
     params: PaginationParams = {},
   ): Promise<Paginated<BudgetHistoryEntry>> {
-    return this.listData<BudgetHistoryEntry>(
-      `/budgets/${encodeURIComponent(budgetId)}/history`,
-      { ...params },
-    );
+    return this.listData<BudgetHistoryEntry>(`/budgets/${encodeURIComponent(budgetId)}/history`, {
+      ...params,
+    });
   }
 
   /**
@@ -152,6 +202,77 @@ export class BudgetResource extends Resource {
   }
 
   /**
+   * Run the full dry-run validation for a proposed spend: the request is
+   * checked locally (expired budget, disabled budget, multi-asset conversion
+   * and limit overflow) and then — when the local check passes — forwarded to
+   * the API's simulation endpoint for the authoritative evaluation.
+   *
+   * The returned {@link BudgetSimulationCheckResult} carries typed violations
+   * so agents can branch on machine-readable reasons instead of parsing the
+   * `explanation` string.
+   *
+   * @param budgetId The budget to simulate against.
+   * @param input    The proposed transaction parameters.
+   * @param budget   Optional pre-fetched budget (skips the `get` round-trip).
+   * @param options  Evaluation options (custom `now` for tests).
+   * @returns        The strongly typed dry-run result.
+   * @throws        Propagates API errors when the local check passes and the
+   *                remote simulation call fails.
+   *
+   * @example
+   * ```ts
+   * const result = await budgets.simulateBudgetCheck('bud_1', {
+   *   asset: 'USDC',
+   *   amount: '250',
+   * });
+   * if (!result.allowed) {
+   *   throw new Error(result.violations.map((v) => v.message).join('; '));
+   * }
+   * ```
+   */
+  async validateBudgetSpend(
+    budgetId: string,
+    input: BudgetSimulationInput & { conversionRate?: string | number },
+    options: { budget?: Budget; simulation?: ValidateSimulationOptions } = {},
+  ): Promise<BudgetSimulationCheckResult> {
+    const budget = options.budget ?? (await this.get(budgetId));
+    const local = validateSimulationRequest(budget, input, options.simulation);
+
+    // A locally-rejected draw never reaches the API — the dry-run result is
+    // already final and no state was mutated.
+    if (!local.allowed) return local;
+
+    const { asset, amount } = input;
+    const remote = await this.simulateBudgetCheck(budgetId, { asset, amount });
+
+    // The remote decision is authoritative: if the API rejects the draw, map
+    // its textual violations onto the typed shape while preserving the wire
+    // counters (`remainingAfter`, `windowStart`).
+    if (!remote.allowed) {
+      return {
+        ...local,
+        allowed: false,
+        wouldExceed: remote.wouldExceed || local.wouldExceed,
+        afterRemaining: remote.remainingAfter,
+        explanation: remote.restriction || local.explanation,
+        violations: [
+          ...local.violations,
+          {
+            reason: 'LIMIT_OVERFLOW' as const,
+            message: remote.restriction ?? 'The API rejected the simulated draw.',
+          },
+        ],
+      };
+    }
+
+    return {
+      ...local,
+      afterRemaining: remote.remainingAfter,
+      explanation: local.explanation,
+    };
+  }
+
+  /**
    * Retrieve the current utilization snapshot for a budget.
    *
    * @param budgetId The budget to inspect.
@@ -159,8 +280,178 @@ export class BudgetResource extends Resource {
    *                 for the active window (see {@link BudgetUtilization}).
    */
   async utilization(budgetId: string): Promise<BudgetUtilization> {
-    return this.getData<BudgetUtilization>(
-      `/budgets/${encodeURIComponent(budgetId)}/utilization`,
+    return this.getData<BudgetUtilization>(`/budgets/${encodeURIComponent(budgetId)}/utilization`);
+  }
+
+  /**
+   * Retrieve the current utilization snapshot for a budget.
+   *
+   * This is the fully-qualified alias of {@link BudgetResource.utilization}
+   * exposed for callers who prefer a `getBudgetUtilization`-style resource API;
+   * behaviour is identical.
+   *
+   * @param budgetId The budget to inspect.
+   * @returns        Limit, spending, headroom, and the 0..1 utilization ratio
+   *                 for the active window (see {@link BudgetUtilization}).
+   */
+  async getBudgetUtilization(budgetId: string): Promise<BudgetUtilization> {
+    return this.utilization(budgetId);
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* Threshold alert subscriptions                                            */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * Create a budget threshold alert subscription.
+   *
+   * Fires a webhook / email / Slack / dashboard notification when spending
+   * reaches `input.thresholdPercent` of the budget limit (commonly `80`).
+   *
+   * @param budgetId The budget to attach the alert to.
+   * @param input Threshold percent, channel and destination.
+   * @returns The created {@link BudgetAlert}.
+   * @throws {BudgetAlertValidationError} When `input` is structurally invalid.
+   *   API transport errors propagate unchanged.
+   */
+  async createAlert(budgetId: string, input: CreateBudgetAlertInput): Promise<BudgetAlert> {
+    assertCreateAlertInput(input);
+    const res = await this.client.post<BudgetAlert>(
+      `/v1/budgets/${encodeURIComponent(budgetId)}/alerts`,
+      input,
+    );
+    return res.data;
+  }
+
+  /**
+   * List the threshold alerts configured on a budget.
+   *
+   * @param budgetId The budget whose alerts to list.
+   * @param params Optional status/channel filters and pagination.
+   * @returns A paginated list of {@link BudgetAlert} subscriptions.
+   */
+  async listAlerts(
+    budgetId: string,
+    params: ListBudgetAlertsParams = {},
+  ): Promise<Paginated<BudgetAlert>> {
+    return this.listData<BudgetAlert>(`/v1/budgets/${encodeURIComponent(budgetId)}/alerts`, {
+      ...params,
+    });
+  }
+
+  /**
+   * List the threshold alerts configured on a budget.
+   *
+   * Paginated-response variant matching the standalone
+   * `listBudgetAlerts` helper shape.
+   *
+   * @param budgetId The budget whose alerts to list.
+   * @param params Optional status/channel filters and pagination.
+   */
+  async listBudgetAlerts(
+    budgetId: string,
+    params: ListBudgetAlertsParams = {},
+  ): Promise<PaginatedResponse<BudgetAlert>> {
+    const page = await this.listAlerts(budgetId, params);
+    return { data: page.data } as PaginatedResponse<BudgetAlert>;
+  }
+
+  /**
+   * Retrieve a single budget threshold alert by id.
+   *
+   * @param budgetId The budget id.
+   * @param alertId The alert id.
+   */
+  async getAlert(budgetId: string, alertId: string): Promise<BudgetAlert> {
+    return this.getData<BudgetAlert>(
+      `/v1/budgets/${encodeURIComponent(budgetId)}/alerts/${encodeURIComponent(alertId)}`,
+    );
+  }
+
+  /**
+   * Update a budget threshold alert subscription.
+   *
+   * @param budgetId The budget id.
+   * @param alertId The alert id.
+   * @param input Updated threshold percent, channel, destination, or status.
+   * @throws {BudgetAlertValidationError} When a supplied field is invalid.
+   */
+  async updateAlert(
+    budgetId: string,
+    alertId: string,
+    input: UpdateBudgetAlertInput,
+  ): Promise<BudgetAlert> {
+    if (input.thresholdPercent !== undefined) {
+      assertValidThresholdPercent(input.thresholdPercent);
+    }
+    if (input.channel !== undefined && !isValidBudgetAlertChannel(input.channel)) {
+      throw new BudgetAlertValidationError(
+        `Unknown budget alert channel "${String(input.channel)}".`,
+        { channel: input.channel },
+      );
+    }
+    const res = await this.client.patch<BudgetAlert>(
+      `/v1/budgets/${encodeURIComponent(budgetId)}/alerts/${encodeURIComponent(alertId)}`,
+      input,
+    );
+    return res.data;
+  }
+
+  /**
+   * Delete a budget threshold alert subscription.
+   *
+   * @param budgetId The budget id.
+   * @param alertId The alert id to delete.
+   */
+  async deleteAlert(budgetId: string, alertId: string): Promise<void> {
+    await this.client.delete<void>(
+      `/v1/budgets/${encodeURIComponent(budgetId)}/alerts/${encodeURIComponent(alertId)}`,
     );
   }
 }
+
+/** Channels that require a non-empty `target`. */
+const TARGETED_ALERT_CHANNELS: readonly string[] = ['EMAIL', 'WEBHOOK', 'SLACK'];
+
+/**
+ * Pre-flight validation for {@link BudgetResource.createAlert}, mirroring the
+ * standalone `createBudgetAlert` helper so the resource fails fast without a
+ * network round-trip.
+ */
+function assertCreateAlertInput(input: CreateBudgetAlertInput): void {
+  assertValidThresholdPercent(input.thresholdPercent);
+  if (!isValidBudgetAlertChannel(input.channel)) {
+    throw new BudgetAlertValidationError(`Unknown budget alert channel "${String(input.channel)}".`, {
+      channel: input.channel,
+    });
+  }
+  if (
+    TARGETED_ALERT_CHANNELS.includes(input.channel) &&
+    (typeof input.target !== 'string' || input.target.trim() === '')
+  ) {
+    throw new BudgetAlertValidationError(`A "${input.channel}" alert requires a non-empty target.`, {
+      channel: input.channel,
+    });
+  }
+}
+
+/**
+ * Budget DTOs re-exported from `@astroid/types` so consumers of
+ * `@astroid/budget` can use the resource return types without a second import.
+ */
+export type {
+  Budget,
+  BudgetAllocationState,
+  BudgetAllocationStatus,
+  BudgetAllocationThresholds,
+  BudgetCheckResult,
+  BudgetMetrics,
+  BudgetSimulationCheckResult,
+  BudgetSimulationRejectionReason,
+  BudgetSimulationViolation,
+  BudgetSimulationResult,
+  BudgetUtilization,
+} from '@astroid/types';
+
+/** Alias of {@link BudgetResource} matching the `*sResource` client naming. */
+export const BudgetsResource = BudgetResource;

@@ -33,12 +33,36 @@ export interface AuthConfig {
 
 /** Retry/backoff behaviour for transient failures. */
 export interface RetryConfig {
-  /** Maximum number of retries after the first attempt. Default 2. */
+  /** Maximum number of retries after the first attempt. Default 3. */
   maxRetries: number;
   /** Base backoff in ms; grows exponentially with jitter. Default 250. */
   baseDelayMs: number;
   /** Upper bound for a single backoff delay in ms. Default 8000. */
   maxDelayMs: number;
+  /**
+   * HTTP statuses that should be retried. Defaults to the SDK set
+   * `[429, 502, 503, 504]` (rate limiting and gateway errors).
+   */
+  retryableStatuses?: number[];
+  /**
+   * Apply full jitter (a random point in `[0, cappedDelay]`) to each backoff
+   * delay. Default `true`; set to `false` for deterministic delays.
+   */
+  jitter?: boolean;
+  /**
+   * Multiplier applied per attempt when computing exponential backoff:
+   * `baseDelayMs * backoffFactor^(attempt - 1)`. Default `2`.
+   */
+  backoffFactor?: number;
+  /**
+   * The HTTP status codes that warrant a retry.
+   *
+   * When omitted, the SDK-wide default applies: `429` and any `5xx`. Supply an
+   * explicit list (e.g. `[429, 502, 503, 504]`) to retry only those statuses —
+   * useful when an upstream gateway emits transient codes outside the standard
+   * set. `shouldRetryStatus` on the retry middleware takes precedence over this.
+   */
+  retryableStatusCodes?: number[];
 }
 
 /**
@@ -126,6 +150,14 @@ export interface AstroidClientConfig extends AuthConfig {
   rateLimit?: RateLimitConfig;
   /** Request/response telemetry hooks for logging and monitoring. */
   telemetry?: TelemetryHooks;
+  /**
+   * Static tracing headers merged into every outbound request.
+   *
+   * Use this for organization-wide correlation (e.g. a fixed tenant or deployment
+   * correlation id). Per-request `options.headers`, `options.correlationId` and
+   * `options.requestId` take precedence over these values (issue #255).
+   */
+  tracingHeaders?: Record<string, string>;
 }
 
 /** Fully-resolved configuration with all defaults applied. */
@@ -141,15 +173,18 @@ export interface ResolvedConfig {
   enableOfflineQueue: boolean;
   /** Token-bucket rate limiting options, when configured. See {@link RateLimitConfig}. */
   rateLimit?: RateLimitConfig;
+  /** Static tracing headers merged into every request. See {@link AstroidClientConfig.tracingHeaders}. */
+  tracingHeaders?: Record<string, string>;
 }
 
 /** The default public API base URL. */
 export const DEFAULT_BASE_URL = 'https://api.astroid.finance';
 
 const DEFAULT_RETRY: RetryConfig = {
-  maxRetries: 2,
+  maxRetries: 3,
   baseDelayMs: 250,
   maxDelayMs: 8000,
+  backoffFactor: 2,
 };
 
 /** Strip a single trailing slash so URL joins stay clean. */
@@ -188,5 +223,6 @@ export function resolveConfig(config: AstroidClientConfig): ResolvedConfig {
     network: config.network,
     enableOfflineQueue: config.enableOfflineQueue ?? false,
     rateLimit: config.rateLimit,
+    tracingHeaders: config.tracingHeaders,
   };
 }
