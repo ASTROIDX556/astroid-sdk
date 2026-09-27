@@ -43,12 +43,21 @@ export {
   type DeriveAllocationOptions,
   type ListBudgetsParams,
 } from './budget.js';
+export {
+  validateSimulationRequest,
+  resolveBudgetWindow,
+  resolveBudgetRemaining,
+  isBudgetExpired,
+  toBudgetCheckResult,
+  type ValidateSimulationOptions,
+} from './simulation.js';
 
 import { Resource } from '@astroid/core';
 import type {
   Budget,
   BudgetHistoryEntry,
   BudgetPeriod,
+  BudgetSimulationCheckResult,
   BudgetSimulationInput,
   BudgetSimulationResult,
   BudgetUtilization,
@@ -58,6 +67,7 @@ import type {
   PaginationParams,
   UpdateBudgetInput,
 } from '@astroid/types';
+import { validateSimulationRequest, type ValidateSimulationOptions } from './simulation.js';
 
 /** Filters accepted by {@link BudgetResource.list}. */
 export interface BudgetListParams extends PaginationParams {
@@ -182,6 +192,77 @@ export class BudgetResource extends Resource {
   }
 
   /**
+   * Run the full dry-run validation for a proposed spend: the request is
+   * checked locally (expired budget, disabled budget, multi-asset conversion
+   * and limit overflow) and then — when the local check passes — forwarded to
+   * the API's simulation endpoint for the authoritative evaluation.
+   *
+   * The returned {@link BudgetSimulationCheckResult} carries typed violations
+   * so agents can branch on machine-readable reasons instead of parsing the
+   * `explanation` string.
+   *
+   * @param budgetId The budget to simulate against.
+   * @param input    The proposed transaction parameters.
+   * @param budget   Optional pre-fetched budget (skips the `get` round-trip).
+   * @param options  Evaluation options (custom `now` for tests).
+   * @returns        The strongly typed dry-run result.
+   * @throws        Propagates API errors when the local check passes and the
+   *                remote simulation call fails.
+   *
+   * @example
+   * ```ts
+   * const result = await budgets.simulateBudgetCheck('bud_1', {
+   *   asset: 'USDC',
+   *   amount: '250',
+   * });
+   * if (!result.allowed) {
+   *   throw new Error(result.violations.map((v) => v.message).join('; '));
+   * }
+   * ```
+   */
+  async validateBudgetSpend(
+    budgetId: string,
+    input: BudgetSimulationInput & { conversionRate?: string | number },
+    options: { budget?: Budget; simulation?: ValidateSimulationOptions } = {},
+  ): Promise<BudgetSimulationCheckResult> {
+    const budget = options.budget ?? (await this.get(budgetId));
+    const local = validateSimulationRequest(budget, input, options.simulation);
+
+    // A locally-rejected draw never reaches the API — the dry-run result is
+    // already final and no state was mutated.
+    if (!local.allowed) return local;
+
+    const { asset, amount } = input;
+    const remote = await this.simulateBudgetCheck(budgetId, { asset, amount });
+
+    // The remote decision is authoritative: if the API rejects the draw, map
+    // its textual violations onto the typed shape while preserving the wire
+    // counters (`remainingAfter`, `windowStart`).
+    if (!remote.allowed) {
+      return {
+        ...local,
+        allowed: false,
+        wouldExceed: remote.wouldExceed || local.wouldExceed,
+        afterRemaining: remote.remainingAfter,
+        explanation: remote.restriction || local.explanation,
+        violations: [
+          ...local.violations,
+          {
+            reason: 'LIMIT_OVERFLOW' as const,
+            message: remote.restriction ?? 'The API rejected the simulated draw.',
+          },
+        ],
+      };
+    }
+
+    return {
+      ...local,
+      afterRemaining: remote.remainingAfter,
+      explanation: local.explanation,
+    };
+  }
+
+  /**
    * Retrieve the current utilization snapshot for a budget.
    *
    * @param budgetId The budget to inspect.
@@ -219,6 +300,9 @@ export type {
   BudgetAllocationThresholds,
   BudgetCheckResult,
   BudgetMetrics,
+  BudgetSimulationCheckResult,
+  BudgetSimulationRejectionReason,
+  BudgetSimulationViolation,
   BudgetSimulationResult,
   BudgetUtilization,
 } from '@astroid/types';
