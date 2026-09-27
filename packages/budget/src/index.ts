@@ -455,4 +455,3 @@ export type {
 
 /** Alias of {@link BudgetResource} matching the `*sResource` client naming. */
 export const BudgetsResource = BudgetResource;
-
