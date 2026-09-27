@@ -162,6 +162,39 @@ describe('PolicyResource — pre-flight simulation and dry-run helper', () => {
     expect(JSON.parse(String((init as RequestInit).body))).toEqual(input);
   });
 
+
+  it('simulatePolicy surfaces API validation failures as a ValidationError', async () => {
+    const { resource, fetch } = client(async () =>
+      new Response(
+        JSON.stringify({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'amount must be a positive decimal',
+            details: { fields: { amount: ['must be a positive decimal'] } },
+          },
+        }),
+        { status: 400, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+
+    let caught: unknown;
+    try {
+      await resource.simulatePolicy({ walletId: 'w_1', asset: 'USDC', amount: '-5' });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(ValidationError);
+    expect((caught as ValidationError).code).toBe('VALIDATION_ERROR');
+    expect((caught as ValidationError).fieldErrors).toEqual({
+      amount: ['must be a positive decimal'],
+    });
+    // The invalid payload still went to the simulate endpoint exactly once.
+    const [url, init] = fetch.mock.calls[0]!;
+    expect(String(url)).toContain('/policies/simulate');
+    expect((init as RequestInit).method).toBe('POST');
+    expect(fetch.mock.calls).toHaveLength(1);
+  });
   it('simulatePolicy serializes the full transaction payload and policy-rule selectors', async () => {
     const { resource, fetch } = client(async () => jsonResponse({ data: SIM_RESULT }));
 
@@ -236,6 +269,7 @@ describe('PolicyResource — pre-flight simulation and dry-run helper', () => {
     expect(String(url)).toContain('/policies/simulate');
     expect((init as RequestInit).method).toBe('POST');
     expect(JSON.parse(String((init as RequestInit).body))).toEqual(input);
+
   });
 
   it('propagates network failures as a structured NetworkError', async () => {
@@ -320,6 +354,7 @@ describe('PolicyResource — simulateTransaction wrapper (list + local evaluate)
 
     expect(report.passed).toBe(true);
     expect(fetch.mock.calls).toHaveLength(1);
+      });
   });
 
   it('scopes by agentId when given instead of walletId', async () => {
@@ -337,7 +372,6 @@ describe('PolicyResource — simulateTransaction wrapper (list + local evaluate)
     expect(url).toContain('agentId=ag_1');
     expect(url).not.toContain('walletId');
   });
-});
 
 /* -------------------------------------------------------------------------- */
 /* PolicyClient — the name from the #242 acceptance criteria                   */
@@ -359,6 +393,11 @@ describe('PolicyClient export surface', () => {
       'list',
       'update',
       'delete',
+      'createPolicy',
+      'getPolicy',
+      'listPolicies',
+      'updatePolicy',
+      'deletePolicy',
       'simulate',
       'simulatePolicy',
       'simulateTransaction',
@@ -490,6 +529,35 @@ describe('PolicyResource — typed API failures', () => {
     await expect(resource.create(CREATE_INPUT)).rejects.toThrow('maxAmount must be positive');
   });
 
+  it('update surfaces a 404 as NotFoundError', async () => {
+    const { resource } = client(async () =>
+      jsonResponse({ error: { code: 'NOT_FOUND', message: 'Policy not found' } }, 404),
+    );
+
+    await expect(resource.update('pol_missing', { enabled: false })).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
+  });
+
+  it('simulatePolicy surfaces a 422 validation failure as a structured ValidationError', async () => {
+    const { resource } = client(async () =>
+      jsonResponse(
+        {
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'recipientAddress must be a valid Stellar public key',
+            details: { fields: { recipientAddress: ['must be a valid Stellar public key'] } },
+          },
+        },
+        422,
+      ),
+    );
+
+    const failing = resource.simulatePolicy({ walletId: 'w_1', asset: 'USDC', amount: '50' });
+    await expect(failing).rejects.toBeInstanceOf(ValidationError);
+    await expect(failing).rejects.toThrow('recipientAddress must be a valid Stellar public key');
+  });
+
   it('delete surfaces a 404 as NotFoundError', async () => {
     const { resource } = client(async () =>
       jsonResponse({ error: { code: 'NOT_FOUND', message: 'Policy not found' } }, 404),
@@ -552,5 +620,87 @@ describe('PolicyResource — list filters', () => {
     await resource.get('pol/../admin');
 
     expect(String(fetch.mock.calls[0]![0])).toContain('pol%2F..%2Fadmin');
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Issue #276 — createPolicy/getPolicy/listPolicies/updatePolicy/deletePolicy  */
+/* -------------------------------------------------------------------------- */
+
+describe('PolicyResource — #276 named CRUD aliases', () => {
+  it('createPolicy POSTs to /policies and returns the policy', async () => {
+    const { resource, fetch } = client(async () => jsonResponse({ data: POLICY }));
+
+    const created = await resource.createPolicy(CREATE_INPUT);
+
+    expect(created).toEqual(POLICY);
+    const [url, init] = fetch.mock.calls[0]!;
+    expect(String(url)).toContain('/policies');
+    expect((init as RequestInit).method).toBe('POST');
+    expect(JSON.parse(String((init as RequestInit).body))).toEqual(CREATE_INPUT);
+  });
+
+  it('getPolicy fetches a single policy by id', async () => {
+    const { resource, fetch } = client(async () => jsonResponse({ data: POLICY }));
+
+    expect(await resource.getPolicy('pol_1')).toEqual(POLICY);
+    expect(String(fetch.mock.calls[0]![0])).toContain('/policies/pol_1');
+  });
+
+  it('listPolicies forwards filters and returns the paginated set', async () => {
+    const { resource, fetch } = client(async () =>
+      jsonResponse({
+        data: [POLICY],
+        meta: { page: 1, limit: 20, total: 1, totalPages: 1 },
+      }),
+    );
+
+    const result = await resource.listPolicies({ enabled: true, type: 'MAX_AMOUNT' });
+
+    expect(result.data).toEqual([POLICY]);
+    const url = new URL(String(fetch.mock.calls[0]![0]));
+    expect(url.searchParams.get('enabled')).toBe('true');
+    expect(url.searchParams.get('type')).toBe('MAX_AMOUNT');
+  });
+
+  it('updatePolicy PATCHes the policy and returns the updated record', async () => {
+    const { resource, fetch } = client(async () =>
+      jsonResponse({ data: { ...POLICY, enabled: false } }),
+    );
+
+    const updated = await resource.updatePolicy('pol_1', { enabled: false });
+
+    expect(updated.enabled).toBe(false);
+    const [url, init] = fetch.mock.calls[0]!;
+    expect(String(url)).toContain('/policies/pol_1');
+    expect((init as RequestInit).method).toBe('PATCH');
+  });
+
+  it('deletePolicy issues a DELETE and resolves to void', async () => {
+    const { resource, fetch } = client(async () => new Response(null, { status: 204 }));
+
+    await expect(resource.deletePolicy('pol_1')).resolves.toBeUndefined();
+    const [url, init] = fetch.mock.calls[0]!;
+    expect(String(url)).toContain('/policies/pol_1');
+    expect((init as RequestInit).method).toBe('DELETE');
+  });
+
+  it('aliases agree with their canonical counterparts', async () => {
+    const { resource } = client(async () => jsonResponse({ data: POLICY }));
+
+    await expect(resource.createPolicy(CREATE_INPUT)).resolves.toEqual(
+      await resource.create(CREATE_INPUT),
+    );
+    await expect(resource.getPolicy('pol_1')).resolves.toEqual(await resource.get('pol_1'));
+  });
+
+  it('updatePolicy surfaces a 404 as NotFoundError', async () => {
+    const { resource } = client(async () =>
+      jsonResponse({ error: { code: 'NOT_FOUND', message: 'Policy not found' } }, 404),
+    );
+
+    await expect(resource.updatePolicy('pol_missing', { enabled: true })).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
   });
 });

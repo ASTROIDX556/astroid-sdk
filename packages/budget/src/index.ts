@@ -55,6 +55,7 @@ export {
 import { Resource } from '@astroid/core';
 import type {
   Budget,
+  BudgetAlert,
   BudgetHistoryEntry,
   BudgetPeriod,
   BudgetSimulationCheckResult,
@@ -62,12 +63,21 @@ import type {
   BudgetSimulationResult,
   BudgetUtilization,
   ConsumeBudgetInput,
+  CreateBudgetAlertInput,
   CreateBudgetInput,
+  ListBudgetAlertsParams,
   Paginated,
+  PaginatedResponse,
   PaginationParams,
+  UpdateBudgetAlertInput,
   UpdateBudgetInput,
 } from '@astroid/types';
 import { validateSimulationRequest, type ValidateSimulationOptions } from './simulation.js';
+import {
+  assertValidThresholdPercent,
+  isValidBudgetAlertChannel,
+  BudgetAlertValidationError,
+} from './alerts.js';
 
 /** Filters accepted by {@link BudgetResource.list}. */
 export interface BudgetListParams extends PaginationParams {
@@ -287,6 +297,142 @@ export class BudgetResource extends Resource {
   async getBudgetUtilization(budgetId: string): Promise<BudgetUtilization> {
     return this.utilization(budgetId);
   }
+
+  /* ------------------------------------------------------------------------ */
+  /* Threshold alert subscriptions                                            */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * Create a budget threshold alert subscription.
+   *
+   * Fires a webhook / email / Slack / dashboard notification when spending
+   * reaches `input.thresholdPercent` of the budget limit (commonly `80`).
+   *
+   * @param budgetId The budget to attach the alert to.
+   * @param input Threshold percent, channel and destination.
+   * @returns The created {@link BudgetAlert}.
+   * @throws {BudgetAlertValidationError} When `input` is structurally invalid.
+   *   API transport errors propagate unchanged.
+   */
+  async createAlert(budgetId: string, input: CreateBudgetAlertInput): Promise<BudgetAlert> {
+    assertCreateAlertInput(input);
+    const res = await this.client.post<BudgetAlert>(
+      `/v1/budgets/${encodeURIComponent(budgetId)}/alerts`,
+      input,
+    );
+    return res.data;
+  }
+
+  /**
+   * List the threshold alerts configured on a budget.
+   *
+   * @param budgetId The budget whose alerts to list.
+   * @param params Optional status/channel filters and pagination.
+   * @returns A paginated list of {@link BudgetAlert} subscriptions.
+   */
+  async listAlerts(
+    budgetId: string,
+    params: ListBudgetAlertsParams = {},
+  ): Promise<Paginated<BudgetAlert>> {
+    return this.listData<BudgetAlert>(`/v1/budgets/${encodeURIComponent(budgetId)}/alerts`, {
+      ...params,
+    });
+  }
+
+  /**
+   * List the threshold alerts configured on a budget.
+   *
+   * Paginated-response variant matching the standalone
+   * `listBudgetAlerts` helper shape.
+   *
+   * @param budgetId The budget whose alerts to list.
+   * @param params Optional status/channel filters and pagination.
+   */
+  async listBudgetAlerts(
+    budgetId: string,
+    params: ListBudgetAlertsParams = {},
+  ): Promise<PaginatedResponse<BudgetAlert>> {
+    const page = await this.listAlerts(budgetId, params);
+    return { data: page.data } as PaginatedResponse<BudgetAlert>;
+  }
+
+  /**
+   * Retrieve a single budget threshold alert by id.
+   *
+   * @param budgetId The budget id.
+   * @param alertId The alert id.
+   */
+  async getAlert(budgetId: string, alertId: string): Promise<BudgetAlert> {
+    return this.getData<BudgetAlert>(
+      `/v1/budgets/${encodeURIComponent(budgetId)}/alerts/${encodeURIComponent(alertId)}`,
+    );
+  }
+
+  /**
+   * Update a budget threshold alert subscription.
+   *
+   * @param budgetId The budget id.
+   * @param alertId The alert id.
+   * @param input Updated threshold percent, channel, destination, or status.
+   * @throws {BudgetAlertValidationError} When a supplied field is invalid.
+   */
+  async updateAlert(
+    budgetId: string,
+    alertId: string,
+    input: UpdateBudgetAlertInput,
+  ): Promise<BudgetAlert> {
+    if (input.thresholdPercent !== undefined) {
+      assertValidThresholdPercent(input.thresholdPercent);
+    }
+    if (input.channel !== undefined && !isValidBudgetAlertChannel(input.channel)) {
+      throw new BudgetAlertValidationError(
+        `Unknown budget alert channel "${String(input.channel)}".`,
+        { channel: input.channel },
+      );
+    }
+    const res = await this.client.patch<BudgetAlert>(
+      `/v1/budgets/${encodeURIComponent(budgetId)}/alerts/${encodeURIComponent(alertId)}`,
+      input,
+    );
+    return res.data;
+  }
+
+  /**
+   * Delete a budget threshold alert subscription.
+   *
+   * @param budgetId The budget id.
+   * @param alertId The alert id to delete.
+   */
+  async deleteAlert(budgetId: string, alertId: string): Promise<void> {
+    await this.client.delete<void>(
+      `/v1/budgets/${encodeURIComponent(budgetId)}/alerts/${encodeURIComponent(alertId)}`,
+    );
+  }
+}
+
+/** Channels that require a non-empty `target`. */
+const TARGETED_ALERT_CHANNELS: readonly string[] = ['EMAIL', 'WEBHOOK', 'SLACK'];
+
+/**
+ * Pre-flight validation for {@link BudgetResource.createAlert}, mirroring the
+ * standalone `createBudgetAlert` helper so the resource fails fast without a
+ * network round-trip.
+ */
+function assertCreateAlertInput(input: CreateBudgetAlertInput): void {
+  assertValidThresholdPercent(input.thresholdPercent);
+  if (!isValidBudgetAlertChannel(input.channel)) {
+    throw new BudgetAlertValidationError(`Unknown budget alert channel "${String(input.channel)}".`, {
+      channel: input.channel,
+    });
+  }
+  if (
+    TARGETED_ALERT_CHANNELS.includes(input.channel) &&
+    (typeof input.target !== 'string' || input.target.trim() === '')
+  ) {
+    throw new BudgetAlertValidationError(`A "${input.channel}" alert requires a non-empty target.`, {
+      channel: input.channel,
+    });
+  }
 }
 
 /**
@@ -309,4 +455,3 @@ export type {
 
 /** Alias of {@link BudgetResource} matching the `*sResource` client naming. */
 export const BudgetsResource = BudgetResource;
-

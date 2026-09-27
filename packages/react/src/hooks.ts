@@ -94,25 +94,32 @@ export function useAstroidClient(): Astroid {
 export const queryKeys = {
   wallets: {
     all: ['astroid', 'wallets'] as const,
-    list: (params?: PaginationParams) => ['astroid', 'wallets', 'list', params ?? {}] as const,
+    list: (params?: object) => ['astroid', 'wallets', 'list', params ?? {}] as const,
     detail: (id: string) => ['astroid', 'wallets', 'detail', id] as const,
     balance: (id: string) => ['astroid', 'wallets', 'detail', id, 'balance'] as const,
   },
   agents: {
     all: ['astroid', 'agents'] as const,
-    list: (params?: PaginationParams) => ['astroid', 'agents', 'list', params ?? {}] as const,
+    list: (params?: object) => ['astroid', 'agents', 'list', params ?? {}] as const,
     detail: (id: string) => ['astroid', 'agents', 'detail', id] as const,
   },
   policies: {
     all: ['astroid', 'policies'] as const,
-    list: (params?: PaginationParams) => ['astroid', 'policies', 'list', params ?? {}] as const,
+    list: (params?: object) =>
+      ['astroid', 'policies', 'list', params ?? {}] as const,
     detail: (id: string) => ['astroid', 'policies', 'detail', id] as const,
   },
   budgets: {
     all: ['astroid', 'budgets'] as const,
-    list: (params?: PaginationParams) => ['astroid', 'budgets', 'list', params ?? {}] as const,
+    list: (params?: object) => ['astroid', 'budgets', 'list', params ?? {}] as const,
     detail: (id: string) => ['astroid', 'budgets', 'detail', id] as const,
     utilization: (id: string) => ['astroid', 'budgets', 'detail', id, 'utilization'] as const,
+  },
+  transactions: {
+    all: ['astroid', 'transactions'] as const,
+    list: (params?: object) =>
+      ['astroid', 'transactions', 'list', params ?? {}] as const,
+    detail: (id: string) => ['astroid', 'transactions', 'detail', id] as const,
   },
 } as const;
 
@@ -133,20 +140,23 @@ export const queryKeys = {
  */
 export const invalidateQueries = {
   /** Invalidate all queries for a specific resource domain. */
-  all: (queryClient: QueryClient, domain: 'wallets' | 'agents' | 'policies' | 'budgets') => {
+  all: (
+    queryClient: QueryClient,
+    domain: 'wallets' | 'agents' | 'policies' | 'budgets' | 'transactions',
+  ) => {
     return queryClient.invalidateQueries({ queryKey: queryKeys[domain].all });
   },
   /** Invalidate the list query for a specific resource domain. */
-  wallets: (queryClient: QueryClient, params?: PaginationParams) => {
+  wallets: (queryClient: QueryClient, params?: object) => {
     return queryClient.invalidateQueries({ queryKey: queryKeys.wallets.list(params) });
   },
-  agents: (queryClient: QueryClient, params?: PaginationParams) => {
+  agents: (queryClient: QueryClient, params?: object) => {
     return queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(params) });
   },
-  policies: (queryClient: QueryClient, params?: PaginationParams) => {
+  policies: (queryClient: QueryClient, params?: object) => {
     return queryClient.invalidateQueries({ queryKey: queryKeys.policies.list(params) });
   },
-  budgets: (queryClient: QueryClient, params?: PaginationParams) => {
+  budgets: (queryClient: QueryClient, params?: object) => {
     return queryClient.invalidateQueries({ queryKey: queryKeys.budgets.list(params) });
   },
   /** Invalidate a specific wallet's detail and related queries. */
@@ -173,6 +183,14 @@ export const invalidateQueries = {
       queryClient.invalidateQueries({ queryKey: queryKeys.budgets.detail(id) }),
       queryClient.invalidateQueries({ queryKey: queryKeys.budgets.utilization(id) }),
     ]);
+  },
+  /** Invalidate the transaction history list. */
+  transactions: (queryClient: QueryClient, params?: object) => {
+    return queryClient.invalidateQueries({ queryKey: queryKeys.transactions.list(params) });
+  },
+  /** Invalidate a specific transaction's detail. */
+  transaction: (queryClient: QueryClient, id: string) => {
+    return queryClient.invalidateQueries({ queryKey: queryKeys.transactions.detail(id) });
   },
 };
 
@@ -201,6 +219,27 @@ export function useAgent(id: string | undefined): UseQueryResult<Agent, Error> {
 
 /**
  * Mutation hook to simulate a policy against a proposed transaction.
+ *
+ * Wraps {@link PolicyResource.simulatePolicy} with TanStack Query so components
+ * get `isPending`/`isSuccess`/`isError`, the resolved simulation `data`, and the
+ * `error` for free. Per-call `onSuccess`/`onError` callbacks can be passed to
+ * `mutate` for component-level handling.
+ *
+ * @returns A TanStack Query mutation over a {@link PolicySimulationRequest}.
+ *
+ * @example
+ * ```tsx
+ * const simulate = useSimulatePolicy();
+ *
+ * simulate.mutate(
+ *   { walletId: 'wal_abc', asset: 'USDC', amount: '1500' },
+ *   {
+ *     onSuccess: (result) =>
+ *       result.allowed ? approve() : showViolations(result.violations),
+ *     onError: (error) => toast.error(error.message),
+ *   },
+ * );
+ * ```
  */
 export function useSimulatePolicy(): UseMutationResult<
   PolicySimulationResult,
@@ -209,6 +248,6 @@ export function useSimulatePolicy(): UseMutationResult<
 > {
   const astroid = useAstroidClient();
   return useMutation({
-    mutationFn: (params: PolicySimulationRequest) => astroid.policies.simulate(params),
+    mutationFn: (params: PolicySimulationRequest) => astroid.policies.simulatePolicy(params),
   });
 }

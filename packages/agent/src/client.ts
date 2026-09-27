@@ -16,4 +16,4 @@
  * @module
  */
 
-export { AgentResource as AgentClient } from './index.js';
+export { AgentResource as AgentClient } from './agent.js';

@@ -214,4 +214,3 @@ describe('informative messages without internal leakage (issue #76)', () => {
     expect(err.message).not.toMatch(/at .+:\d+:\d+/); // no stack frames in the message
   });
 });
-
