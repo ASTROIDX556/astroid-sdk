@@ -12,11 +12,13 @@
  * - The onRetry callback is called with correct attempt/delayMs arguments.
  * - Non-retryable errors (4xx except 429) are not retried.
  * - Network-level errors are retried.
+ * - Requests that exceed their timeout are retried, subject to idempotency gating.
  * - retry: false disables retries entirely.
  */
 
 import { describe, expect, it, vi } from 'vitest';
 import { RateLimitError, ServerError } from '@astroid/errors';
+import { AstroidTimeoutError } from '@astroid/core';
 import { Astroid, backoffDelay } from '../index.js';
 import {
   createRetryMiddleware,
@@ -374,9 +376,9 @@ describe('Astroid client — retry on 429', () => {
   });
 
   it('throws RateLimitError after exhausting retries on persistent 429', async () => {
-    const mockFetch = vi.fn().mockImplementation(async () =>
-      errorResponse(429, 'RATE_LIMITED', 'Too Many Requests'),
-    );
+    const mockFetch = vi
+      .fn()
+      .mockImplementation(async () => errorResponse(429, 'RATE_LIMITED', 'Too Many Requests'));
 
     const client = new Astroid({
       ...BASE_CONFIG,
@@ -395,9 +397,9 @@ describe('Astroid client — retry on 429', () => {
 
 describe('Astroid client — non-retryable errors', () => {
   it('does not retry on 400 (Bad Request)', async () => {
-    const mockFetch = vi.fn().mockImplementation(async () =>
-      errorResponse(400, 'VALIDATION_ERROR', 'Bad Request'),
-    );
+    const mockFetch = vi
+      .fn()
+      .mockImplementation(async () => errorResponse(400, 'VALIDATION_ERROR', 'Bad Request'));
 
     const client = new Astroid({
       ...BASE_CONFIG,
@@ -410,9 +412,9 @@ describe('Astroid client — non-retryable errors', () => {
   });
 
   it('does not retry on 404 (Not Found)', async () => {
-    const mockFetch = vi.fn().mockImplementation(async () =>
-      errorResponse(404, 'NOT_FOUND', 'Wallet not found'),
-    );
+    const mockFetch = vi
+      .fn()
+      .mockImplementation(async () => errorResponse(404, 'NOT_FOUND', 'Wallet not found'));
 
     const client = new Astroid({
       ...BASE_CONFIG,
@@ -425,9 +427,9 @@ describe('Astroid client — non-retryable errors', () => {
   });
 
   it('does not retry on 422 (Unprocessable Entity)', async () => {
-    const mockFetch = vi.fn().mockImplementation(async () =>
-      errorResponse(422, 'VALIDATION_ERROR', 'Unprocessable'),
-    );
+    const mockFetch = vi
+      .fn()
+      .mockImplementation(async () => errorResponse(422, 'VALIDATION_ERROR', 'Unprocessable'));
 
     const client = new Astroid({
       ...BASE_CONFIG,
@@ -496,14 +498,84 @@ describe('Astroid client — network-error retries', () => {
 });
 
 /* -------------------------------------------------------------------------- */
+/* Integration: request timeouts are retried                                   */
+/* -------------------------------------------------------------------------- */
+
+describe('Astroid client — timeout retries', () => {
+  /** Simulate a request that hangs until the client aborts it via its timeout. */
+  function hangingFetch(init?: RequestInit): Promise<Response> {
+    return new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => {
+        reject(new DOMException('This operation was aborted', 'AbortError'));
+      });
+    });
+  }
+
+  it('retries a request that exceeds its timeout and succeeds on recovery', async () => {
+    let callCount = 0;
+    const mockFetch = vi.fn().mockImplementation(async (_url: string, init?: RequestInit) => {
+      callCount++;
+      if (callCount === 1) return hangingFetch(init);
+      return okResponse({ id: 'w_timeout', name: 'Timeout Recovery' });
+    });
+
+    const client = new Astroid({
+      ...BASE_CONFIG,
+      timeout: 20,
+      fetch: mockFetch as unknown as typeof fetch,
+    });
+    client.use(createRetryMiddleware({ maxRetries: 2, baseDelayMs: 5, maxDelayMs: 50 }));
+
+    const wallet = await client.wallets.get('w_timeout');
+    expect(wallet).toMatchObject({ id: 'w_timeout', name: 'Timeout Recovery' });
+    expect(callCount).toBe(2);
+  });
+
+  it('throws AstroidTimeoutError after exhausting retries on persistent timeouts', async () => {
+    const mockFetch = vi.fn().mockImplementation((_url: string, init?: RequestInit) =>
+      hangingFetch(init),
+    );
+
+    const client = new Astroid({
+      ...BASE_CONFIG,
+      timeout: 20,
+      fetch: mockFetch as unknown as typeof fetch,
+    });
+    client.use(createRetryMiddleware({ maxRetries: 2, baseDelayMs: 5, maxDelayMs: 50 }));
+
+    await expect(client.wallets.get('w_timeout_hard')).rejects.toBeInstanceOf(AstroidTimeoutError);
+    // Initial attempt plus two retries.
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not retry a timeout on a non-idempotent POST', async () => {
+    const mockFetch = vi.fn().mockImplementation((_url: string, init?: RequestInit) =>
+      hangingFetch(init),
+    );
+
+    const client = new Astroid({
+      ...BASE_CONFIG,
+      timeout: 20,
+      fetch: mockFetch as unknown as typeof fetch,
+    });
+    client.use(createRetryMiddleware({ maxRetries: 2, baseDelayMs: 5, maxDelayMs: 50 }));
+
+    await expect(client.wallets.create({ label: 'Nope' })).rejects.toBeInstanceOf(
+      AstroidTimeoutError,
+    );
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
 /* Integration: retry: false disables retries                                 */
 /* -------------------------------------------------------------------------- */
 
 describe('Astroid client — retry disabled', () => {
   it('does not retry when retry: false is set in config', async () => {
-    const mockFetch = vi.fn().mockImplementation(async () =>
-      errorResponse(503, 'SERVER_ERROR', 'Service Unavailable'),
-    );
+    const mockFetch = vi
+      .fn()
+      .mockImplementation(async () => errorResponse(503, 'SERVER_ERROR', 'Service Unavailable'));
 
     const client = new Astroid({
       apiKey: 'sk_test_no_retry',

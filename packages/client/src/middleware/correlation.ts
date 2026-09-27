@@ -261,8 +261,7 @@ export function createCorrelationMiddleware(
 
       const correlationId =
         (req.options.context?.[CORRELATION_ID_KEY] as string) ?? res.requestId ?? '';
-      const startTime =
-        (req.options.context?.[START_TIME_KEY] as number) ?? Date.now();
+      const startTime = (req.options.context?.[START_TIME_KEY] as number) ?? Date.now();
       const durationMs = Date.now() - startTime;
 
       await telemetry.onResponse({

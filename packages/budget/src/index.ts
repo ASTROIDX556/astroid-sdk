@@ -134,10 +134,9 @@ export class BudgetResource extends Resource {
     budgetId: string,
     params: PaginationParams = {},
   ): Promise<Paginated<BudgetHistoryEntry>> {
-    return this.listData<BudgetHistoryEntry>(
-      `/budgets/${encodeURIComponent(budgetId)}/history`,
-      { ...params },
-    );
+    return this.listData<BudgetHistoryEntry>(`/budgets/${encodeURIComponent(budgetId)}/history`, {
+      ...params,
+    });
   }
 
   /**
@@ -190,9 +189,7 @@ export class BudgetResource extends Resource {
    *                 for the active window (see {@link BudgetUtilization}).
    */
   async utilization(budgetId: string): Promise<BudgetUtilization> {
-    return this.getData<BudgetUtilization>(
-      `/budgets/${encodeURIComponent(budgetId)}/utilization`,
-    );
+    return this.getData<BudgetUtilization>(`/budgets/${encodeURIComponent(budgetId)}/utilization`);
   }
 
   /**
