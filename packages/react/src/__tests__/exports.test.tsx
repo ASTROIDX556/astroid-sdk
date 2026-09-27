@@ -19,4 +19,8 @@ describe('@astroid/react entry point exports', () => {
   it('exports the useCreateAgent mutation hook as a function', () => {
     expect(typeof reactPackage.useCreateAgent).toBe('function');
   });
+
+  it('exports the useAgentList paginated hook as a function (issue #266)', () => {
+    expect(typeof reactPackage.useAgentList).toBe('function');
+  });
 });
