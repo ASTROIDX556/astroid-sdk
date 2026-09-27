@@ -36,7 +36,9 @@ export interface TransactionSubmissionBody {
  * @param source The transaction to format.
  * @returns A submission-ready request body.
  */
-export function formatTransactionForSubmission(source: TransactionSource): TransactionSubmissionBody {
+export function formatTransactionForSubmission(
+  source: TransactionSource,
+): TransactionSubmissionBody {
   return { transactionXdr: encodeTransaction(source) };
 }
 
@@ -87,8 +89,7 @@ export interface SubmitTransactionResult {
 export async function submitTransaction(
   transactionOrXdr: string | Transaction,
   _options?: SubmitTransactionOptions,
-):
-  Promise<SubmitTransactionResult> {
+): Promise<SubmitTransactionResult> {
   const xdr = typeof transactionOrXdr === 'string' ? transactionOrXdr : transactionOrXdr.toXDR();
 
   try {
@@ -96,7 +97,7 @@ export async function submitTransaction(
     if (!xdr) {
       throw new Error('Transaction XDR cannot be empty');
     }
-    
+
     return {
       successful: true,
       hash: 'mock_tx_hash',

@@ -82,22 +82,26 @@ function createMockClient() {
     agents: {
       list: vi.fn(async () => PAGE),
       get: vi.fn(async () => AGENT),
-      create: vi.fn(async (params: CreateAgentParams): Promise<Agent> => ({
-        ...AGENT,
-        id: `agent_created_${Date.now()}`,
-        name: params.name,
-        capabilities: params.capabilities,
-        description: params.description ?? null,
-        role: (params.role ?? 'CUSTOM') as Agent['role'],
-        status: 'ACTIVE' as Agent['status'],
-        provider: params.provider ?? null,
-        model: params.model ?? null,
-        primaryWalletId: params.primaryWalletId ?? null,
-        metadata: params.metadata ?? {},
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      })),
-      update: vi.fn(async (_id: string, _params: UpdateAgentParams): Promise<Agent> => UPDATED_AGENT),
+      create: vi.fn(
+        async (params: CreateAgentParams): Promise<Agent> => ({
+          ...AGENT,
+          id: `agent_created_${Date.now()}`,
+          name: params.name,
+          capabilities: params.capabilities,
+          description: params.description ?? null,
+          role: (params.role ?? 'CUSTOM') as Agent['role'],
+          status: 'ACTIVE' as Agent['status'],
+          provider: params.provider ?? null,
+          model: params.model ?? null,
+          primaryWalletId: params.primaryWalletId ?? null,
+          metadata: params.metadata ?? {},
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }),
+      ),
+      update: vi.fn(
+        async (_id: string, _params: UpdateAgentParams): Promise<Agent> => UPDATED_AGENT,
+      ),
       delete: vi.fn(async () => undefined as void),
       status: vi.fn(async () => ({
         agentId: AGENT.id,
@@ -115,7 +119,14 @@ function createMockClient() {
       })),
       logs: vi.fn(async () => ({
         data: [],
-        meta: { page: 1, limit: 25, total: 0, totalPages: 0, hasNextPage: false, hasPreviousPage: false },
+        meta: {
+          page: 1,
+          limit: 25,
+          total: 0,
+          totalPages: 0,
+          hasNextPage: false,
+          hasPreviousPage: false,
+        },
       })),
     },
   } as unknown as Astroid;

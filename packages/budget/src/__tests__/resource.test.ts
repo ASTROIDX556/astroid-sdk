@@ -25,8 +25,16 @@ function makeClient() {
       const data = await handler('post', path, undefined, body);
       return { data };
     }),
-    patch: vi.fn(),
-    delete: vi.fn(),
+    patch: vi.fn(async (path: string, body?: unknown) => {
+      calls.push({ method: 'patch', path, body });
+      const data = await handler('patch', path, undefined, body);
+      return { data };
+    }),
+    delete: vi.fn(async (path: string) => {
+      calls.push({ method: 'delete', path });
+      const data = await handler('delete', path);
+      return { data };
+    }),
   } as unknown as HttpClient;
 
   return { client, calls, handler };
@@ -57,9 +65,7 @@ describe('BudgetResource', () => {
 
     const result = await resource.getBudget(BUDGET_ID);
 
-    expect(calls).toEqual([
-      { method: 'get', path: `/budgets/${BUDGET_ID}`, query: undefined },
-    ]);
+    expect(calls).toEqual([{ method: 'get', path: `/budgets/${BUDGET_ID}`, query: undefined }]);
     expect(result).toEqual(budget);
   });
 
@@ -81,7 +87,14 @@ describe('BudgetResource', () => {
       {
         method: 'get',
         path: '/budgets',
-        query: { period: 'MONTHLY', enabled: true, limit: 25, page: 2, order: 'desc', sort: 'spent' },
+        query: {
+          period: 'MONTHLY',
+          enabled: true,
+          limit: 25,
+          page: 2,
+          order: 'desc',
+          sort: 'spent',
+        },
       },
     ]);
     expect(result.data).toEqual([budget]);
@@ -101,7 +114,10 @@ describe('BudgetResource', () => {
     handler.mockResolvedValueOnce(resultData);
     const resource = new BudgetResource(client);
 
-    const result = await resource.simulateBudgetCheck(BUDGET_ID, { asset: 'USDC', amount: '25.00' });
+    const result = await resource.simulateBudgetCheck(BUDGET_ID, {
+      asset: 'USDC',
+      amount: '25.00',
+    });
 
     expect(calls).toEqual([
       {
@@ -120,14 +136,18 @@ describe('BudgetResource', () => {
       allowed: false,
       wouldExceed: true,
       remainingAfter: '10.00',
-      restriction: 'Spend of 9999.00 USDC would exceed the monthly budget limit of 1000.00 (remaining: 10.00).',
+      restriction:
+        'Spend of 9999.00 USDC would exceed the monthly budget limit of 1000.00 (remaining: 10.00).',
       windowStart: '2026-08-01T00:00:00.000Z',
       windowEnd: '2026-09-01T00:00:00.000Z',
     };
     handler.mockResolvedValueOnce(breach);
     const resource = new BudgetResource(client);
 
-    const result = await resource.simulateBudgetCheck(BUDGET_ID, { asset: 'USDC', amount: '9999.00' });
+    const result = await resource.simulateBudgetCheck(BUDGET_ID, {
+      asset: 'USDC',
+      amount: '9999.00',
+    });
 
     expect(result.allowed).toBe(false);
     expect(result.wouldExceed).toBe(true);
@@ -158,5 +178,30 @@ describe('BudgetResource', () => {
     ]);
     expect(result.utilization).toBe(0.4);
     expect(result.remaining).toBe('600.00');
+  });
+
+  it('getBudgetUtilization is an alias of utilization', async () => {
+    const { client, calls, handler } = makeClient();
+    const utilization: BudgetUtilization = {
+      budgetId: BUDGET_ID,
+      period: 'MONTHLY',
+      periodStart: '2026-08-01T00:00:00.000Z',
+      periodEnd: '2026-09-01T00:00:00.000Z',
+      limit: '1000.00',
+      spent: '400.00',
+      remaining: '600.00',
+      utilization: 0.4,
+      percent: 40,
+      state: 'healthy',
+    };
+    handler.mockResolvedValueOnce(utilization);
+    const resource = new BudgetResource(client);
+
+    const result = await resource.getBudgetUtilization(BUDGET_ID);
+
+    expect(calls).toEqual([
+      { method: 'get', path: `/budgets/${BUDGET_ID}/utilization`, query: undefined },
+    ]);
+    expect(result).toEqual(utilization);
   });
 });

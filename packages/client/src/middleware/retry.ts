@@ -17,8 +17,8 @@
  *   `Retry-After` header (seconds) and waits at least that long before the
  *   next attempt, capped at `maxDelayMs`.
  * - **Configurable retry predicate**: the default retryable status set
- *   (`408 / 425 / 429 / 500 / 502 / 503 / 504`) can be replaced per-instance
- *   with a custom `shouldRetryStatus` function.
+ *   (`429` and any `5xx`) can be replaced per-instance with an explicit
+ *   `retryableStatusCodes` list or a custom `shouldRetryStatus` function.
  * - **Visibility via `onRetry` callback**: consumers can log, trace, or
  *   surface retry events without instrumenting low-level transports.
  *
@@ -56,7 +56,6 @@
 
 import {
   backoffDelay,
-  isRetryableStatus,
   type Middleware,
   type PreparedRequest,
   type RetryConfig,
@@ -82,7 +81,7 @@ export type { RetryConfig, RetryMiddlewareOptions };
 export interface RetryMiddlewareConfig extends RetryMiddlewareOptions {
   /**
    * Maximum number of retry attempts after the initial request.
-   * @default 2
+   * @default 3
    */
   maxRetries?: number;
 
@@ -103,6 +102,21 @@ export interface RetryMiddlewareConfig extends RetryMiddlewareOptions {
   maxDelayMs?: number;
 
   /**
+   * Multiplier applied per attempt when computing exponential backoff:
+   * `baseDelayMs * backoffFactor^(attempt - 1)` (then jittered).
+   * @default 2
+   */
+  backoffFactor?: number;
+
+  /**
+   * The HTTP status codes that warrant a retry. When omitted, the SDK-wide
+   * default applies: `429` and any `5xx`. Pass an explicit list such as
+   * `[429, 502, 503, 504]` to restrict retries to those statuses.
+   * `shouldRetryStatus` takes precedence when both are supplied.
+   */
+  retryableStatusCodes?: number[];
+
+  /**
    * Called before each retry sleep so callers can log, trace, or emit metrics.
    *
    * @param attempt    The retry attempt number (1-based).
@@ -114,8 +128,8 @@ export interface RetryMiddlewareConfig extends RetryMiddlewareOptions {
 
   /**
    * Custom predicate deciding whether a given HTTP status code is retryable.
-   * Defaults to the SDK-wide {@link isRetryableStatus} (`408`, `425`, `429`,
-   * `500`, `502`, `503`, `504`).
+   * Defaults to the SDK-wide {@link isRetryableStatus}: `429` and any `5xx`
+   * (all other `4xx` client errors are never retried).
    */
   shouldRetryStatus?: (status: number) => boolean;
 
@@ -132,7 +146,7 @@ export interface RetryMiddlewareConfig extends RetryMiddlewareOptions {
 /* Defaults                                                                    */
 /* -------------------------------------------------------------------------- */
 
-const DEFAULT_MAX_RETRIES = 2;
+const DEFAULT_MAX_RETRIES = 3;
 const DEFAULT_BASE_DELAY_MS = 250;
 const DEFAULT_MAX_DELAY_MS = 8_000;
 
@@ -178,13 +192,19 @@ export function createRetryMiddleware(options: RetryMiddlewareConfig = {}): Midd
     maxRetries: options.maxRetries ?? DEFAULT_MAX_RETRIES,
     baseDelayMs: options.baseDelayMs ?? DEFAULT_BASE_DELAY_MS,
     maxDelayMs: options.maxDelayMs ?? DEFAULT_MAX_DELAY_MS,
+    ...(options.backoffFactor !== undefined ? { backoffFactor: options.backoffFactor } : {}),
+    ...(options.retryableStatusCodes !== undefined
+      ? { retryableStatusCodes: options.retryableStatusCodes }
+      : {}),
   };
 
   // Normalise the middleware options we forward to the HttpClient's retry loop.
   const middlewareOptions: RetryMiddlewareOptions = {
     ...retryConfig,
-    onRetry: options.onRetry,
-    shouldRetryStatus: options.shouldRetryStatus ?? isRetryableStatus,
+    ...(options.onRetry ? { onRetry: options.onRetry } : {}),
+    // Only forward an explicit predicate; otherwise the transport falls back to
+    // `retryableStatusCodes` (when given) and then the SDK default.
+    ...(options.shouldRetryStatus ? { shouldRetryStatus: options.shouldRetryStatus } : {}),
     retryAllMethods: options.retryAllMethods ?? false,
   };
 
@@ -194,9 +214,7 @@ export function createRetryMiddleware(options: RetryMiddlewareConfig = {}): Midd
     onRequest(req: PreparedRequest): PreparedRequest {
       // Determine retryable flag: if retryAllMethods is set, force retryable
       // true unless the caller explicitly set it to false on the request.
-      const retryable = options.retryAllMethods
-        ? (req.options.retryable ?? true)
-        : req.retryable;
+      const retryable = options.retryAllMethods ? (req.options.retryable ?? true) : req.retryable;
 
       return {
         ...req,
