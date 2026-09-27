@@ -4,6 +4,7 @@ import type {
   Policy,
   PolicySimulationRequest,
   PolicySimulationResult,
+  PolicyType,
 } from '@astroid/types';
 
 import { simulatePolicy as evaluatePolicyRules } from './simulator.js';
@@ -16,6 +17,12 @@ import { simulatePolicy } from './simulate-policy.js';
  * returns a {@link PolicySimulationReport} — no network required.
  */
 export { evaluatePolicyRules };
+
+/**
+ * CRUD + simulation wrapper for the `/policies` resource, also exported as
+ * `PolicyClient` (the name used in the #242 acceptance criteria).
+ */
+export { PolicyClient } from './client.js';
 
 /**
  * Server-side policy simulation endpoint helper. Import `simulatePolicy` to run
@@ -44,6 +51,7 @@ export {
  */
 export type {
   Policy,
+  PolicyConfiguration,
   PolicySimulationRequest,
   PolicySimulationResult,
   PolicyViolation,
@@ -51,31 +59,70 @@ export type {
   PolicyRiskAssessment,
   PolicyRiskFactor,
   PolicyBudgetImpact,
+  SimulatePolicyRequest,
+  Paginated,
 } from '@astroid/types';
+
+/**
+ * `PolicyType` is both a union type and a runtime lookup table, so it is
+ * re-exported as a value: consumers filtering by
+ * {@link PolicyListParams.type} can enumerate the valid types with
+ * `Object.values(PolicyType)` instead of hardcoding the strings.
+ */
+export { PolicyType } from '@astroid/types';
+
+/**
+ * The payload accepted by {@link PolicyResource.create}: a {@link Policy}
+ * without the fields the server owns.
+ *
+ * Exported so callers can type a draft before handing it over — the output of
+ * `PolicyBuilder#build()` is exactly this type. Note that server-owned fields
+ * are omitted rather than made optional, so a stale `id` or `deletedAt` left
+ * over from a fetched record is a compile error rather than a silent overwrite.
+ */
+export type PolicyCreateInput = Omit<
+  Policy,
+  'id' | 'organizationId' | 'createdAt' | 'updatedAt' | 'deletedAt'
+>;
+
+/**
+ * The payload accepted by {@link PolicyResource.update}.
+ *
+ * A partial {@link PolicyCreateInput}: every field is optional, but the
+ * server-owned fields are still excluded, so a PATCH can never rewrite them.
+ */
+export type PolicyUpdateInput = Partial<PolicyCreateInput>;
 
 /** Filters accepted by {@link PolicyResource.list}. */
 export interface PolicyListParams {
   /** Only policies that are enabled (or disabled). */
   enabled?: boolean;
   /** Only policies of this type. */
-  type?: string;
+  type?: PolicyType;
   /** Only policies scoped to this agent. */
   agentId?: string;
+  /** Only policies scoped to this wallet. */
+  walletId?: string;
 }
 
 export class PolicyResource extends Resource {
   /**
    * Create a new spending policy.
+   *
+   * @param input The policy to create — a {@link PolicyCreateInput}, which is
+   *   also the type `PolicyBuilder#build()` returns.
+   * @throws `ValidationError` when the API rejects the payload.
    */
-  async create(
-    input: Omit<Policy, 'id' | 'organizationId' | 'createdAt' | 'updatedAt'>,
-  ): Promise<Policy> {
+  async create(input: PolicyCreateInput): Promise<Policy> {
     const res = await this.client.post<Policy>('/policies', input);
     return res.data;
   }
 
   /**
    * Retrieve a policy by ID.
+   *
+   * @param id The policy id.
+   * @throws `NotFoundError` when no policy has that id.
    */
   async get(id: string): Promise<Policy> {
     return this.getData<Policy>(`/policies/${encodeURIComponent(id)}`);
@@ -83,6 +130,9 @@ export class PolicyResource extends Resource {
 
   /**
    * List policies with optional filtering.
+   *
+   * @param params Filters — `enabled`, `type`, `agentId`, `walletId`.
+   * @returns       The matching policies plus pagination metadata.
    */
   async list(params: PolicyListParams = {}): Promise<Paginated<Policy>> {
     return this.listData<Policy>('/policies', { ...params });
@@ -90,17 +140,21 @@ export class PolicyResource extends Resource {
 
   /**
    * Update an existing policy.
+   *
+   * @param id    The policy id.
+   * @param input The fields to change — a {@link PolicyUpdateInput}.
+   * @throws      `NotFoundError` when no policy has that id.
    */
-  async update(
-    id: string,
-    input: Partial<Omit<Policy, 'id' | 'organizationId' | 'createdAt' | 'updatedAt'>>,
-  ): Promise<Policy> {
+  async update(id: string, input: PolicyUpdateInput): Promise<Policy> {
     const res = await this.client.patch<Policy>(`/policies/${encodeURIComponent(id)}`, input);
     return res.data;
   }
 
   /**
    * Delete a policy.
+   *
+   * @param id The policy id.
+   * @throws   `NotFoundError` when no policy has that id.
    */
   async delete(id: string): Promise<void> {
     await this.client.delete<void>(`/policies/${encodeURIComponent(id)}`);
@@ -182,9 +236,9 @@ export class PolicyResource extends Resource {
       );
     }
 
-    const params: PolicyListParams & { walletId?: string } = { enabled: true };
+    const params: PolicyListParams = { enabled: true };
     if (agentId) params.agentId = agentId;
-    if (walletId) (params as { walletId?: string }).walletId = walletId;
+    if (walletId) params.walletId = walletId;
 
     const { data: policies } = await this.list(params);
 
