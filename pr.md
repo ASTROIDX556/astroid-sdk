@@ -1,93 +1,92 @@
-# feat(client): add token bucket rate limiter and retry middleware
+# feat(policy,react): policy simulation method and useSimulatePolicy hook
 
-Hardens the `@astroid/client` token-bucket rate limiter so it throttles at the
-**configured** refill rate (it previously slept the queue wait a second time),
-and adds the deterministic `vi.useFakeTimers()` test suite the issue calls for
-to verify token refill, queue draining, `Retry-After` cooldowns and 429 retry
-backoff without slowing the test suite.
+Implements the policy-simulation workflow from the issue: a canonical
+`simulatePolicy` resource method in `@astroid/policy` and a
+`useSimulatePolicy` mutation hook in `@astroid/react` with success/error
+handling, both covered by unit and hook tests.
 
-Closes #230
+Closes #268
 
 ---
 
 ## Background
 
-`@astroid/client` already shipped a token-bucket rate-limiter middleware
-(`packages/client/src/middleware/rate-limiter.ts`) and the shared `HttpClient`
-retry loop with `Retry-After` support. While validating the limiter against
-issue #230's acceptance criteria, two gaps surfaced:
+Before an agent executes a transaction, applications need to dry-run it against
+the account's spending and security policies. The policy simulation endpoint
+(`POST /policies/simulate`) returns the server's decision — allowed flag,
+violations, required approvals, risk assessment, budget impact and a
+human-readable explanation — without creating anything.
 
-1. **Double throttling.** `TokenBucketLimiter.acquire()` already *waits* until a
-   token refills before resolving, but `createRateLimiterMiddleware.onRequest`
-   then slept the returned wait duration again. A request that should dispatch
-   the instant a token refills was delayed by an extra full wait interval — so
-   the limiter effectively ran at **half** the configured rate.
-2. **Real timers in tests.** The existing rate-limiter suite asserted loose
-   wall-clock bounds with real `setTimeout`, taking seconds and making refill /
-   backoff behaviour hard to pin down. Issue #230 explicitly asks for
-   `vi.useFakeTimers()`.
+The plumbing for this issue was largely present but inverted/under-tested:
 
-This PR fixes the throttle and adds the fast, deterministic tests.
+- `PolicyResource` exposed `simulate()` as the method that actually posted, with
+  `simulatePolicy()` merely delegating to it — the reverse of what the issue
+  specifies.
+- `useSimulatePolicy` called `astroid.policies.simulate()` rather than
+  `simulatePolicy()`, and its only test asserted that the client object
+  existed ("wired") instead of verifying a real success or failure path.
+
+This PR makes `simulatePolicy` the canonical method, points the hook at it, and
+replaces the placeholder test with real mutation tests.
 
 ---
 
 ## Changes
 
-### `packages/client/src/middleware/rate-limiter.ts`
+### `packages/policy/src/index.ts` — canonical `simulatePolicy`
 
-- `onRequest` now just `await limiter.acquire(req.signal)` — the wait already
-  happens inside the bucket, so the redundant `sleep(delayMs)` is removed. The
-  limiter now dispatches queued requests exactly when tokens refill.
-- Removed the now-unused `sleep` helper.
-- Updated the `acquire` and `createRateLimiterMiddleware` TSDoc to state that
-  the wait is handled inside the bucket and callers must not sleep the returned
-  value again.
+- `simulatePolicy(input)` now performs the `POST /policies/simulate` call and
+  returns the `PolicySimulationResult`.
+- `simulate(input)` is retained as a thin, documented backwards-compatible alias
+  that delegates to `simulatePolicy`, so existing callers keep working.
+- Full TSDoc describing the request/response contract.
 
-No behaviour change to capacity, refill rate, queue limits, `Retry-After`
-handling or `@astroid/errors` typing — all of which were already correct.
+### `packages/react/src/hooks.ts` — `useSimulatePolicy`
 
-### `packages/client/src/__tests__/rate-limiter-fake-timers.test.ts` (new, 7 tests)
+- `mutationFn` now calls `astroid.policies.simulatePolicy(params)`, matching the
+  resource method the issue names.
+- Expanded TSDoc documenting TanStack Query state (`isPending` / `isSuccess` /
+  `isError`, `data`, `error`) and per-call `onSuccess` / `onError` callbacks for
+  component-level handling, with a usage example.
 
-Deterministic tests using `vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })`:
+### Tests
 
-- A burst up to `burstCapacity` passes through with **zero** elapsed virtual
-  time.
-- With `maxRequestsPerSecond: 2`, queued requests are released exactly at the
-  500ms refill boundaries, in FIFO order.
-- A request is rejected with `RateLimitError` when `maxQueueLength` is exceeded.
-- A request is rejected with `RateLimitError` (`RATE_LIMIT_QUEUE_TIMEOUT`) once
-  `queueTimeoutMs` elapses.
-- A queued request rejects with an `AbortError` when its signal aborts.
-- A `429` with `Retry-After: 1` pauses refills for the full cooldown window.
-- At the client level, a `429` carrying `Retry-After: 0.2` is **not** retried
-  before 200ms of virtual time elapse, then succeeds.
+`packages/policy/__tests__/policy.test.ts`
+- **New:** `simulatePolicy` surfaces an API `400 VALIDATION_ERROR` as a typed
+  `ValidationError`, exposing `fieldErrors` and posting exactly once to
+  `/policies/simulate`.
+- Existing coverage retained: successful `simulate` / `simulatePolicy`
+  responses, payload/method assertions, and network-failure propagation.
+
+`packages/react/src/__tests__/hooks.test.tsx`
+- Replaced the placeholder `useSimulatePolicy` test with three real hook tests
+  (using `renderHook` + `waitFor`, matching
+  `use-agent-mutations.test.tsx`):
+  1. calls `policies.simulatePolicy` with the payload (and **not** `simulate`),
+     and exposes the resolved `data`;
+  2. invokes the per-call `onSuccess` callback with the simulation result;
+  3. surfaces a `ValidationError` through `isError` / `error`, leaves `data`
+     undefined, and fires `onError`.
 
 ---
 
 ## Acceptance criteria
 
-- [x] Token-bucket rate limiter in `@astroid/client` that respects the
-      configured capacity and refill rate (and now dispatches at that rate).
-- [x] `429` responses drive automatic retries and `Retry-After` is honoured up
-      to the configured `maxRetries`.
-- [x] Exponential backoff with jitter applied to transient failures (shared
-      `HttpClient` retry loop).
-- [x] Errors typed/mapped via `@astroid/errors` (`RateLimitError`).
-- [x] Vitest unit tests cover rate-limiter behaviour and retry logic, using
-      mock timers to verify refill and backoff delays.
-- [x] Burst scenarios exceeding the threshold queue and dispatch on delay.
+- [x] `simulatePolicy` method available in `@astroid/policy` (canonical; sends
+      the simulation payload to the API).
+- [x] `useSimulatePolicy` mutation hook exported from `@astroid/react`.
+- [x] Unit tests verify successful simulation responses and validation
+      failures.
+- [x] Hook tests verify successful simulation responses and validation
+      failures, including `onSuccess` / `onError` handling.
 
 ---
 
 ## Validation
 
-| check | command | result |
+| package | command | result |
 | --- | --- | --- |
-| client tests | `pnpm --filter @astroid/client test` | 225 passed (16 files) |
-| workspace tests | `pnpm test` | all packages pass |
-| workspace typecheck | `pnpm typecheck` | 16/16 packages pass |
-| workspace build | `pnpm build` | pass |
-| workspace lint | `pnpm lint` | pass (no warnings) |
-
-The real-timer `rate-limiter.test.ts` suite also got faster (≈3.3s → ≈2.2s) as
-a side effect of removing the extra sleep.
+| `@astroid/policy` | `pnpm test` | 82 passed (3 files) |
+| `@astroid/react` | `pnpm test` | 73 passed (8 files) |
+| workspace | `pnpm test` | all packages pass |
+| workspace | `pnpm typecheck` | 16/16 packages pass |

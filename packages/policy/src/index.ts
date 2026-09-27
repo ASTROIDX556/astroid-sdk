@@ -270,7 +270,6 @@ export class PolicyResource extends Resource {
   async deletePolicy(id: string): Promise<void> {
     await this.delete(id);
   }
-
   /**
    * Simulate a proposed transaction against the organization's policy rules on
    * the server, **without committing it**.
