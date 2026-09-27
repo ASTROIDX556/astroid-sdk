@@ -17,7 +17,7 @@
 
 import { StrKey } from '@stellar/stellar-base';
 import { ValidationError } from '@astroid/errors';
-import { MAX_MEMO_TEXT_BYTES } from './validator.js';
+import { MAX_MEMO_TEXT_BYTES, MEMO_HASH_BYTES } from './validator.js';
 
 /* -------------------------------------------------------------------------- */
 /* Constants                                                                   */
@@ -195,6 +195,36 @@ export function assertValidMemoText(memo: string, field = 'memo'): void {
       code: 'INVALID_MEMO',
       details: { field },
     });
+  }
+}
+
+/** A 32-byte memo encoded as 64 hexadecimal characters. */
+const HEX_MEMO_PATTERN = /^[0-9a-fA-F]{64}$/;
+
+/**
+ * Whether `memo` is a valid 32-byte hash/return memo, encoded as 64 hex chars.
+ *
+ * @param memo The hex-encoded memo value to check.
+ * @returns `true` when the value is exactly {@link MEMO_HASH_BYTES} bytes of hex.
+ */
+export function isValidMemoHash(memo: string): boolean {
+  return typeof memo === 'string' && HEX_MEMO_PATTERN.test(memo.trim());
+}
+
+/**
+ * Throw a {@link ValidationError} unless `memo` is a 64-character hex string
+ * (a 32-byte `MEMO_HASH` / `MEMO_RETURN` value).
+ *
+ * @param memo  The hex-encoded memo value to validate.
+ * @param field The field name to report in the error details.
+ * @throws {ValidationError} With code `INVALID_MEMO` when malformed.
+ */
+export function assertValidMemoHash(memo: string, field = 'memo'): void {
+  if (!isValidMemoHash(memo)) {
+    throw new ValidationError(
+      `${field} must be ${MEMO_HASH_BYTES} bytes encoded as ${MEMO_HASH_BYTES * 2} hexadecimal characters.`,
+      { code: 'INVALID_MEMO', details: { field } },
+    );
   }
 }
 

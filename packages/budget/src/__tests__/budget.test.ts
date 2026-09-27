@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { Budget } from '@astroid/types';
+import type { Budget, BudgetUtilization } from '@astroid/types';
 
 import {
   BudgetClient,
@@ -41,6 +41,22 @@ function makeBudget(overrides: Partial<Budget> = {}): Budget {
     enabled: true,
     createdAt: '2026-08-01T00:00:00.000Z',
     updatedAt: '2026-08-10T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function makeUtilization(overrides: Partial<BudgetUtilization> = {}): BudgetUtilization {
+  return {
+    budgetId: 'bud_1',
+    period: 'MONTHLY',
+    periodStart: '2026-08-01T00:00:00.000Z',
+    periodEnd: '2026-09-01T00:00:00.000Z',
+    limit: '1000',
+    spent: '250',
+    remaining: '750',
+    utilization: 0.25,
+    percent: 25,
+    state: 'healthy',
     ...overrides,
   };
 }
@@ -166,6 +182,13 @@ describe('BudgetClient', () => {
     expect(result.name).toBe('Renamed');
   });
 
+  it('updateBudget() aliases update() and patches the spending limit', async () => {
+    http.patch.mockResolvedValue(makeBudget({ limitAmount: '7500.00' }));
+    const result = await client.updateBudget('bud_1', { limitAmount: '7500.00' });
+    expect(http.patch).toHaveBeenCalledWith('/v1/budgets/bud_1', { limitAmount: '7500.00' });
+    expect(result.limitAmount).toBe('7500.00');
+  });
+
   it('delete() DELETEs the budget', async () => {
     http.delete.mockResolvedValue(undefined);
     await client.delete('bud_1');
@@ -212,6 +235,31 @@ describe('BudgetClient', () => {
     expect(m.utilization).toBe(0.25);
   });
 
+  it('getBudgetUtilization() encodes the budget id and forwards an abort signal', async () => {
+    http.get.mockResolvedValue({ budgetId: 'bud/1' });
+    const controller = new AbortController();
+
+    await client.getBudgetUtilization('bud/1', { signal: controller.signal });
+
+    expect(http.get).toHaveBeenCalledWith('/v1/budgets/bud%2F1/utilization', {
+      signal: controller.signal,
+    });
+  });
+
+  it('getBudgetUtilization() propagates transport errors', async () => {
+    http.get.mockRejectedValue(new Error('utilization unavailable'));
+
+    await expect(client.getBudgetUtilization('bud_1')).rejects.toThrow(
+      'utilization unavailable',
+    );
+  });
+
+  it('propagates a failed request as a rejection', async () => {
+    http.get.mockRejectedValue(new Error('budget not found'));
+
+    await expect(client.getBudget('missing')).rejects.toThrow('budget not found');
+  });
+
   it('allocationStatus() fetches the budget then derives status locally', async () => {
     http.get.mockResolvedValue(makeBudget({ limitAmount: '1000', spent: '900' }));
     const status = await client.allocationStatus('bud_1');
@@ -233,6 +281,109 @@ describe('BudgetClient', () => {
     expect(status.spent).toBe('1100');
     expect(status.state).toBe('exhausted');
   });
+
+  it('getBudgetUtilization() GETs the utilization sub-resource', async () => {
+    const utilization = makeUtilization({ percent: 40, utilization: 0.4, state: 'healthy' });
+    http.get.mockResolvedValue(utilization);
+    const result = await client.getBudgetUtilization('bud_1');
+    expect(http.get).toHaveBeenCalledWith('/v1/budgets/bud_1/utilization', {});
+    expect(result).toBe(utilization);
+    expect(result.percent).toBe(40);
+    expect(result.remaining).toBe('750');
+  });
+
+  it('getBudgetUtilization() re-buckets state against custom thresholds', async () => {
+    http.get.mockResolvedValue(makeUtilization({ percent: 60, state: 'healthy' }));
+    const result = await client.getBudgetUtilization('bud_1', { warnAt: 50, criticalAt: 90 });
+    expect(result.state).toBe('warning');
+    expect(result.percent).toBe(60);
+  });
+
+  it('getBudgetUtilization() leaves the server state untouched without thresholds', async () => {
+    http.get.mockResolvedValue(makeUtilization({ percent: 60, state: 'critical' }));
+    const result = await client.getBudgetUtilization('bud_1');
+    expect(result.state).toBe('critical');
+  });
+
+  it('createAlert() / createThresholdAlert() POSTs to /v1/budgets/:id/alerts', async () => {
+    const mockAlert = {
+      id: 'alt_1',
+      budgetId: 'bud_1',
+      organizationId: 'org_1',
+      thresholdPercent: 80,
+      channel: 'WEBHOOK',
+      target: 'https://example.com/webhook',
+      status: 'ACTIVE',
+      recurring: true,
+      createdAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-01T00:00:00.000Z',
+    };
+    http.post.mockResolvedValue(mockAlert);
+    const result = await client.createAlert('bud_1', {
+      thresholdPercent: 80,
+      channel: 'WEBHOOK',
+      target: 'https://example.com/webhook',
+    });
+    expect(http.post).toHaveBeenCalledWith('/v1/budgets/bud_1/alerts', {
+      thresholdPercent: 80,
+      channel: 'WEBHOOK',
+      target: 'https://example.com/webhook',
+    });
+    expect(result).toBe(mockAlert);
+
+    const thresholdResult = await client.createThresholdAlert('bud_1', {
+      thresholdPercent: 80,
+      channel: 'WEBHOOK',
+      target: 'https://example.com/webhook',
+    });
+    expect(thresholdResult).toBe(mockAlert);
+  });
+
+  it('listAlerts() / listThresholdAlerts() GETs /v1/budgets/:id/alerts', async () => {
+    http.get.mockResolvedValue({ data: [] });
+    await client.listAlerts('bud_1', { status: 'ACTIVE' });
+    expect(http.get).toHaveBeenCalledWith('/v1/budgets/bud_1/alerts', {
+      query: { status: 'ACTIVE' },
+    });
+
+    await client.listThresholdAlerts('bud_1');
+    expect(http.get).toHaveBeenCalledWith('/v1/budgets/bud_1/alerts', {
+      query: {},
+    });
+  });
+
+  it('getAlert() / getThresholdAlert() GETs /v1/budgets/:id/alerts/:alertId', async () => {
+    const mockAlert = { id: 'alt_1', thresholdPercent: 50 };
+    http.get.mockResolvedValue(mockAlert);
+    const result = await client.getAlert('bud_1', 'alt_1');
+    expect(http.get).toHaveBeenCalledWith('/v1/budgets/bud_1/alerts/alt_1');
+    expect(result).toBe(mockAlert);
+
+    const aliasResult = await client.getThresholdAlert('bud_1', 'alt_1');
+    expect(aliasResult).toBe(mockAlert);
+  });
+
+  it('updateAlert() / updateThresholdAlert() PATCHes /v1/budgets/:id/alerts/:alertId', async () => {
+    const updated = { id: 'alt_1', thresholdPercent: 90 };
+    http.patch.mockResolvedValue(updated);
+    const result = await client.updateAlert('bud_1', 'alt_1', { thresholdPercent: 90 });
+    expect(http.patch).toHaveBeenCalledWith('/v1/budgets/bud_1/alerts/alt_1', {
+      thresholdPercent: 90,
+    });
+    expect(result).toBe(updated);
+
+    const aliasResult = await client.updateThresholdAlert('bud_1', 'alt_1', { thresholdPercent: 90 });
+    expect(aliasResult).toBe(updated);
+  });
+
+  it('deleteAlert() / deleteThresholdAlert() DELETEs /v1/budgets/:id/alerts/:alertId', async () => {
+    http.delete.mockResolvedValue(undefined);
+    await client.deleteAlert('bud_1', 'alt_1');
+    expect(http.delete).toHaveBeenCalledWith('/v1/budgets/bud_1/alerts/alt_1');
+
+    await client.deleteThresholdAlert('bud_1', 'alt_1');
+    expect(http.delete).toHaveBeenCalledWith('/v1/budgets/bud_1/alerts/alt_1');
+  });
 });
 
 /* -------------------------------------------------------------------------- */
@@ -247,6 +398,37 @@ describe('allocation helpers', () => {
     expect(classifyAllocation(100)).toBe('exhausted');
     expect(classifyAllocation(120)).toBe('exhausted');
     expect(classifyAllocation(60, { warnAt: 50 })).toBe('warning');
+  });
+
+  it('classifyAllocation respects each threshold boundary exactly', () => {
+    const cases: Array<[number, BudgetUtilization['state']]> = [
+      [0, 'healthy'],
+      [79.99, 'healthy'],
+      [80, 'warning'],
+      [94.99, 'warning'],
+      [95, 'critical'],
+      [99.99, 'critical'],
+      [100, 'exhausted'],
+      [150, 'exhausted'],
+    ];
+
+    for (const [percent, state] of cases) {
+      expect(classifyAllocation(percent)).toBe(state);
+    }
+  });
+
+  it('deriveAllocationStatus classifies utilization at the default thresholds', () => {
+    const warning = deriveAllocationStatus(makeBudget({ limitAmount: '100', spent: '80' }));
+    expect(warning.percent).toBe(80);
+    expect(warning.state).toBe('warning');
+
+    const critical = deriveAllocationStatus(makeBudget({ limitAmount: '100', spent: '95' }));
+    expect(critical.percent).toBe(95);
+    expect(critical.state).toBe('critical');
+
+    const exhausted = deriveAllocationStatus(makeBudget({ limitAmount: '100', spent: '120' }));
+    expect(exhausted.percent).toBe(120);
+    expect(exhausted.state).toBe('exhausted');
   });
 
   it('isAllocationExhausted compares spent against limit', () => {

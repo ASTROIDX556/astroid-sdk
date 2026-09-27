@@ -26,6 +26,7 @@ import type { FeeBumpTransaction, Transaction, xdr } from '@stellar/stellar-base
 import { ValidationError } from '@astroid/errors';
 
 import {
+  assertValidMemoHash,
   assertValidMemoText,
   assertValidPositiveAmount,
   assertValidStellarPublicKey,
@@ -50,6 +51,21 @@ export interface BuildTransactionOptions {
   timeout?: number;
   /** Optional standard text memo (max 28 bytes). */
   memoText?: string;
+  /**
+   * Optional `MEMO_HASH` value: 32 bytes encoded as 64 hexadecimal characters.
+   * Mutually exclusive with the other memo options.
+   */
+  memoHash?: string;
+  /**
+   * Optional `MEMO_RETURN` value: 32 bytes encoded as 64 hexadecimal characters.
+   * Mutually exclusive with the other memo options.
+   */
+  memoReturn?: string;
+  /**
+   * Optional `MEMO_ID` value: a non-negative 64-bit unsigned integer.
+   * Mutually exclusive with the other memo options.
+   */
+  memoId?: string | number;
 }
 
 /** Options for {@link buildPaymentTransaction}. */
@@ -123,6 +139,47 @@ export function parseAsset(asset: string): Asset {
 /* Builders                                                                    */
 /* -------------------------------------------------------------------------- */
 
+/** Resolve the configured memo (text/hash/return/id), enforcing at-most-one. */
+function resolveMemo(options: BuildTransactionOptions): Memo | undefined {
+  const configured = [
+    options.memoText !== undefined,
+    options.memoHash !== undefined,
+    options.memoReturn !== undefined,
+    options.memoId !== undefined,
+  ].filter(Boolean).length;
+
+  if (configured > 1) {
+    throw new ValidationError(
+      'At most one memo may be supplied (memoText, memoHash, memoReturn, or memoId).',
+      { code: 'CONFLICTING_MEMO' },
+    );
+  }
+
+  if (options.memoText !== undefined) {
+    assertValidMemoText(options.memoText);
+    return Memo.text(options.memoText);
+  }
+  if (options.memoHash !== undefined) {
+    assertValidMemoHash(options.memoHash, 'memoHash');
+    return Memo.hash(options.memoHash.trim());
+  }
+  if (options.memoReturn !== undefined) {
+    assertValidMemoHash(options.memoReturn, 'memoReturn');
+    return Memo.return(options.memoReturn.trim());
+  }
+  if (options.memoId !== undefined) {
+    const id = String(options.memoId).trim();
+    if (!/^\d{1,20}$/.test(id) || BigInt(id) > 18_446_744_073_709_551_615n) {
+      throw new ValidationError('memoId must be a uint64 value.', {
+        code: 'INVALID_MEMO',
+        details: { field: 'memoId' },
+      });
+    }
+    return Memo.id(id);
+  }
+  return undefined;
+}
+
 /** Shared construction of a `TransactionBuilder` primed with memo + timeout. */
 function createBuilder(options: BuildTransactionOptions): TransactionBuilder {
   const { source, networkPassphrase } = options;
@@ -145,10 +202,8 @@ function createBuilder(options: BuildTransactionOptions): TransactionBuilder {
     fee: String(fee),
     networkPassphrase,
   });
-  if (options.memoText) {
-    assertValidMemoText(options.memoText);
-    builder = builder.addMemo(Memo.text(options.memoText));
-  }
+  const memo = resolveMemo(options);
+  if (memo) builder = builder.addMemo(memo);
   builder = builder.setTimeout(options.timeout ?? 300);
   return builder;
 }
