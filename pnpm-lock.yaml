@@ -7,6 +7,49 @@ settings:
 importers:
 
   .:
+    dependencies:
+      '@astroid/agent':
+        specifier: workspace:*
+        version: link:packages/agent
+      '@astroid/analytics':
+        specifier: workspace:*
+        version: link:packages/analytics
+      '@astroid/auth':
+        specifier: workspace:*
+        version: link:packages/auth
+      '@astroid/budget':
+        specifier: workspace:*
+        version: link:packages/budget
+      '@astroid/client':
+        specifier: workspace:*
+        version: link:packages/client
+      '@astroid/core':
+        specifier: workspace:*
+        version: link:packages/core
+      '@astroid/errors':
+        specifier: workspace:*
+        version: link:packages/errors
+      '@astroid/notification':
+        specifier: workspace:*
+        version: link:packages/notification
+      '@astroid/policy':
+        specifier: workspace:*
+        version: link:packages/policy
+      '@astroid/transaction':
+        specifier: workspace:*
+        version: link:packages/transaction
+      '@astroid/types':
+        specifier: workspace:*
+        version: link:packages/types
+      '@astroid/utils':
+        specifier: workspace:*
+        version: link:packages/utils
+      '@astroid/wallet':
+        specifier: workspace:*
+        version: link:packages/wallet
+      '@astroid/webhook':
+        specifier: workspace:*
+        version: link:packages/webhook
     devDependencies:
       '@types/node':
         specifier: 22.10.5
@@ -241,6 +284,64 @@ importers:
       tsup:
         specifier: 8.3.5
         version: 8.3.5(postcss@8.5.25)(typescript@5.7.3)
+      typescript:
+        specifier: 5.7.3
+        version: 5.7.3
+      vitest:
+        specifier: 2.1.8
+        version: 2.1.8(@types/node@22.10.5)(jsdom@30.0.1(@noble/hashes@1.8.0))
+
+  packages/integration:
+    dependencies:
+      '@astroid/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@astroid/analytics':
+        specifier: workspace:*
+        version: link:../analytics
+      '@astroid/auth':
+        specifier: workspace:*
+        version: link:../auth
+      '@astroid/budget':
+        specifier: workspace:*
+        version: link:../budget
+      '@astroid/client':
+        specifier: workspace:*
+        version: link:../client
+      '@astroid/core':
+        specifier: workspace:*
+        version: link:../core
+      '@astroid/errors':
+        specifier: workspace:*
+        version: link:../errors
+      '@astroid/notification':
+        specifier: workspace:*
+        version: link:../notification
+      '@astroid/policy':
+        specifier: workspace:*
+        version: link:../policy
+      '@astroid/transaction':
+        specifier: workspace:*
+        version: link:../transaction
+      '@astroid/types':
+        specifier: workspace:*
+        version: link:../types
+      '@astroid/utils':
+        specifier: workspace:*
+        version: link:../utils
+      '@astroid/wallet':
+        specifier: workspace:*
+        version: link:../wallet
+      '@astroid/webhook':
+        specifier: workspace:*
+        version: link:../webhook
+      '@stellar/stellar-base':
+        specifier: ^15.0.0
+        version: 15.0.0
+    devDependencies:
+      '@types/node':
+        specifier: 22.10.5
+        version: 22.10.5
       typescript:
         specifier: 5.7.3
         version: 5.7.3

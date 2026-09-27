@@ -26,12 +26,7 @@ import { z } from 'zod';
 /* Enum schemas                                                                */
 /* -------------------------------------------------------------------------- */
 
-export const OrganizationPlanSchema = z.enum([
-  'FREE',
-  'STARTER',
-  'GROWTH',
-  'ENTERPRISE',
-]);
+export const OrganizationPlanSchema = z.enum(['FREE', 'STARTER', 'GROWTH', 'ENTERPRISE']);
 
 export const OrganizationStatusSchema = z.enum(['ACTIVE', 'SUSPENDED', 'ARCHIVED']);
 
@@ -56,13 +51,7 @@ export const AgentRoleSchema = z.enum([
 
 export const AgentStatusSchema = z.enum(['ACTIVE', 'PAUSED', 'SUSPENDED', 'ARCHIVED']);
 
-export const WalletTypeSchema = z.enum([
-  'AGENT',
-  'TREASURY',
-  'ESCROW',
-  'SHARED',
-  'PERSONAL',
-]);
+export const WalletTypeSchema = z.enum(['AGENT', 'TREASURY', 'ESCROW', 'SHARED', 'PERSONAL']);
 
 export const WalletStatusSchema = z.enum(['ACTIVE', 'FROZEN', 'PAUSED', 'ARCHIVED']);
 
@@ -128,12 +117,7 @@ export const ApprovalTypeSchema = z.enum([
   'EMERGENCY',
 ]);
 
-export const ApprovalDecisionSchema = z.enum([
-  'APPROVED',
-  'REJECTED',
-  'DELEGATED',
-  'EXPIRED',
-]);
+export const ApprovalDecisionSchema = z.enum(['APPROVED', 'REJECTED', 'DELEGATED', 'EXPIRED']);
 
 export const NotificationTypeSchema = z.enum([
   'BUDGET_EXCEEDED',
@@ -248,26 +232,28 @@ export const WalletBalanceSchema = z.object({
 });
 
 /** Policy configuration (flexible JSONB shape). */
-export const PolicyConfigurationSchema = z.object({
-  maxAmount: z.number().optional(),
-  minAmount: z.number().optional(),
-  asset: z.string().optional(),
-  allowedAssets: z.array(z.string()).optional(),
-  blockedAssets: z.array(z.string()).optional(),
-  allowedRecipients: z.array(z.string()).optional(),
-  blockedRecipients: z.array(z.string()).optional(),
-  requiresApproval: z.boolean().optional(),
-  dailyLimit: z.number().optional(),
-  weeklyLimit: z.number().optional(),
-  monthlyLimit: z.number().optional(),
-  timeWindow: z
-    .object({
-      start: z.string(),
-      end: z.string(),
-      timezone: z.string().optional(),
-    })
-    .optional(),
-}).passthrough();
+export const PolicyConfigurationSchema = z
+  .object({
+    maxAmount: z.number().optional(),
+    minAmount: z.number().optional(),
+    asset: z.string().optional(),
+    allowedAssets: z.array(z.string()).optional(),
+    blockedAssets: z.array(z.string()).optional(),
+    allowedRecipients: z.array(z.string()).optional(),
+    blockedRecipients: z.array(z.string()).optional(),
+    requiresApproval: z.boolean().optional(),
+    dailyLimit: z.number().optional(),
+    weeklyLimit: z.number().optional(),
+    monthlyLimit: z.number().optional(),
+    timeWindow: z
+      .object({
+        start: z.string(),
+        end: z.string(),
+        timezone: z.string().optional(),
+      })
+      .optional(),
+  })
+  .passthrough();
 
 /** Policy entity. */
 export const PolicySchema = z.object({

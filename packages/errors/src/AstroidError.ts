@@ -12,5 +12,19 @@
 
 export {
   AstroidError,
+  AuthenticationError,
+  AuthorizationError,
+  ForbiddenError,
+  ValidationError,
+  NotFoundError,
+  ConflictError,
+  PolicyViolationError,
+  InsufficientFundsError,
+  BudgetExceededError,
+  ApprovalRequiredError,
+  RateLimitError,
+  NetworkError,
+  InternalServerError,
+  ServerError,
   type AstroidErrorOptions,
 } from './index.js';
