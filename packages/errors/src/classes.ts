@@ -61,6 +61,17 @@ export class RateLimitError extends AstroidError {
   }
 }
 
+/**
+ * 429 — rate limit exceeded (issue #76 naming).
+ *
+ * The issue's example list names the rate-limit class with the `Api` prefix;
+ * the SDK's canonical name is {@link RateLimitError}. This subclass keeps the
+ * documented name working so the code sample in the issue compiles verbatim
+ * while `instanceof RateLimitError` continues to match every 429 the SDK
+ * raises.
+ */
+export class ApiRateLimitError extends RateLimitError {}
+
 /** A transport-level failure: DNS, connection reset, offline, or timeout. */
 export class NetworkError extends AstroidError {
   override get isRetryable(): boolean {
