@@ -20,12 +20,10 @@ import type {
   PolicyRuleCheck,
   PolicyRuleEvaluation,
   PolicyEvaluationResult,
-  PolicyType,
-  PolicyConfiguration,
 } from '@astroid/types';
 
 // Enums
-export const PolicyTypeSchema: z.ZodType<PolicyType> = z.enum([
+const PolicyTypeSchema = z.enum([
   'MAX_AMOUNT',
   'MIN_AMOUNT',
   'ALLOWED_ASSETS',
@@ -41,7 +39,6 @@ export const PolicyTypeSchema: z.ZodType<PolicyType> = z.enum([
   'EMERGENCY_LOCK',
   'COMPOSITE',
 ]);
-export type InferredPolicyType = z.infer<typeof PolicyTypeSchema>;
 
 export const PolicyAllowedHoursSchema: z.ZodType<PolicyAllowedHours> = z.object({
   startHour: z.number().int().min(0).max(23),
@@ -49,9 +46,8 @@ export const PolicyAllowedHoursSchema: z.ZodType<PolicyAllowedHours> = z.object(
   timezone: z.string().optional(),
   days: z.array(z.number().int().min(0).max(6)).optional(),
 });
-export type InferredPolicyAllowedHours = z.infer<typeof PolicyAllowedHoursSchema>;
 
-export const PolicyConfigurationSchema: z.ZodType<PolicyConfiguration> = z
+export const PolicyConfigurationSchema = z
   .object({
     maxAmount: z.number().optional(),
     minAmount: z.number().optional(),
@@ -75,7 +71,6 @@ export const PolicyConfigurationSchema: z.ZodType<PolicyConfiguration> = z
     requiredSignatures: z.number().positive().optional(),
   })
   .passthrough();
-export type InferredPolicyConfiguration = z.infer<typeof PolicyConfigurationSchema>;
 
 export const PolicyCreateInputSchema: z.ZodType<PolicyCreateInput> = z.object({
   name: z.string(),
@@ -86,7 +81,6 @@ export const PolicyCreateInputSchema: z.ZodType<PolicyCreateInput> = z.object({
   enabled: z.boolean(),
   agentId: z.string().nullable().optional(),
 });
-export type InferredPolicyCreateInput = z.infer<typeof PolicyCreateInputSchema>;
 
 export const PolicyUpdateInputSchema: z.ZodType<PolicyUpdateInput> = z.object({
   name: z.string().optional(),
@@ -97,7 +91,6 @@ export const PolicyUpdateInputSchema: z.ZodType<PolicyUpdateInput> = z.object({
   enabled: z.boolean().optional(),
   agentId: z.string().nullable().optional(),
 });
-export type InferredPolicyUpdateInput = z.infer<typeof PolicyUpdateInputSchema>;
 
 export const PolicySimulationRequestSchema: z.ZodType<PolicySimulationRequest> = z.object({
   walletId: z.string().optional(),
@@ -111,7 +104,6 @@ export const PolicySimulationRequestSchema: z.ZodType<PolicySimulationRequest> =
   policyIds: z.array(z.string()).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
-export type InferredPolicySimulationRequest = z.infer<typeof PolicySimulationRequestSchema>;
 
 export const SimulatePolicyRequestSchema: z.ZodType<SimulatePolicyRequest> = z.object({
   walletId: z.string().optional(),
@@ -120,13 +112,11 @@ export const SimulatePolicyRequestSchema: z.ZodType<SimulatePolicyRequest> = z.o
   recipientAddress: z.string().optional(),
   spentInWindow: z.string().optional(),
 });
-export type InferredSimulatePolicyRequest = z.infer<typeof SimulatePolicyRequestSchema>;
 
 export const TransactionSignatureSchema: z.ZodType<TransactionSignature> = z.object({
   signer: z.string(),
   weight: z.number().optional(),
 });
-export type InferredTransactionSignature = z.infer<typeof TransactionSignatureSchema>;
 
 export const TransactionDetailsSchema: z.ZodType<TransactionDetails> = z.object({
   asset: z.string(),
@@ -137,7 +127,6 @@ export const TransactionDetailsSchema: z.ZodType<TransactionDetails> = z.object(
   signatures: z.array(TransactionSignatureSchema).optional(),
   signedWeight: z.number().optional(),
 });
-export type InferredTransactionDetails = z.infer<typeof TransactionDetailsSchema>;
 
 export const PolicyRuleSchema: z.ZodType<PolicyRule> = z.object({
   name: z.string(),
@@ -147,13 +136,11 @@ export const PolicyRuleSchema: z.ZodType<PolicyRule> = z.object({
   allowedHours: PolicyAllowedHoursSchema.optional(),
   requiredSignatures: z.number().optional(),
 });
-export type InferredPolicyRule = z.infer<typeof PolicyRuleSchema>;
 
 export const PolicySetSchema: z.ZodType<PolicySet> = z.object({
   name: z.string().optional(),
   rules: z.array(PolicyRuleSchema),
 });
-export type InferredPolicySet = z.infer<typeof PolicySetSchema>;
 
 export const PolicyViolationDetailSchema: z.ZodType<PolicyViolationDetail> = z.object({
   policyId: z.string(),
@@ -162,7 +149,6 @@ export const PolicyViolationDetailSchema: z.ZodType<PolicyViolationDetail> = z.o
   limit: z.union([z.number(), z.string()]).optional(),
   actual: z.union([z.number(), z.string()]).optional(),
 });
-export type InferredPolicyViolationDetail = z.infer<typeof PolicyViolationDetailSchema>;
 
 export const PolicyViolationSchema: z.ZodType<PolicyViolation> = z.object({
   policyId: z.string(),
@@ -172,28 +158,24 @@ export const PolicyViolationSchema: z.ZodType<PolicyViolation> = z.object({
   limit: z.union([z.number(), z.string()]).optional(),
   actual: z.union([z.number(), z.string()]).optional(),
 });
-export type InferredPolicyViolation = z.infer<typeof PolicyViolationSchema>;
 
 export const PolicyRiskFactorSchema: z.ZodType<PolicyRiskFactor> = z.object({
   factor: z.string(),
   score: z.number(),
   description: z.string(),
 });
-export type InferredPolicyRiskFactor = z.infer<typeof PolicyRiskFactorSchema>;
 
 export const PolicyRiskAssessmentSchema: z.ZodType<PolicyRiskAssessment> = z.object({
   score: z.number(),
   band: z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']),
   factors: z.array(PolicyRiskFactorSchema),
 });
-export type InferredPolicyRiskAssessment = z.infer<typeof PolicyRiskAssessmentSchema>;
 
 export const PolicyBudgetImpactSchema: z.ZodType<PolicyBudgetImpact> = z.object({
   budgetId: z.string(),
   beforeRemaining: z.string(),
   afterRemaining: z.string(),
 });
-export type InferredPolicyBudgetImpact = z.infer<typeof PolicyBudgetImpactSchema>;
 
 export const PolicySimulationResultSchema: z.ZodType<PolicySimulationResult> = z.object({
   allowed: z.boolean(),
@@ -203,10 +185,8 @@ export const PolicySimulationResultSchema: z.ZodType<PolicySimulationResult> = z
   budgetImpact: z.array(PolicyBudgetImpactSchema),
   explanation: z.string(),
 });
-export type InferredPolicySimulationResult = z.infer<typeof PolicySimulationResultSchema>;
 
 export const PolicyRuleCheckSchema: z.ZodType<PolicyRuleCheck> = z.enum(['address', 'time', 'signatures', 'none']);
-export type InferredPolicyRuleCheck = z.infer<typeof PolicyRuleCheckSchema>;
 
 export const PolicyRuleEvaluationSchema: z.ZodType<PolicyRuleEvaluation> = z.object({
   rule: z.string(),
@@ -214,7 +194,6 @@ export const PolicyRuleEvaluationSchema: z.ZodType<PolicyRuleEvaluation> = z.obj
   success: z.boolean(),
   explanation: z.string().optional(),
 });
-export type InferredPolicyRuleEvaluation = z.infer<typeof PolicyRuleEvaluationSchema>;
 
 export const PolicyEvaluationResultSchema: z.ZodType<PolicyEvaluationResult> = z.object({
   allowed: z.boolean(),
@@ -224,5 +203,3 @@ export const PolicyEvaluationResultSchema: z.ZodType<PolicyEvaluationResult> = z
   failedRules: z.number(),
   failedRuleNames: z.array(z.string()),
 });
-export type InferredPolicyEvaluationResult = z.infer<typeof PolicyEvaluationResultSchema>;
-

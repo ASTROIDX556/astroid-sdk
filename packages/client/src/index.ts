@@ -76,9 +76,10 @@ import { createTokenRefreshInterceptor } from './token-refresh.js';
  * Configuration accepted by `new Astroid({ ... })`.
  *
  * Extends the core client config with shorthand retry options
- * (`retries` / `minTimeout` / `maxTimeout` / `retryableStatuses` / `jitter`) for
- * convenience. Each is merged into the `retry` block, so the full
- * {@link RetryConfig} remains available for advanced use.
+ * (`retries` / `minTimeout` / `maxTimeout` / `backoffFactor` /
+ * `retryableStatuses` / `jitter`) for convenience. Each is merged into the
+ * `retry` block, so the full {@link RetryConfig} remains available for advanced
+ * use.
  */
 export interface AstroidClientConfig extends CoreClientConfig {
   /** Maximum number of retries after the first attempt (shorthand for `retry.maxRetries`). */
@@ -98,6 +99,13 @@ export interface AstroidClientConfig extends CoreClientConfig {
    * `retry.retryableStatuses`). Defaults to `[429, 502, 503, 504]`.
    */
   retryableStatuses?: number[];
+  /**
+   * Exponential growth factor applied between retries — the uncapped delay for
+   * retry `n` is `retry.baseDelayMs * backoffFactor^(n-1)` (shorthand for
+   * `retry.backoffFactor`). Defaults to `2`; use `1` for a constant delay and
+   * values above `2` to back off more aggressively.
+   */
+  backoffFactor?: number;
   /**
    * Apply full jitter to each backoff delay (shorthand for `retry.jitter`).
    * Default `true`; set to `false` for deterministic delays.
@@ -277,6 +285,10 @@ export class Astroid {
       accessToken: typeof authConfig.accessToken === 'string' ? authConfig.accessToken : undefined,
       refreshToken: authConfig.refreshToken,
       onTokenUpdate: authConfig.onTokenUpdate,
+      // Issue #237: surface authentication failures (refresh failures,
+      // exhausted refresh tokens, escalated 401s) to the application after
+      // the session manager has cleared the invalid credentials.
+      onAuthFailure: authConfig.onAuthFailure,
     });
 
     this.auth = new AuthResource(this.http, this.sessionManager);
@@ -514,22 +526,33 @@ export default Astroid;
 
 /**
  * Normalise the flat retry shorthand options
- * (`retries` / `minTimeout` / `maxTimeout` / `retryableStatuses` / `jitter`)
- * into a single core `retry` block, merging with any explicit `retry` object.
+ * (`retries` / `minTimeout` / `maxTimeout` / `backoffFactor` /
+ * `retryableStatuses` / `jitter`) into a single core `retry` block, merging
+ * with any explicit `retry` object.
  *
  * Shorthand keys win over the corresponding `retry.*` field; `retry: false`
  * always disables retries. When no shorthand is supplied the config is returned
  * untouched so core defaults apply.
  */
 function normalizeConfig(config: AstroidClientConfig): CoreClientConfig {
-  const { retries, retryDelay, minTimeout, maxTimeout, retryableStatuses, jitter, retry, ...rest } =
-    config;
+  const {
+    retries,
+    retryDelay,
+    minTimeout,
+    maxTimeout,
+    backoffFactor,
+    retryableStatuses,
+    jitter,
+    retry,
+    ...rest
+  } = config;
 
   const shorthand: Partial<RetryConfig> = {};
   if (retries !== undefined) shorthand.maxRetries = retries;
   const baseDelayMs = minTimeout ?? retryDelay;
   if (baseDelayMs !== undefined) shorthand.baseDelayMs = baseDelayMs;
   if (maxTimeout !== undefined) shorthand.maxDelayMs = maxTimeout;
+  if (backoffFactor !== undefined) shorthand.backoffFactor = backoffFactor;
   if (retryableStatuses !== undefined) shorthand.retryableStatuses = retryableStatuses;
   if (jitter !== undefined) shorthand.jitter = jitter;
 
@@ -554,6 +577,7 @@ export {
   getTokenExpiration,
   type TokenStorage,
   type SessionManagerConfig,
+  type AuthFailureCallback,
 } from '@astroid/auth';
 export { WalletResource, type WalletListParams } from '@astroid/wallet';
 export { AgentResource, type AgentListParams, type AgentCursorListParams } from '@astroid/agent';
