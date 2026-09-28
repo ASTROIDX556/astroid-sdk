@@ -5,8 +5,12 @@
  */
 
 import { AuthenticationError } from '@astroid/errors';
-import type { AuthTokens } from '@astroid/types';
+import type { AuthFailureEvent, AuthFailureReason, AuthTokens } from '@astroid/types';
 import type { HttpClient, Middleware, PreparedRequest } from '@astroid/core';
+
+// Re-exported so `@astroid/auth` consumers can name the failure-event types
+// without reaching into `@astroid/types` (issue #237).
+export type { AuthFailureEvent, AuthFailureReason };
 
 /** Custom storage interface for persisting session tokens (e.g., localStorage). */
 export interface TokenStorage {
@@ -23,6 +27,9 @@ export interface TokenStorage {
  */
 export type SessionAuthMode = 'jwt' | 'apiKey';
 
+/** Callback fired when authentication fails and stored credentials are cleared. */
+export type AuthFailureCallback = (event: AuthFailureEvent) => void | Promise<void>;
+
 /** Options for constructing a {@link SessionManager}. */
 export interface SessionManagerConfig {
   /** Authentication strategy. Inferred when omitted (see {@link SessionManager.mode}). */
@@ -37,6 +44,13 @@ export interface SessionManagerConfig {
   storageKeyPrefix?: string;
   bufferSeconds?: number;
   onTokenUpdate?: (tokens: AuthTokens) => void | Promise<void>;
+  /**
+   * Fired whenever authentication fails and stored credentials are cleared
+   * (issue #237): a failed refresh, a missing/expired refresh token, or a
+   * `401 Unauthorized` escalation. Callback errors are swallowed so they can
+   * never break the auth flow.
+   */
+  onAuthFailure?: AuthFailureCallback;
 }
 
 /** Standard JWT payload claims. */
@@ -114,6 +128,7 @@ export class SessionManager {
   private readonly authMode: SessionAuthMode;
   private readonly apiKeyHeader: string;
   private readonly onTokenUpdate?: (tokens: AuthTokens) => void | Promise<void>;
+  private readonly onAuthFailure?: AuthFailureCallback;
   private activeRefreshPromise: Promise<AuthTokens> | null = null;
 
   constructor(config: SessionManagerConfig = {}) {
@@ -129,6 +144,7 @@ export class SessionManager {
     this.authMode =
       config.mode ?? (config.apiKey && !config.accessToken ? 'apiKey' : 'jwt');
     this.onTokenUpdate = config.onTokenUpdate;
+    this.onAuthFailure = config.onAuthFailure;
   }
 
   /** The authentication strategy this session operates in. */
@@ -304,6 +320,31 @@ export class SessionManager {
   }
 
   /**
+   * Clear stored credentials and emit the authentication-failure event
+   * (issue #237). Runs the {@link SessionManagerConfig.onAuthFailure} callback
+   * after cleanup so subscribers observe a fully-invalidated session; callback
+   * errors are swallowed so they can never break the auth flow.
+   */
+  async handleAuthFailure(
+    reason: AuthFailureReason,
+    error: unknown,
+  ): Promise<void> {
+    await this.clearTokens();
+    if (!this.onAuthFailure) return;
+    const event: AuthFailureEvent = {
+      reason,
+      error,
+      timestamp: new Date().toISOString(),
+    };
+    try {
+      await this.onAuthFailure(event);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('Failed to execute onAuthFailure callback:', err);
+    }
+  }
+
+  /**
    * Queue mechanism for concurrent refresh calls:
    * Ensures only one refresh request is executed simultaneously when multiple calls
    * encounter an expired token concurrently.
@@ -323,7 +364,7 @@ export class SessionManager {
     }
 
     if (!this.refreshToken || this.isRefreshTokenExpired(0)) {
-      await this.clearTokens();
+      await this.handleAuthFailure('refresh_token_expired', undefined);
       throw new AuthenticationError('Refresh token is missing or expired', {
         code: 'TOKEN_EXPIRED',
         status: 401,
@@ -338,7 +379,7 @@ export class SessionManager {
         await this.setTokens(tokens);
         return tokens;
       } catch (err) {
-        await this.clearTokens();
+        await this.handleAuthFailure('refresh_failed', err);
         if (err instanceof AuthenticationError) {
           throw err;
         }
@@ -469,7 +510,16 @@ export function createSessionMiddleware(
     },
     async onError(error: unknown, _req: PreparedRequest): Promise<void> {
       if (error instanceof AuthenticationError && error.status === 401) {
-        await sessionManager.clearTokens();
+        // Issue #237: only treat this as a new authentication failure while
+        // the session still holds credentials. A refresh that just failed has
+        // already cleared them and emitted `refresh_failed`, so the escalated
+        // 401 must not emit a duplicate event.
+        if (
+          sessionManager.getAccessToken() !== undefined ||
+          sessionManager.getRefreshToken() !== undefined
+        ) {
+          await sessionManager.handleAuthFailure('unauthorized_401', error);
+        }
       }
     },
   };
