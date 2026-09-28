@@ -398,7 +398,7 @@ export class HttpClient {
     // precise, so the header value only fills the gap when the envelope did
     // not already provide one.
     let retryAfterDetails: Record<string, unknown> | undefined;
-    if (raw.status === 429 || raw.status === 503) {
+    if (isRetryableStatus(raw.status) || raw.status === 429 || raw.status === 503) {
       const seconds = parseRetryAfter(raw.headers.get('retry-after'));
       if (seconds !== undefined) retryAfterDetails = { retryAfter: seconds };
     }
@@ -435,10 +435,14 @@ export class HttpClient {
     retry: RetryConfig | null = this.config.retry,
   ): number {
     if (!retry) return 0;
-    if (raw.status === 429 || raw.status === 503) {
+    const isRetryable =
+      isRetryableStatus(raw.status) ||
+      Boolean(retry.retryableStatuses?.includes(raw.status)) ||
+      Boolean(retry.retryableStatusCodes?.includes(raw.status));
+    if (isRetryable) {
       const seconds = parseRetryAfter(raw.headers.get('retry-after'));
       if (seconds !== undefined) {
-        return Math.min(seconds * 1000, retry.maxDelayMs);
+        return Math.min(Math.max(0, seconds * 1000), retry.maxDelayMs);
       }
     }
     return backoffDelay(attempt, retry);
