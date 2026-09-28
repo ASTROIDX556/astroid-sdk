@@ -7,6 +7,7 @@ import {
   parseJwt,
   getTokenExpiration,
   isTokenExpired,
+  type AuthFailureEvent,
   type TokenStorage,
 } from '../src/session.js';
 import { AuthResource } from '../src/index.js';
@@ -147,6 +148,77 @@ describe('Session Management & Token Refresh', () => {
       expect(session.getRefreshToken()).toBeUndefined();
     });
 
+    it('emits a refresh_failed auth-failure event after clearing credentials (issue #237)', async () => {
+      const failure = new AuthenticationError('Invalid refresh token', {
+        code: 'TOKEN_EXPIRED',
+        status: 401,
+      });
+      const events: AuthFailureEvent[] = [];
+      const storageMap = new Map<string, string>();
+      const session = new SessionManager({
+        accessToken: expiredAccessToken,
+        refreshToken: validRefreshToken,
+        storage: {
+          getItem: (key) => storageMap.get(key) ?? null,
+          setItem: (key, value) => {
+            storageMap.set(key, value);
+          },
+          removeItem: (key) => {
+            storageMap.delete(key);
+          },
+        },
+        onAuthFailure: (event) => {
+          events.push(event);
+        },
+      });
+      const refreshFn = vi.fn().mockRejectedValue(failure);
+
+      await expect(session.refreshSession(refreshFn)).rejects.toThrow(AuthenticationError);
+
+      expect(session.getAccessToken()).toBeUndefined();
+      expect(session.getRefreshToken()).toBeUndefined();
+      expect(events).toHaveLength(1);
+      expect(events[0]!.reason).toBe('refresh_failed');
+      expect(events[0]!.error).toBe(failure);
+      expect(new Date(events[0]!.timestamp).getTime()).not.toBeNaN();
+      // Cleanup ran before the event was emitted.
+      expect(storageMap.has('astroid_auth_access_token')).toBe(false);
+      expect(storageMap.has('astroid_auth_refresh_token')).toBe(false);
+    });
+
+    it('emits a refresh_token_expired event without invoking the refresh call', async () => {
+      const events: AuthFailureEvent[] = [];
+      const session = new SessionManager({
+        accessToken: expiredAccessToken,
+        refreshToken: expiredRefreshToken,
+        onAuthFailure: (event) => {
+          events.push(event);
+        },
+      });
+      const refreshFn = vi.fn();
+
+      await expect(session.refreshSession(refreshFn)).rejects.toThrow(AuthenticationError);
+      expect(refreshFn).not.toHaveBeenCalled();
+      expect(events).toHaveLength(1);
+      expect(events[0]!.reason).toBe('refresh_token_expired');
+      expect(session.getAccessToken()).toBeUndefined();
+    });
+
+    it('swallows errors thrown by the onAuthFailure callback so cleanup is never broken', async () => {
+      const session = new SessionManager({
+        accessToken: expiredAccessToken,
+        refreshToken: validRefreshToken,
+        onAuthFailure: () => {
+          throw new Error('listener exploded');
+        },
+      });
+      const refreshFn = vi.fn().mockRejectedValue(new Error('refresh boom'));
+
+      await expect(session.refreshSession(refreshFn)).rejects.toThrow(AuthenticationError);
+      expect(session.getAccessToken()).toBeUndefined();
+      expect(session.getRefreshToken()).toBeUndefined();
+    });
+
     it('should throw AuthenticationError immediately when refresh token is expired', async () => {
       const session = new SessionManager({
         accessToken: expiredAccessToken,
@@ -245,6 +317,68 @@ describe('Session Management & Token Refresh', () => {
 
       expect(session.getAccessToken()).toBeUndefined();
       expect(session.getRefreshToken()).toBeUndefined();
+    });
+
+    it('emits an unauthorized_401 failure event alongside the credential cleanup (issue #237)', async () => {
+      const events: AuthFailureEvent[] = [];
+      const session = new SessionManager({
+        accessToken: validAccessToken,
+        refreshToken: validRefreshToken,
+        onAuthFailure: (event) => {
+          events.push(event);
+        },
+      });
+      const middleware = createSessionMiddleware(session, vi.fn());
+      const error = new AuthenticationError('Session invalidated', {
+        code: 'UNAUTHORIZED',
+        status: 401,
+      });
+
+      await middleware.onError!(error, {
+        method: 'GET',
+        url: 'https://api.astroid.finance/v1/wallets',
+        headers: {},
+        body: undefined,
+        timeoutMs: 30000,
+        retryable: true,
+        signal: undefined,
+        options: { method: 'GET', path: '/wallets' },
+      });
+
+      expect(session.getAccessToken()).toBeUndefined();
+      expect(session.getRefreshToken()).toBeUndefined();
+      expect(events).toHaveLength(1);
+      expect(events[0]!.reason).toBe('unauthorized_401');
+      expect(events[0]!.error).toBe(error);
+    });
+
+    it('leaves non-401 errors untouched without emitting a failure event', async () => {
+      const events: AuthFailureEvent[] = [];
+      const session = new SessionManager({
+        accessToken: validAccessToken,
+        refreshToken: validRefreshToken,
+        onAuthFailure: (event) => {
+          events.push(event);
+        },
+      });
+      const middleware = createSessionMiddleware(session, vi.fn());
+
+      await middleware.onError!(
+        new AuthenticationError('Forbidden', { code: 'FORBIDDEN', status: 403 }),
+        {
+          method: 'GET',
+          url: 'https://api.astroid.finance/v1/wallets',
+          headers: {},
+          body: undefined,
+          timeoutMs: 30000,
+          retryable: true,
+          signal: undefined,
+          options: { method: 'GET', path: '/wallets' },
+        }
+      );
+
+      expect(events).toHaveLength(0);
+      expect(session.getAccessToken()).toBe(validAccessToken);
     });
   });
 });
