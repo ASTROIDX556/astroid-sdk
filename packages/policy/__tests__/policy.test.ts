@@ -400,6 +400,7 @@ describe('PolicyClient export surface', () => {
       'deletePolicy',
       'simulate',
       'simulatePolicy',
+      'simulatePolicyAgainst',
       'simulateTransaction',
     ] as const) {
       expect(typeof PolicyClient.prototype[method]).toBe('function');
