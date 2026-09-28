@@ -5,11 +5,17 @@ import type {
   PolicySimulationRequest,
   PolicySimulationResult,
   PolicyType,
+  PolicyRule,
+  TransactionDetails,
+  PolicyRuleSimulationResult,
+  PolicyUpdateSimulationRequest,
+  PolicyUpdateSimulationResult,
 } from '@astroid/types';
 
 import { simulatePolicy as evaluatePolicyRules } from './simulator.js';
 import type { PolicySimulationReport, SimulatedTransaction } from './simulator.js';
 import { simulatePolicy } from './simulate-policy.js';
+import { simulatePolicyUpdate } from './simulate-policy-update.js';
 
 /**
  * The client-side (offline) policy engine. `evaluatePolicyRules` is the pure
@@ -35,15 +41,16 @@ export {
 } from './simulate-policy.js';
 
 /**
- * Policy simulation parameter builders — a fluent, validated way to assemble a
- * {@link PolicySimulationRequest} for `simulatePolicy` / `PolicyResource.simulatePolicy`
- * ({@link PolicySimulationBuilder}, {@link simulationParams}).
+ * Server-side policy update simulation endpoint helper (issue #249). Import
+ * `simulatePolicyUpdate` to validate a proposed rule change against historical
+ * transactions without constructing a {@link PolicyResource}.
  */
 export {
-  PolicySimulationBuilder,
-  simulationParams,
-  validatePolicySimulationParams,
-} from './simulation-params.js';
+  simulatePolicyUpdate,
+  validatePolicyUpdateSimulationInput,
+  POLICY_SIMULATE_UPDATE_PATH,
+  type PolicyUpdateSimulationHttpClient,
+} from './simulate-policy-update.js';
 
 /** Offline policy-engine types and helpers (see {@link evaluatePolicyRules}). */
 export {
@@ -106,6 +113,10 @@ export type {
   PolicyRiskAssessment,
   PolicyRiskFactor,
   PolicyBudgetImpact,
+  PolicyUpdateSimulationRequest,
+  PolicyUpdateSimulationOutcome,
+  PolicyUpdateSimulationImpact,
+  PolicyUpdateSimulationResult,
   SimulatePolicyRequest,
   Paginated,
 } from '@astroid/types';
@@ -337,8 +348,69 @@ export class PolicyResource extends Resource {
    * }
    * ```
    */
-  async simulatePolicy(input: PolicySimulationRequest): Promise<PolicySimulationResult> {
-    return simulatePolicy(this.client, input);
+  async simulatePolicy(input: PolicySimulationRequest): Promise<PolicySimulationResult>;
+  /**
+   * Simulate a proposed policy rule against a target transaction payload.
+   *
+   * @param rule        The proposed policy rule to evaluate.
+   * @param transaction The target transaction/transfer payload.
+   * @returns           The simulation result indicating if it was allowed/denied.
+   */
+  async simulatePolicy(
+    rule: PolicyRule,
+    transaction: TransactionDetails,
+  ): Promise<PolicyRuleSimulationResult>;
+  async simulatePolicy(
+    arg1: PolicySimulationRequest | PolicyRule,
+    arg2?: TransactionDetails,
+  ): Promise<PolicySimulationResult | PolicyRuleSimulationResult> {
+    if (arg2) {
+      const res = await this.client.post<PolicyRuleSimulationResult>('/policies/simulate-rule', {
+        rule: arg1,
+        transaction: arg2,
+      });
+      return res.data;
+    }
+    return simulatePolicy(this.client, arg1 as PolicySimulationRequest);
+  }
+
+  /**
+   * Validate a proposed policy rule change against historical transaction
+   * payloads before persisting the update (issue #249).
+   *
+   * The proposed rule is replayed against each historical transaction so the
+   * caller sees, up front, exactly which transactions the change would reject,
+   * which rule checks pass, and the estimated impact — all without committing
+   * anything.
+   *
+   * An unsafe change is **not** an error — `valid` is `false` and
+   * `violatedConstraints` / `estimatedImpact` describe the damage. Only a
+   * transport/API failure rejects.
+   *
+   * @param input The policy id, the proposed rule and the historical transactions.
+   * @returns     The verdict, per-transaction outcomes, aggregate impact and a
+   *              human-readable explanation.
+   * @throws      `ValidationError` when the request payload is malformed;
+   *              `NetworkError` / typed API errors when the request itself fails.
+   *
+   * @example
+   * ```ts
+   * const result = await astroid.policies.simulatePolicyUpdate({
+   *   policyId: 'pol_max',
+   *   proposedRule: { name: 'max-250', allowedRecipients: ['GABCD…'] },
+   *   transactions: [{ asset: 'USDC', amount: '150' }],
+   * });
+   *
+   * if (!result.valid) {
+   *   throw new Error(result.explanation);
+   * }
+   * await astroid.policies.update('pol_max', { /* the validated change *\/ });
+   * ```
+   */
+  async simulatePolicyUpdate(
+    input: PolicyUpdateSimulationRequest,
+  ): Promise<PolicyUpdateSimulationResult> {
+    return simulatePolicyUpdate(this.client, input);
   }
 
   /**
