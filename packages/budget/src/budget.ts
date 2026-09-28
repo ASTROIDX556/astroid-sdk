@@ -40,6 +40,7 @@ import type {
   UpdateBudgetAlertInput,
   UpdateBudgetInput,
 } from '@astroid/types';
+import { ValidationError } from '@astroid/errors';
 import {
   createBudgetAlert,
   listBudgetAlerts,
@@ -80,6 +81,12 @@ export interface ListBudgetsParams extends PaginationParams {
   parentBudgetId?: string;
   /** Only enabled / disabled budgets. */
   enabled?: boolean;
+}
+
+/** One budget and the fields to change in a batch update. */
+export interface BatchBudgetUpdateInput {
+  budgetId: string;
+  input: UpdateBudgetInput;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -335,6 +342,35 @@ export class BudgetClient {
    */
   async updateBudget(budgetId: string, input: UpdateBudgetInput): Promise<Budget> {
     return this.update(budgetId, input);
+  }
+
+  /** Update multiple budgets in one request. An empty batch is a no-op. */
+  async batchUpdateBudgets(updates: readonly BatchBudgetUpdateInput[]): Promise<Budget[]> {
+    if (!Array.isArray(updates)) {
+      throw new ValidationError('updates must be an array.', {
+        code: 'INVALID_BUDGET_BATCH',
+      });
+    }
+    if (updates.length === 0) return [];
+
+    const budgetIds = new Set<string>();
+    for (const update of updates) {
+      const budgetId = update?.budgetId;
+      if (typeof budgetId !== 'string' || budgetId.trim() === '') {
+        throw new ValidationError('Each budget update requires a non-empty budgetId.', {
+          code: 'INVALID_BUDGET_BATCH',
+        });
+      }
+      if (budgetIds.has(budgetId)) {
+        throw new ValidationError(`Budget "${budgetId}" appears more than once in the batch.`, {
+          code: 'INVALID_BUDGET_BATCH',
+          details: { budgetId },
+        });
+      }
+      budgetIds.add(budgetId);
+    }
+
+    return this.http.patch<Budget[]>(`${BASE_PATH}/batch`, { updates });
   }
 
   /** Delete a budget. */
