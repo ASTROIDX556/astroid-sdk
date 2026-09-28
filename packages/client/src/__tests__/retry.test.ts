@@ -626,6 +626,40 @@ describe('Astroid client — retry from config', () => {
     expect(wallet).toMatchObject({ id: 'w_config' });
     expect(callCount).toBe(2);
   });
+
+  it('normalises the backoffFactor shorthand into the retry config', () => {
+    const client = new Astroid({
+      apiKey: 'sk_test_backoff',
+      baseUrl: 'https://api.astroid.test',
+      retries: 4,
+      minTimeout: 100,
+      backoffFactor: 1.5,
+      fetch: vi.fn() as unknown as typeof fetch,
+    });
+
+    expect(client.http.config.retry).toMatchObject({
+      maxRetries: 4,
+      baseDelayMs: 100,
+      backoffFactor: 1.5,
+    });
+  });
+
+  it('merges the backoffFactor shorthand with an explicit retry object', () => {
+    const client = new Astroid({
+      apiKey: 'sk_test_backoff',
+      baseUrl: 'https://api.astroid.test',
+      jitter: false,
+      retry: { maxRetries: 2, backoffFactor: 3, retryableStatuses: [503] },
+      fetch: vi.fn() as unknown as typeof fetch,
+    });
+
+    expect(client.http.config.retry).toMatchObject({
+      maxRetries: 2,
+      backoffFactor: 3,
+      retryableStatuses: [503],
+      jitter: false,
+    });
+  });
 });
 
 /* -------------------------------------------------------------------------- */

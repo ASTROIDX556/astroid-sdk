@@ -272,6 +272,47 @@ describe('PolicyResource — pre-flight simulation and dry-run helper', () => {
 
   });
 
+  it('simulatePolicy handles rule evaluation overload for an allowed transaction', async () => {
+    const { resource, fetch } = client(async () =>
+      jsonResponse({ data: { allowed: true, denied: false, triggeredRuleIds: [] } }),
+    );
+
+    const rule = { name: 'allow-test', allowedRecipients: ['GVALID'] };
+    const tx = { asset: 'USDC', amount: 100, recipientAddress: 'GVALID' };
+
+    const result = await resource.simulatePolicy(rule, tx);
+
+    expect(result.allowed).toBe(true);
+    expect(result.denied).toBe(false);
+    expect(result.triggeredRuleIds).toEqual([]);
+
+    const [url, init] = fetch.mock.calls[0]!;
+    expect(String(url)).toContain('/policies/simulate-rule');
+    expect((init as RequestInit).method).toBe('POST');
+    const body = JSON.parse(String((init as RequestInit).body));
+    expect(body.rule).toEqual(rule);
+    expect(body.transaction).toEqual(tx);
+  });
+
+  it('simulatePolicy handles rule evaluation overload for a strictly blocked transaction', async () => {
+    const { resource, fetch } = client(async () =>
+      jsonResponse({ data: { allowed: false, denied: true, triggeredRuleIds: ['rule_123'] } }),
+    );
+
+    const rule = { name: 'deny-test', blockedRecipients: ['GBAD'] };
+    const tx = { asset: 'USDC', amount: 50, recipientAddress: 'GBAD' };
+
+    const result = await resource.simulatePolicy(rule, tx);
+
+    expect(result.allowed).toBe(false);
+    expect(result.denied).toBe(true);
+    expect(result.triggeredRuleIds).toEqual(['rule_123']);
+
+    const [url, init] = fetch.mock.calls[0]!;
+    expect(String(url)).toContain('/policies/simulate-rule');
+    expect((init as RequestInit).method).toBe('POST');
+  });
+
   it('propagates network failures as a structured NetworkError', async () => {
     const { resource } = client(async () => {
       throw new TypeError('Failed to fetch');
