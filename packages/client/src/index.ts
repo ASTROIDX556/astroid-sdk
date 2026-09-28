@@ -277,6 +277,10 @@ export class Astroid {
       accessToken: typeof authConfig.accessToken === 'string' ? authConfig.accessToken : undefined,
       refreshToken: authConfig.refreshToken,
       onTokenUpdate: authConfig.onTokenUpdate,
+      // Issue #237: surface authentication failures (refresh failures,
+      // exhausted refresh tokens, escalated 401s) to the application after
+      // the session manager has cleared the invalid credentials.
+      onAuthFailure: authConfig.onAuthFailure,
     });
 
     this.auth = new AuthResource(this.http, this.sessionManager);
@@ -554,6 +558,7 @@ export {
   getTokenExpiration,
   type TokenStorage,
   type SessionManagerConfig,
+  type AuthFailureCallback,
 } from '@astroid/auth';
 export { WalletResource, type WalletListParams } from '@astroid/wallet';
 export { AgentResource, type AgentListParams, type AgentCursorListParams } from '@astroid/agent';
