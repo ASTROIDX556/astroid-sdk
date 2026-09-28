@@ -127,7 +127,14 @@ export interface AstroidClientConfig extends AuthConfig {
   baseUrl?: string;
   /** API version path segment. Default `v1`. */
   apiVersion?: string;
-  /** Global request timeout in milliseconds. Default 10_000. */
+  /**
+   * Global request timeout in milliseconds (issue #263). Requests exceeding
+   * this deadline are aborted via `AbortController` and reject with a
+   * {@link AstroidTimeoutError}. Default {@link DEFAULT_TIMEOUT_MS} (30s).
+   *
+   * Individual requests can override it with the per-request `timeoutMs`
+   * request option.
+   */
   timeoutMs?: number;
   /** Alias for {@link timeoutMs} (accepted for API parity). */
   timeout?: number;
@@ -180,6 +187,16 @@ export interface ResolvedConfig {
 /** The default public API base URL. */
 export const DEFAULT_BASE_URL = 'https://api.astroid.finance';
 
+/**
+ * Default per-request timeout in milliseconds (issue #263): 30 seconds.
+ *
+ * Applied when neither the client config (`timeoutMs` / `timeout`) nor the
+ * individual request (`options.timeoutMs`) specifies a deadline. Configurable
+ * so long-running operations can raise it and latency-sensitive agents can
+ * lower it.
+ */
+export const DEFAULT_TIMEOUT_MS = 30_000;
+
 const DEFAULT_RETRY: RetryConfig = {
   maxRetries: 3,
   baseDelayMs: 250,
@@ -209,7 +226,7 @@ export function resolveConfig(config: AstroidClientConfig): ResolvedConfig {
   return {
     baseUrl: trimTrailingSlash(config.baseUrl ?? DEFAULT_BASE_URL),
     apiVersion: config.apiVersion ?? 'v1',
-    timeoutMs: config.timeoutMs ?? config.timeout ?? 10_000,
+    timeoutMs: config.timeoutMs ?? config.timeout ?? DEFAULT_TIMEOUT_MS,
     retry,
     headers: { ...(config.headers ?? {}) },
     auth: {

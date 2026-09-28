@@ -62,6 +62,7 @@ The default fee is `'100'` (single-operation network floor). Transactions come
 back unsigned — sign locally (wallet package offline signer) and submit via the
 transaction resource or `submit.ts`.
 
+
 ## Transaction simulation (pre-flight)
 
 Simulate a transaction **before** broadcasting it to avoid wasting fees on a
@@ -71,7 +72,6 @@ failure comes back as a structured `viable: false` result:
 
 ```ts
 import { simulateTransaction } from '@astroid/transaction';
-
 const result = await simulateTransaction(unsignedTx, {
   networkPassphrase: Networks.TESTNET,
   client: astroid.http, // optional remote dry-run via /transactions/simulate
@@ -101,3 +101,4 @@ The remote simulation response is parsed into the typed views from
   blocks) keep only the well-formed metrics on `result.resourceUsage` — missing
   fields are omitted rather than zero-filled — and a non-object API body
   returns `errorCode: 'MALFORMED_RESPONSE'` instead of crashing.
+
