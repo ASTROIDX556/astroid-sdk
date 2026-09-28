@@ -6,7 +6,7 @@
  * the SDK never has to reason about `undefined`.
  */
 
-import type { AuthTokens } from '@astroid/types';
+import type { AuthFailureEvent, AuthTokens } from '@astroid/types';
 
 /** How the SDK authenticates each request. */
 export interface AuthConfig {
@@ -24,6 +24,13 @@ export interface AuthConfig {
   refreshToken?: string;
   /** Callback invoked whenever tokens are refreshed or updated. */
   onTokenUpdate?: (tokens: AuthTokens) => void | Promise<void>;
+  /**
+   * Fired whenever authentication fails and the session's stored credentials
+   * are cleared (issue #237): a failed refresh, a missing/expired refresh
+   * token, or a `401 Unauthorized` escalation. Lets applications and
+   * long-lived agents react to session loss (re-authenticate, alert, …).
+   */
+  onAuthFailure?: (event: AuthFailureEvent) => void | Promise<void>;
   /**
    * Resolved dynamic token provider (set internally by `resolveConfig` when
    * `accessToken` is a function). Consumers should not set this directly.
@@ -247,6 +254,7 @@ export function resolveConfig(config: AstroidClientConfig): ResolvedConfig {
       accessToken: typeof config.accessToken === 'function' ? undefined : config.accessToken,
       refreshToken: config.refreshToken,
       onTokenUpdate: config.onTokenUpdate,
+      onAuthFailure: config.onAuthFailure,
       tokenProvider: typeof config.accessToken === 'function' ? config.accessToken : undefined,
     },
     fetch: fetchImpl,
