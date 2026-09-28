@@ -1,8 +1,15 @@
 export * from './calculator.js';
 export * from './budget.js';
 
-// `metrics.ts` and `validation.ts` both export a `SpendRequest` alias for the
-// same shape; re-export explicitly to avoid a duplicate-export ambiguity.
+// `metrics.ts`/`validation.ts` both define `SpendRequest`, and `metrics.ts`/
+// `utils.ts` both export `calculateUtilization` with different signatures
+// (spent/limit vs. BigInt-safe per-asset allocation) — re-export explicitly,
+// aliasing the allocation variant, to avoid duplicate-export ambiguity.
+export {
+  calculateUtilization as calculateBudgetAllocation,
+  type AssetUtilization,
+  type BudgetUtilizationResult,
+} from './utils.js';
 export {
   calculateUtilization,
   isThresholdExceeded,
