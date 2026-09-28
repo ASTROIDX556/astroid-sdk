@@ -6,6 +6,9 @@ import type {
   PolicySimulationRequest,
   PolicySimulationResult,
   PolicyType,
+  PolicyRule,
+  TransactionDetails,
+  PolicyRuleSimulationResult,
 } from '@astroid/types';
 
 import { simulatePolicy as evaluatePolicyRules } from './simulator.js';
@@ -337,17 +340,27 @@ export class PolicyResource extends Resource {
    * }
    * ```
    */
-  async simulatePolicy(input: PolicySimulationRequest): Promise<PolicySimulationResult> {
-    const parseResult = PolicySimulationRequestSchema.safeParse(input);
-    if (!parseResult.success) {
-      throw new ValidationError('Validation failed', {
-        code: 'VALIDATION_ERROR',
-        details: {
-          fields: parseResult.error.flatten().fieldErrors,
-        },
+  async simulatePolicy(input: PolicySimulationRequest): Promise<PolicySimulationResult>;
+  /**
+   * Simulate a proposed policy rule against a target transaction payload.
+   *
+   * @param rule        The proposed policy rule to evaluate.
+   * @param transaction The target transaction/transfer payload.
+   * @returns           The simulation result indicating if it was allowed/denied.
+   */
+  async simulatePolicy(rule: PolicyRule, transaction: TransactionDetails): Promise<PolicyRuleSimulationResult>;
+  async simulatePolicy(
+    arg1: PolicySimulationRequest | PolicyRule,
+    arg2?: TransactionDetails,
+  ): Promise<PolicySimulationResult | PolicyRuleSimulationResult> {
+    if (arg2) {
+      const res = await this.client.post<PolicyRuleSimulationResult>('/policies/simulate-rule', {
+        rule: arg1,
+        transaction: arg2,
       });
+      return res.data;
     }
-    return simulatePolicy(this.client, input);
+    return simulatePolicy(this.client, arg1 as PolicySimulationRequest);
   }
 
   /**
