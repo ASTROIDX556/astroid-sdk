@@ -441,7 +441,7 @@ export class PolicyResource extends Resource {
     input: PolicySimulationRequest,
     options?: RequestOptionsExtras,
   ): Promise<PolicySimulationResult> {
-    return this.simulatePolicy(input, options);
+    return simulatePolicy(this.client, input, options);
   }
 
   /**
