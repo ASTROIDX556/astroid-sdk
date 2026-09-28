@@ -1,4 +1,5 @@
 import { Resource } from '@astroid/core';
+import { ValidationError } from '@astroid/errors';
 import type {
   Paginated,
   Policy,
@@ -10,6 +11,7 @@ import type {
 import { simulatePolicy as evaluatePolicyRules } from './simulator.js';
 import type { PolicySimulationReport, SimulatedTransaction } from './simulator.js';
 import { simulatePolicy } from './simulate-policy.js';
+import { PolicyCreateInputSchema, PolicySimulationRequestSchema } from './schemas.js';
 
 /**
  * The client-side (offline) policy engine. `evaluatePolicyRules` is the pure
@@ -150,6 +152,15 @@ export class PolicyResource extends Resource {
    * @throws `ValidationError` when the API rejects the payload.
    */
   async create(input: PolicyCreateInput): Promise<Policy> {
+    const parseResult = PolicyCreateInputSchema.safeParse(input);
+    if (!parseResult.success) {
+      throw new ValidationError('Validation failed', {
+        code: 'VALIDATION_ERROR',
+        details: {
+          fields: parseResult.error.flatten().fieldErrors,
+        },
+      });
+    }
     const res = await this.client.post<Policy>('/policies', input);
     return res.data;
   }
@@ -327,6 +338,15 @@ export class PolicyResource extends Resource {
    * ```
    */
   async simulatePolicy(input: PolicySimulationRequest): Promise<PolicySimulationResult> {
+    const parseResult = PolicySimulationRequestSchema.safeParse(input);
+    if (!parseResult.success) {
+      throw new ValidationError('Validation failed', {
+        code: 'VALIDATION_ERROR',
+        details: {
+          fields: parseResult.error.flatten().fieldErrors,
+        },
+      });
+    }
     return simulatePolicy(this.client, input);
   }
 
