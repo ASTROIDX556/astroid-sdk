@@ -507,6 +507,117 @@ describe('Zod schemas — validation helpers', () => {
 });
 
 /* -------------------------------------------------------------------------- */
+/* Forward compatibility — unknown extra properties must not break parsing    */
+/* -------------------------------------------------------------------------- */
+
+describe('Zod schemas — forward compatibility', () => {
+  const timestamps = {
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  };
+
+  it('AgentSchema strips unknown extra properties without failing', () => {
+    const result = AgentSchema.safeParse({
+      id: 'agt_1',
+      organizationId: 'org_1',
+      name: 'Bot',
+      role: 'FINANCE',
+      status: 'ACTIVE',
+      capabilities: [],
+      metadata: {},
+      ...timestamps,
+      someFutureField: 'new-api-value',
+      nestedFuture: { a: 1 },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('WalletSchema strips unknown extra properties without failing', () => {
+    const result = WalletSchema.safeParse({
+      id: 'wlt_1',
+      organizationId: 'org_1',
+      stellarAddress: 'GABC',
+      walletType: 'TREASURY',
+      network: 'TESTNET',
+      status: 'ACTIVE',
+      ...timestamps,
+      futureField: 123,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('PolicySchema strips unknown extra properties without failing', () => {
+    const result = PolicySchema.safeParse({
+      id: 'pol_1',
+      organizationId: 'org_1',
+      name: 'Limit',
+      type: 'MAX_AMOUNT',
+      configuration: { maxAmount: 100 },
+      priority: 1,
+      enabled: true,
+      ...timestamps,
+      futureField: true,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('BudgetSchema strips unknown extra properties without failing', () => {
+    const result = BudgetSchema.safeParse({
+      id: 'bud_1',
+      organizationId: 'org_1',
+      name: 'Monthly',
+      currency: 'USDC',
+      limitAmount: '1000',
+      spent: '0',
+      remaining: '1000',
+      period: 'MONTHLY',
+      periodStart: '2026-01-01T00:00:00.000Z',
+      rollover: false,
+      enabled: true,
+      ...timestamps,
+      futureField: ['x'],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('TransactionSchema strips unknown extra properties without failing', () => {
+    const result = TransactionSchema.safeParse({
+      id: 'txn_1',
+      organizationId: 'org_1',
+      walletId: 'wlt_1',
+      asset: 'USDC',
+      amount: '100',
+      recipientAddress: 'GABC',
+      status: 'COMPLETED',
+      riskScore: 0.1,
+      riskBand: 'LOW',
+      requiresApproval: false,
+      confirmationCount: 1,
+      metadata: {},
+      ...timestamps,
+      futureField: 'forward-compat',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('validators accept payloads with unknown extra properties', () => {
+    const agent = {
+      id: 'agt_1',
+      organizationId: 'org_1',
+      name: 'Bot',
+      role: 'FINANCE',
+      status: 'ACTIVE',
+      capabilities: [],
+      metadata: {},
+      ...timestamps,
+      extra: 'ignored',
+    };
+    expect(validateAgent(agent).success).toBe(true);
+    expect(() => validateOrThrow(AgentSchema, agent)).not.toThrow();
+  });
+});
+
+/* -------------------------------------------------------------------------- */
 /* Schema type compatibility with TypeScript interfaces                        */
 /* -------------------------------------------------------------------------- */
 
