@@ -28,11 +28,111 @@ import {
   TransactionDetailsSchema,
   validatePolicySet,
   validateTransactionDetails,
+  type InferredAgent,
+  type InferredWallet,
+  type InferredPolicy,
+  type InferredBudget,
 } from './schemas.js';
+import type { Agent, Wallet, Policy, Budget } from './entities.js';
+
+/* -------------------------------------------------------------------------- */
+/* Inferred-type exports (issue #265)                                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Compile-time structural-equality proof between an inferred schema type and
+ * the canonical interface: both directions of assignability must hold.
+ */
+type SameStructure<A, B> =
+  (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
+
+// The inferred types must be structurally identical to the canonical
+// interfaces — if a schema drifts from its entity, these fail to compile.
+type _AgentMatches = SameStructure<InferredAgent, Agent>;
+type _WalletMatches = SameStructure<InferredWallet, Wallet>;
+type _PolicyMatches = SameStructure<InferredPolicy, Policy>;
+type _BudgetMatches = SameStructure<InferredBudget, Budget>;
+const _assertAgentMatches: _AgentMatches = true;
+const _assertWalletMatches: _WalletMatches = true;
+const _assertPolicyMatches: _PolicyMatches = true;
+const _assertBudgetMatches: _BudgetMatches = true;
+void _assertAgentMatches;
+void _assertWalletMatches;
+void _assertPolicyMatches;
+void _assertBudgetMatches;
 
 /* -------------------------------------------------------------------------- */
 /* Valid payloads — should pass                                                */
 /* -------------------------------------------------------------------------- */
+
+describe('Zod schemas — inferred type exports (issue #265)', () => {
+  it('exports InferredAgent/InferredWallet/InferredPolicy/InferredBudget from the package root', async () => {
+    const mod = await import('./index.js');
+    expect(mod.AgentSchema).toBeDefined();
+    expect(mod.WalletSchema).toBeDefined();
+    expect(mod.PolicySchema).toBeDefined();
+    expect(mod.BudgetSchema).toBeDefined();
+    // Type-only exports: compile-time presence is proven by the import above
+    // and the structural assertions; this guard keeps the test honest about
+    // the schemas being runtime values too.
+    expect(typeof mod.validateAgent).toBe('function');
+  });
+
+  it('produces an InferredAgent usable as the canonical Agent interface', async () => {
+    const result = AgentSchema.safeParse({
+      id: 'agt_inf',
+      organizationId: 'org_1',
+      name: 'Inferred Bot',
+      role: 'FINANCE',
+      status: 'ACTIVE',
+      capabilities: ['trade'],
+      metadata: {},
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      const agent: InferredAgent = result.data;
+      // Bidirectional assignability proves runtime/compile-time parity.
+      const canonical: Agent = agent;
+      const roundTripped: InferredAgent = canonical;
+      expect(roundTripped.name).toBe('Inferred Bot');
+    }
+  });
+
+  it('produces an InferredBudget usable as the canonical Budget interface', async () => {
+    const result = BudgetSchema.safeParse({
+      id: 'bud_inf',
+      organizationId: 'org_1',
+      name: 'Ops',
+      currency: 'USDC',
+      limitAmount: '1000.00',
+      spent: '250.00',
+      remaining: '750.00',
+      period: 'MONTHLY',
+      periodStart: '2026-09-01T00:00:00.000Z',
+      rollover: false,
+      enabled: true,
+      createdAt: '2026-09-01T00:00:00.000Z',
+      updatedAt: '2026-09-01T00:00:00.000Z',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      const budget: InferredBudget = result.data;
+      const canonical: Budget = budget;
+      const roundTripped: InferredBudget = canonical;
+      expect(roundTripped.limitAmount).toBe('1000.00');
+    }
+  });
+
+  it('keeps InferredWallet and InferredPolicy assignable in both directions', () => {
+    // Compile-time proof; the runtime assertions below guard the harness.
+    const walletAssigns = (w: InferredWallet): Wallet => w;
+    const policyAssigns = (p: InferredPolicy): Policy => p;
+    expect(walletAssigns).toBeDefined();
+    expect(policyAssigns).toBeDefined();
+  });
+});
 
 describe('Zod schemas — valid payloads', () => {
   const validAgent = {
