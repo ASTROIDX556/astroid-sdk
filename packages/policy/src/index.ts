@@ -57,6 +57,30 @@ export {
 } from './matchers.js';
 
 /**
+ * Local authorization pre-flight engine — validating a proposed transaction
+ * against a {@link PolicySet} offline ({@link evaluatePolicy}), including
+ * destination allow/deny lists, time-of-day windows and signature weight
+ * thresholds. See `./evaluation.js`.
+ */
+export {
+  evaluatePolicy,
+  policySetFromPolicies,
+  normalizeAddress,
+  addressesMatch,
+  isActionWithinAllowedHours,
+  resolveSignedWeight,
+  type EvaluatePolicyOptions,
+  type PolicyAllowedHours,
+  type PolicyEvaluationResult,
+  type PolicyRule,
+  type PolicyRuleCheck,
+  type PolicyRuleEvaluation,
+  type PolicySet,
+  type TransactionDetails,
+  type TransactionSignature,
+} from './evaluation.js';
+
+/**
  * Policy DTOs re-exported from `@astroid/types` so consumers of
  * `@astroid/policy` can name the simulation request/response types without a
  * second import.

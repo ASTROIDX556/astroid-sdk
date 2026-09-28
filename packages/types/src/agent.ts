@@ -47,6 +47,11 @@ export interface AgentMetadata {
   externalId?: string;
   /** Free-form tags used for grouping and filtering. */
   tags?: string[];
+  /**
+   * Optional Stellar account (`G…`) associated with the agent. Validated by
+   * `@astroid/agent`'s `validateCreateAgentParams` before the request is sent.
+   */
+  stellarAddress?: string;
   [key: string]: unknown;
 }
 

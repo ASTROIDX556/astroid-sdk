@@ -252,6 +252,15 @@ export const PolicyConfigurationSchema = z
         timezone: z.string().optional(),
       })
       .optional(),
+    allowedHours: z
+      .object({
+        startHour: z.number().int().min(0).max(23),
+        endHour: z.number().int().min(0).max(23),
+        timezone: z.string().optional(),
+        days: z.array(z.number().int().min(0).max(6)).optional(),
+      })
+      .optional(),
+    requiredSignatures: z.number().positive().optional(),
   })
   .passthrough();
 
@@ -269,6 +278,69 @@ export const PolicySchema = z.object({
   createdAt: IsoDateTimeSchema,
   updatedAt: IsoDateTimeSchema,
   deletedAt: IsoDateTimeSchema.nullable().optional(),
+});
+
+/* -------------------------------------------------------------------------- */
+/* Local policy evaluation schemas                                             */
+/* -------------------------------------------------------------------------- */
+
+/** Time-of-day window during which a policy rule permits an action. */
+export const PolicyAllowedHoursSchema = z.object({
+  startHour: z.number().int().min(0).max(23),
+  endHour: z.number().int().min(0).max(23),
+  timezone: z.string().optional(),
+  days: z.array(z.number().int().min(0).max(6)).optional(),
+});
+
+/** A signature already attached to a proposed transaction. */
+export const TransactionSignatureSchema = z.object({
+  signer: z.string().min(1),
+  weight: z.number().nonnegative().optional(),
+});
+
+/** The transaction payload a policy set is evaluated against. */
+export const TransactionDetailsSchema = z.object({
+  asset: z.string().min(1),
+  amount: z.union([z.number(), z.string().min(1)]),
+  recipientAddress: z.string().optional(),
+  senderAddress: z.string().optional(),
+  timestamp: z.union([z.string(), z.date()]).optional(),
+  signatures: z.array(TransactionSignatureSchema).optional(),
+  signedWeight: z.number().nonnegative().optional(),
+});
+
+/** A single locally-evaluated policy rule. */
+export const PolicyEvaluationRuleSchema = z.object({
+  name: z.string().min(1, 'Rule name is required'),
+  enabled: z.boolean().optional(),
+  allowedRecipients: z.array(z.string()).optional(),
+  blockedRecipients: z.array(z.string()).optional(),
+  allowedHours: PolicyAllowedHoursSchema.optional(),
+  requiredSignatures: z.number().nonnegative().optional(),
+});
+
+/** A named collection of rules evaluated in declaration order. */
+export const PolicySetSchema = z.object({
+  name: z.string().optional(),
+  rules: z.array(PolicyEvaluationRuleSchema),
+});
+
+/** The outcome of one rule check. */
+export const PolicyRuleEvaluationSchema = z.object({
+  rule: z.string(),
+  check: z.enum(['address', 'time', 'signatures', 'none']),
+  success: z.boolean(),
+  explanation: z.string().optional(),
+});
+
+/** The detailed report returned by `evaluatePolicy`. */
+export const PolicyEvaluationResultSchema = z.object({
+  allowed: z.boolean(),
+  passed: z.boolean(),
+  results: z.array(PolicyRuleEvaluationSchema),
+  evaluatedRules: z.number().int().nonnegative(),
+  failedRules: z.number().int().nonnegative(),
+  failedRuleNames: z.array(z.string()),
 });
 
 /** Budget entity. */
@@ -512,6 +584,20 @@ export function validateWallet(value: unknown): ValidationResult<z.infer<typeof 
 /** Validate a Policy payload. */
 export function validatePolicy(value: unknown): ValidationResult<z.infer<typeof PolicySchema>> {
   return validate(PolicySchema, value);
+}
+
+/** Validate a local policy set (`evaluatePolicy` input). */
+export function validatePolicySet(
+  value: unknown,
+): ValidationResult<z.infer<typeof PolicySetSchema>> {
+  return validate(PolicySetSchema, value);
+}
+
+/** Validate a transaction-details payload (`evaluatePolicy` input). */
+export function validateTransactionDetails(
+  value: unknown,
+): ValidationResult<z.infer<typeof TransactionDetailsSchema>> {
+  return validate(TransactionDetailsSchema, value);
 }
 
 /** Validate a Budget payload. */

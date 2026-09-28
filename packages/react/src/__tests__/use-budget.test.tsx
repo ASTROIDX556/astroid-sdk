@@ -191,7 +191,9 @@ describe('useBudget', () => {
       queryClient,
     });
 
-    await waitFor(() => expect(queryClient.getQueryData(queryKeys.budgets.detail('bud_42'))).toBeDefined());
+    await waitFor(() =>
+      expect(queryClient.getQueryData(queryKeys.budgets.detail('bud_42'))).toBeDefined(),
+    );
     const query = queryClient
       .getQueryCache()
       .find({ queryKey: queryKeys.budgets.detail('bud_42') });
@@ -216,7 +218,9 @@ describe('useBudget', () => {
       queryClient,
     });
 
-    await waitFor(() => expect(queryClient.getQueryData(queryKeys.budgets.detail('bud_42'))).toBeDefined());
+    await waitFor(() =>
+      expect(queryClient.getQueryData(queryKeys.budgets.detail('bud_42'))).toBeDefined(),
+    );
     const query = queryClient
       .getQueryCache()
       .find({ queryKey: queryKeys.budgets.detail('bud_42') });
@@ -265,7 +269,9 @@ describe('useBudget', () => {
       queryClient,
     });
 
-    await waitFor(() => expect(queryClient.getQueryData(queryKeys.budgets.detail('bud_42'))).toEqual(BUDGET));
+    await waitFor(() =>
+      expect(queryClient.getQueryData(queryKeys.budgets.detail('bud_42'))).toEqual(BUDGET),
+    );
     // Without an active observer the invalidation mark is not immediately
     // cleared by a refetch, so unmount before invalidating.
     unmount();
@@ -284,9 +290,7 @@ describe('useBudget', () => {
 describe('useBudgetUtilization', () => {
   it('fetches the utilization snapshot for a budget', async () => {
     const client = makeClient();
-    const utilSpy = vi
-      .spyOn(client.budgets, 'utilization')
-      .mockResolvedValue(UTILIZATION);
+    const utilSpy = vi.spyOn(client.budgets, 'utilization').mockResolvedValue(UTILIZATION);
 
     let data: BudgetUtilization | undefined;
     function TestComponent() {
@@ -384,6 +388,38 @@ describe('useBudgetUtilization', () => {
         UTILIZATION,
       ),
     );
+    unmount();
+  });
+
+  it('exposes the loading state until the utilization resolves, then the data', async () => {
+    const client = makeClient();
+    let resolveUtilization!: (value: BudgetUtilization) => void;
+    const pending = new Promise<BudgetUtilization>((resolve) => {
+      resolveUtilization = resolve;
+    });
+    vi.spyOn(client.budgets, 'utilization').mockReturnValue(pending);
+
+    let isLoading = false;
+    let data: BudgetUtilization | undefined;
+    function TestComponent() {
+      const result = useBudgetUtilization('bud_42');
+      isLoading = result.isLoading;
+      data = result.data;
+      return null;
+    }
+
+    const { unmount } = renderInProviders(createElement(TestComponent), { client });
+
+    await waitFor(() => expect(isLoading).toBe(true));
+    expect(data).toBeUndefined();
+
+    await act(async () => {
+      resolveUtilization(UTILIZATION);
+    });
+
+    await waitFor(() => expect(data?.percent).toBe(25));
+    expect(isLoading).toBe(false);
+    expect(data?.state).toBe('healthy');
     unmount();
   });
 });

@@ -19,5 +19,9 @@ export {
   type AgentCursorListParams,
 } from './agent.js';
 export { AstroidValidationError } from './errors.js';
-export { validateCreateAgentParams, isValidCreateAgentParams } from './validation.js';
+export {
+  validateCreateAgentParams,
+  isValidCreateAgentParams,
+  isValidStellarPublicKey,
+} from './validation.js';
 export { AgentClient } from './client.js';
