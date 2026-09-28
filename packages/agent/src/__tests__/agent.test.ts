@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { Agent } from '@astroid/types';
+import type { Agent, CreateAgentParams, UpdateAgentParams } from '@astroid/types';
 
 import { AgentClient } from '../client.js';
 import { AgentResource } from '../index.js';
@@ -115,6 +115,33 @@ describe('AgentResource CRUD', () => {
       // Client should not have been called — validation is pre-flight
       expect(http.post).not.toHaveBeenCalled();
     });
+
+    it.each([
+      ['a non-object payload', null],
+      ['a blank name', { ...CREATE_PARAMS, name: '   ' }],
+      ['an empty capabilities list', { ...CREATE_PARAMS, capabilities: [] }],
+      [
+        'a non-string capability',
+        { ...CREATE_PARAMS, capabilities: ['trade', 7] as unknown as string[] },
+      ],
+      ['a missing budget', { name: 'Bot', capabilities: ['trade'] } as unknown as typeof CREATE_PARAMS],
+      [
+        'a non-decimal amount',
+        { ...CREATE_PARAMS, initialBudget: { currency: 'USDC', amount: '1e3' } },
+      ],
+      ['an unknown role', { ...CREATE_PARAMS, role: 'ROBOT' } as unknown as typeof CREATE_PARAMS],
+      [
+        'a malformed stellarAddress',
+        { ...CREATE_PARAMS, metadata: { stellarAddress: 'GABC' } },
+      ],
+    ])('rejects %s without issuing a request', async (_label, params) => {
+      const { AstroidValidationError } = await import('../errors.js');
+
+      await expect(
+        resource.create(params as unknown as CreateAgentParams),
+      ).rejects.toBeInstanceOf(AstroidValidationError);
+      expect(http.post).not.toHaveBeenCalled();
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -214,6 +241,41 @@ describe('AgentResource CRUD', () => {
       await resource.update('agt_1', { metadata: { team: 'ops' } });
 
       expect(http.patch).toHaveBeenCalledWith('/agents/agt_1', { metadata: { team: 'ops' } });
+    });
+
+    it('accepts a null primaryWalletId (wallet detach)', async () => {
+      http.patch.mockResolvedValue(httpOk(makeAgent()));
+
+      await resource.update('agt_1', { primaryWalletId: null });
+
+      expect(http.patch).toHaveBeenCalledWith('/agents/agt_1', { primaryWalletId: null });
+    });
+
+    it.each([
+      ['a blank agent id', '', { name: 'X' }],
+      ['a non-object payload', 'agt_1', null],
+      ['an empty no-op patch', 'agt_1', {}],
+      ['a blank name', 'agt_1', { name: '  ' }],
+      ['a non-string name', 'agt_1', { name: 42 }],
+      ['an empty capabilities list', 'agt_1', { capabilities: [] }],
+      ['a non-array capabilities value', 'agt_1', { capabilities: 'trade' }],
+      ['an unknown status', 'agt_1', { status: 'BOGUS' }],
+      ['an unknown role', 'agt_1', { role: 'ROBOT' }],
+      ['a non-object metadata value', 'agt_1', { metadata: 'nope' }],
+      ['a blank model', 'agt_1', { model: '' }],
+    ])('rejects %s without issuing a request', async (_label, agentId, params) => {
+      const { AstroidValidationError } = await import('../errors.js');
+
+      await expect(
+        resource.update(agentId, params as unknown as UpdateAgentParams),
+      ).rejects.toBeInstanceOf(AstroidValidationError);
+      expect(http.patch).not.toHaveBeenCalled();
+    });
+
+    it('surfaces the offending field in the rejection', async () => {
+      await expect(
+        resource.update('agt_1', { status: 'BOGUS' } as unknown as UpdateAgentParams),
+      ).rejects.toThrowError(/status/);
     });
   });
 

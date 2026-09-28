@@ -14,7 +14,11 @@ import type {
   PaginatedResponse,
   UpdateAgentParams,
 } from '@astroid/types';
-import { validateCreateAgentParams } from './validation.js';
+import {
+  assertValidAgentId,
+  validateCreateAgentParams,
+  validateUpdateAgentParams,
+} from './validation.js';
 
 /** Filters accepted by {@link AgentResource.list}. */
 export type AgentListParams = ListAgentsParams;
@@ -35,8 +39,14 @@ export class AgentResource extends Resource {
   /**
    * Create a new autonomous AI agent with strict input payload validation.
    *
+   * The payload is checked against {@link CreateAgentDto} before the request is
+   * dispatched: a malformed body throws an {@link AstroidValidationError}
+   * locally rather than costing a round trip and a 422.
+   *
    * @param params Agent creation parameters.
    * @returns The created agent entity.
+   * @throws {AstroidValidationError} When `params` is missing required fields or
+   *   any field carries the wrong type.
    */
   async create(params: CreateAgentParams): Promise<Agent> {
     validateCreateAgentParams(params);
@@ -106,11 +116,19 @@ export class AgentResource extends Resource {
   /**
    * Update an existing agent configuration.
    *
+   * The payload is checked against {@link UpdateAgentDto} before the request is
+   * dispatched: a malformed body (or an empty no-op patch) throws an
+   * {@link AstroidValidationError} locally rather than costing a round trip.
+   *
    * @param agentId The unique agent ID.
    * @param params Updated agent parameters.
    * @returns The updated agent entity.
+   * @throws {AstroidValidationError} When `agentId` is blank, `params` carries no
+   *   updatable field, or any supplied field has the wrong type.
    */
   async update(agentId: string, params: UpdateAgentParams): Promise<Agent> {
+    assertValidAgentId(agentId);
+    validateUpdateAgentParams(params);
     const res = await this.client.patch<Agent>(`/agents/${encodeURIComponent(agentId)}`, params);
     return res.data;
   }
