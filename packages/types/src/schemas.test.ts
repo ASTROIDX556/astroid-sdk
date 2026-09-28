@@ -23,6 +23,11 @@ import {
   validateCreatePolicyInput,
   validateCreateBudgetInput,
   validateTransferInput,
+  PolicyConfigurationSchema,
+  PolicySetSchema,
+  TransactionDetailsSchema,
+  validatePolicySet,
+  validateTransactionDetails,
 } from './schemas.js';
 
 /* -------------------------------------------------------------------------- */
@@ -304,12 +309,12 @@ describe('Zod schemas — DTO inputs', () => {
 
   it('CreateBudgetInputSchema requires name and limitAmount', () => {
     expect(CreateBudgetInputSchema.safeParse({}).success).toBe(false);
-    expect(
-      CreateBudgetInputSchema.safeParse({ name: 'Budget', limitAmount: 1000 }).success,
-    ).toBe(true);
-    expect(
-      CreateBudgetInputSchema.safeParse({ name: 'Budget', limitAmount: '1000' }).success,
-    ).toBe(true);
+    expect(CreateBudgetInputSchema.safeParse({ name: 'Budget', limitAmount: 1000 }).success).toBe(
+      true,
+    );
+    expect(CreateBudgetInputSchema.safeParse({ name: 'Budget', limitAmount: '1000' }).success).toBe(
+      true,
+    );
   });
 
   it('CreateTransactionInputSchema requires walletId, asset, amount, recipientAddress', () => {
@@ -557,5 +562,80 @@ describe('Zod schemas — type compatibility', () => {
       updatedAt: '2026-01-01T00:00:00.000Z',
     };
     expect(tx.status).toBe('COMPLETED');
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Local policy evaluation schemas (issue #17)                                 */
+/* -------------------------------------------------------------------------- */
+
+describe('PolicySetSchema', () => {
+  it('accepts a set with allow/deny lists, hours and a signature threshold', () => {
+    const result = PolicySetSchema.safeParse({
+      name: 'Treasury',
+      rules: [
+        {
+          name: 'Allowlist',
+          allowedRecipients: ['GABC'],
+          blockedRecipients: ['GDEF'],
+          allowedHours: { startHour: 9, endHour: 17, timezone: 'UTC', days: [1, 2, 3] },
+          requiredSignatures: 2,
+        },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a rule without a name', () => {
+    expect(PolicySetSchema.safeParse({ rules: [{ allowedRecipients: ['GABC'] }] }).success).toBe(
+      false,
+    );
+  });
+
+  it('rejects out-of-range allowed hours', () => {
+    expect(
+      PolicySetSchema.safeParse({
+        rules: [{ name: 'Hours', allowedHours: { startHour: 24, endHour: 5 } }],
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('TransactionDetailsSchema', () => {
+  it('accepts a payload with signatures and an explicit weight', () => {
+    const result = TransactionDetailsSchema.safeParse({
+      asset: 'USDC',
+      amount: '100',
+      recipientAddress: 'GABC',
+      timestamp: '2026-09-28T12:00:00.000Z',
+      signatures: [{ signer: 'GONE', weight: 2 }, { signer: 'GTWO' }],
+      signedWeight: 3,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a payload without an asset', () => {
+    expect(TransactionDetailsSchema.safeParse({ amount: '100' }).success).toBe(false);
+  });
+});
+
+describe('policy evaluation validators', () => {
+  it('validatePolicySet reports success and typed data', () => {
+    const result = validatePolicySet({ rules: [{ name: 'Allowlist' }] });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.rules[0]?.name).toBe('Allowlist');
+  });
+
+  it('validateTransactionDetails surfaces structured failures', () => {
+    const result = validateTransactionDetails({ asset: 'USDC' });
+    expect(result.success).toBe(false);
+  });
+
+  it('PolicyConfigurationSchema accepts allowedHours and requiredSignatures', () => {
+    const result = PolicyConfigurationSchema.safeParse({
+      allowedHours: { startHour: 0, endHour: 0 },
+      requiredSignatures: 2,
+    });
+    expect(result.success).toBe(true);
   });
 });

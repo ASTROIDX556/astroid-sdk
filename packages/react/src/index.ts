@@ -13,6 +13,8 @@ export {
   useAgent,
   useCreateAgent,
   useUpdateAgent,
+  useUpdateAgentStatus,
+  useUpdateAgentMetadata,
   useDeleteAgent,
   useSimulatePolicy,
   type WalletMutationVariables,
@@ -22,6 +24,16 @@ export {
   type WalletMutationOptions,
   type UseTransferOptions,
   type UseWalletMutationOptions,
+  type UpdateAgentVariables,
+  type UpdateAgentStatusVariables,
+  type UpdateAgentMetadataVariables,
+} from './hooks.js';
+export {
+  snapshotAgentCache,
+  rollbackAgentCache,
+  invalidateAgentQueries,
+  type OptimisticCacheEntry,
+  type OptimisticAgentContext,
 } from './hooks.js';
 export {
   useWalletBalances,
@@ -47,9 +59,32 @@ export {
 } from './hooks/useAgentWalletBalance.js';
 export {
   useBudgets,
-  useBudget,
-  useBudgetUtilization,
   useCreateBudget,
   useUpdateBudget,
   type UpdateBudgetVariables,
 } from './hooks/use-budgets.js';
+export {
+  useBudget,
+  useBudgetUtilization,
+  type UseBudgetQueryOptions,
+} from './hooks/use-budget.js';
+export {
+  usePolicies,
+  usePolicy,
+  useCreatePolicy,
+  useUpdatePolicy,
+  useDeletePolicy,
+  type UpdatePolicyVariables,
+} from './hooks/use-policies.js';
+export {
+  useTransactions,
+  useTransaction,
+  useCreateTransaction,
+} from './hooks/use-transactions.js';
+export {
+  useAgentList,
+  type UseAgentListParams,
+  type UseAgentListOptions,
+  type UseAgentListResult,
+  type AgentListPageParam,
+} from './hooks/useAgentList.js';

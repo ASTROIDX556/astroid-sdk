@@ -26,6 +26,7 @@ import type {
   WalletStatus,
   WalletType,
 } from './enums.js';
+import type { PolicyAllowedHours } from './policy.js';
 
 /** ISO-8601 timestamp string (UTC). */
 export type IsoDateTime = string;
@@ -146,6 +147,18 @@ export interface PolicyConfiguration {
   weeklyLimit?: number;
   monthlyLimit?: number;
   timeWindow?: { start: string; end: string; timezone?: string };
+  /**
+   * Time-of-day window during which the policy permits an action. Unlike
+   * {@link PolicyConfiguration.timeWindow} (an absolute date range), this
+   * restricts the hour of the day and is evaluated locally by
+   * `@astroid/policy`'s `evaluatePolicy`.
+   */
+  allowedHours?: PolicyAllowedHours;
+  /**
+   * Minimum total signing weight required before the action may proceed.
+   * A signer without an explicit weight counts as `1`.
+   */
+  requiredSignatures?: number;
   [key: string]: unknown;
 }
 

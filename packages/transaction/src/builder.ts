@@ -14,10 +14,22 @@
  * @module
  */
 
-import { Account, Asset, Memo, Networks, Operation, TransactionBuilder } from '@stellar/stellar-base';
+import {
+  Account,
+  Asset,
+  Memo,
+  Networks,
+  Operation,
+  TransactionBuilder,
+} from '@stellar/stellar-base';
 import type { FeeBumpTransaction, Transaction, xdr } from '@stellar/stellar-base';
 import { ValidationError } from '@astroid/errors';
 
+import {
+  MAX_OPERATIONS,
+  MAX_TOTAL_FEE_STROOPS,
+  MIN_BASE_FEE_STROOPS,
+} from './validator.js';
 import {
   assertValidMemoHash,
   assertValidMemoText,
@@ -30,11 +42,7 @@ import {
 /* -------------------------------------------------------------------------- */
 
 /** Known Stellar network passphrases accepted by the builders. */
-const KNOWN_PASSPHRASES = new Set<string>([
-  Networks.PUBLIC,
-  Networks.TESTNET,
-  Networks.FUTURENET,
-]);
+const KNOWN_PASSPHRASES = new Set<string>([Networks.PUBLIC, Networks.TESTNET, Networks.FUTURENET]);
 
 /** Options common to every transaction built here. */
 export interface BuildTransactionOptions {
@@ -42,7 +50,17 @@ export interface BuildTransactionOptions {
   source: Account;
   /** Stellar network passphrase (e.g. `StellarNetworkPassphrase.TESTNET`). */
   networkPassphrase: string;
-  /** Base fee in stroops. Default `'100'`. */
+  /**
+   * Total fee bid in stroops for the whole transaction.
+   *
+   * Bounds enforced by every builder in this module:
+   * - must be a non-negative integer number of stroops,
+   * - must be at least {@link MIN_BASE_FEE_STROOPS} (100) per operation,
+   * - must not exceed {@link MAX_TOTAL_FEE_STROOPS} (10,000,000 — the Astroid
+   *   safety ceiling against accidental multi-XLM fee bids).
+   *
+   * Default `'100'` (the network floor for a single-operation transaction).
+   */
   fee?: string | number;
   /** Time-Bound validity window in seconds from now. Default 300. */
   timeout?: number;
@@ -100,6 +118,40 @@ function assertPassphrase(networkPassphrase: string): void {
       code: 'INVALID_NETWORK_PASSPHRASE',
     });
   }
+}
+
+/**
+ * Validate a fee bid against the network and Astroid fee bounds.
+ *
+ * The fee must be a non-negative integer number of stroops within
+ * `[MIN_BASE_FEE_STROOPS, MAX_TOTAL_FEE_STROOPS]`. A per-operation floor is
+ * applied by {@link buildTransaction}, which knows the operation count.
+ *
+ * @param fee The fee value to validate.
+ * @returns The fee as a numeric stroop count.
+ * @throws {ValidationError} With codes `INVALID_FEE` or `FEE_BID_TOO_HIGH`.
+ */
+function assertFeeWithinBounds(fee: string | number): number {
+  const numericFee = typeof fee === 'number' ? fee : Number(fee);
+  if (!Number.isFinite(numericFee) || !Number.isInteger(numericFee) || numericFee < 0) {
+    throw new ValidationError(
+      'fee must be a non-negative integer number of stroops.',
+      { code: 'INVALID_FEE' },
+    );
+  }
+  if (numericFee < MIN_BASE_FEE_STROOPS) {
+    throw new ValidationError(
+      `fee ${numericFee} stroops is below the network minimum of ${MIN_BASE_FEE_STROOPS} stroops per operation.`,
+      { code: 'FEE_BELOW_MINIMUM' },
+    );
+  }
+  if (numericFee > MAX_TOTAL_FEE_STROOPS) {
+    throw new ValidationError(
+      `fee bid ${numericFee} stroops exceeds the Astroid safety ceiling of ${MAX_TOTAL_FEE_STROOPS} stroops.`,
+      { code: 'FEE_BID_TOO_HIGH' },
+    );
+  }
+  return numericFee;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -177,8 +229,17 @@ function resolveMemo(options: BuildTransactionOptions): Memo | undefined {
   return undefined;
 }
 
-/** Shared construction of a `TransactionBuilder` primed with memo + timeout. */
-function createBuilder(options: BuildTransactionOptions): TransactionBuilder {
+/**
+ * Shared construction of a `TransactionBuilder` primed with memo + timeout.
+ *
+ * Exported for the multi-operation builders in `multi-operation.ts`, which
+ * need to assemble a transaction from a declarative bundle before the final
+ * fee bid is known (stellar-base treats the builder fee as a per-operation
+ * base fee and multiplies it by the operation count on build).
+ *
+ * @internal
+ */
+export function createBuilder(options: BuildTransactionOptions): TransactionBuilder {
   const { source, networkPassphrase } = options;
   if (!(source instanceof Account)) {
     throw new ValidationError('source must be a stellar-base Account instance.', {
@@ -187,16 +248,10 @@ function createBuilder(options: BuildTransactionOptions): TransactionBuilder {
   }
   assertPassphrase(networkPassphrase);
 
-  const fee = options.fee ?? '100';
-  const numericFee = typeof fee === 'number' ? fee : Number(fee);
-  if (!Number.isFinite(numericFee) || numericFee < 0) {
-    throw new ValidationError('fee must be a non-negative finite number of stroops.', {
-      code: 'INVALID_FEE',
-    });
-  }
+  const numericFee = assertFeeWithinBounds(options.fee ?? '100');
 
   let builder = new TransactionBuilder(source, {
-    fee: String(fee),
+    fee: String(numericFee),
     networkPassphrase,
   });
   const memo = resolveMemo(options);
@@ -227,6 +282,25 @@ export function buildTransaction(
       code: 'EMPTY_OPERATIONS',
     });
   }
+  if (operations.length > MAX_OPERATIONS) {
+    throw new ValidationError(
+      `A transaction may contain at most ${MAX_OPERATIONS} operations (got ${operations.length}).`,
+      { code: 'TOO_MANY_OPERATIONS' },
+    );
+  }
+
+  // Per-operation fee floor: the total bid must cover ops × base fee.
+  const opCount = operations.length;
+  const fee = assertFeeWithinBounds(options.fee ?? '100');
+  const minTotal = opCount * MIN_BASE_FEE_STROOPS;
+  if (fee < minTotal) {
+    throw new ValidationError(
+      `fee ${fee} stroops is below the network minimum of ${minTotal} stroops ` +
+        `(${opCount} op(s) × ${MIN_BASE_FEE_STROOPS}).`,
+      { code: 'FEE_BELOW_MINIMUM' },
+    );
+  }
+
   const builder = createBuilder(options);
   for (const op of operations) builder.addOperation(op);
   return builder.build();
@@ -237,21 +311,34 @@ export function buildTransaction(
  *
  * Convenience wrapper over {@link buildTransaction} for the most common agent
  * action: pay an `amount` of `asset` to a `destination`. Validates the
- * destination address, amount and asset before building.
+ * destination address, amount, asset and fee bounds before building. Supports
+ * native XLM (`asset: 'XLM'`) and issued assets (`'CODE:ISSUER'`).
  *
  * @param options The payment to build, plus shared build options.
  * @returns An unsigned Stellar `Transaction`.
- * @throws {ValidationError} For an invalid destination, amount, asset, or account.
+ * @throws {ValidationError} For an invalid destination, amount, asset, account,
+ *   memo, or a fee outside the accepted bounds.
  *
  * @example
  * ```ts
+ * // Native XLM transfer with a memo:
  * const tx = buildPaymentTransaction({
  *   source: account,
  *   networkPassphrase: StellarNetworkPassphrase.TESTNET,
  *   destination: 'G…',
- *   asset: 'USDC',
+ *   asset: 'XLM',
  *   amount: '10.5',
  *   memoText: 'reimburse',
+ * });
+ *
+ * // Issued-asset transfer with an explicit fee bid (stroops):
+ * const usdcTx = buildPaymentTransaction({
+ *   source: account,
+ *   networkPassphrase: StellarNetworkPassphrase.TESTNET,
+ *   destination: 'G…',
+ *   asset: `USDC:${issuer}`,   // CODE:ISSUER
+ *   amount: '25',
+ *   fee: 500,                  // ≥ 100 stroops/op, ≤ 10,000,000 stroops
  * });
  * ```
  */
@@ -279,10 +366,15 @@ export function buildPaymentTransaction(options: PaymentTransactionOptions): Tra
  *
  * @param source The transaction to encode.
  * @returns The base64 XDR envelope.
+ * @throws {ValidationError} When an empty XDR string is passed.
+ *
+ * @example
+ * ```ts
+ * const xdr = encodeTransaction(tx);       // 'AAAAAG…==='
+ * const same = encodeTransaction(xdr);     // returns the string unchanged
+ * ```
  */
-export function encodeTransaction(
-  source: string | Transaction | FeeBumpTransaction,
-): string {
+export function encodeTransaction(source: string | Transaction | FeeBumpTransaction): string {
   if (typeof source === 'string') {
     if (source.trim().length === 0) {
       throw new ValidationError('Transaction XDR must be a non-empty string.', {

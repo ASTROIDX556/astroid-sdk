@@ -10,7 +10,7 @@ import {
 } from '@stellar/stellar-base';
 import { ValidationError } from '@astroid/errors';
 
-import { estimateFee } from '../src/fee-estimation.js';
+import { estimateFee, formatFeeAsXlm, parseFeeInStroops } from '../src/fee-estimation.js';
 
 const TESTNET = Networks.TESTNET;
 const FEE_STATS_URL = 'https://horizon-testnet.stellar.org/fee_stats';
@@ -188,5 +188,34 @@ describe('estimateFee', () => {
     const estimate = await estimateFee({ operationCount: 0 });
     expect(estimate.operationCount).toBe(1);
     expect(estimate.recommendedFee).toBe(100);
+  });
+});
+
+describe('fee unit conversion helpers', () => {
+  it('formats stroops as a 7-decimal XLM string', () => {
+    expect(formatFeeAsXlm(10_000_000)).toBe('1.0000000');
+    expect(formatFeeAsXlm(100)).toBe('0.0000100');
+    expect(formatFeeAsXlm('25000000')).toBe('2.5000000');
+  });
+
+  it('formats invalid or negative stroops as zero XLM', () => {
+    expect(formatFeeAsXlm(-1)).toBe('0.0000000');
+    expect(formatFeeAsXlm(Number.NaN)).toBe('0.0000000');
+  });
+
+  it('parses an XLM amount into stroops', () => {
+    expect(parseFeeInStroops('1')).toBe(10_000_000);
+    expect(parseFeeInStroops(0.00001)).toBe(100);
+    expect(parseFeeInStroops('2.5')).toBe(25_000_000);
+  });
+
+  it('parses invalid or negative XLM amounts as zero stroops', () => {
+    expect(parseFeeInStroops('not-a-number')).toBe(0);
+    expect(parseFeeInStroops(-5)).toBe(0);
+  });
+
+  it('round-trips a fee through XLM without drift', () => {
+    expect(parseFeeInStroops(formatFeeAsXlm(520))).toBe(520);
+    expect(parseFeeInStroops(formatFeeAsXlm(100))).toBe(100);
   });
 });

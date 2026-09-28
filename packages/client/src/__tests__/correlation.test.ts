@@ -29,10 +29,10 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 function errorResponse(status: number, message: string, code = 'UNAUTHORIZED'): Response {
-  return new Response(
-    JSON.stringify({ error: { message, code } }),
-    { status, headers: { 'content-type': 'application/json' } },
-  );
+  return new Response(JSON.stringify({ error: { message, code } }), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
 }
 
 const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;

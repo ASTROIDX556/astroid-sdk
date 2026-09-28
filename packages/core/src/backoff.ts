@@ -1,42 +1,88 @@
 /**
- * Exponential backoff with full jitter, and the retry decision helper.
+ * Exponential backoff with jitter, and the retry decision helper.
  */
 
 import type { RetryConfig } from './config.js';
 
 /**
  * Compute the delay (ms) before retry `attempt` (1-based) using exponential
- * backoff with full jitter, capped at `maxDelayMs`.
+ * backoff capped at `maxDelayMs`.
  *
- * The growth between attempts is governed by `config.multiplier` (default 2 —
- * classic doubling); a `random` function is injected so callers/tests stay
- * deterministic and defaults to `Math.random`.
+ * By default the capped delay is passed through full jitter (a random point in
+ * `[0, capped]`) so fleets of agents do not retry in lockstep. Set
+ * `config.jitter` to `false` for deterministic, un-jittered delays.
+ *
+ * The growth rate is `config.backoffFactor` (default `2`, i.e. doubling).
+ * A `random` function is injected so callers/tests stay deterministic; it
+ * defaults to `Math.random`.
  */
 export function backoffDelay(
   attempt: number,
   config: RetryConfig,
   random: () => number = Math.random,
 ): number {
-  const multiplier = config.multiplier ?? 2;
-  const exponential = config.baseDelayMs * multiplier ** (attempt - 1);
+  const factor = config.backoffFactor ?? 2;
+  const exponential = config.baseDelayMs * factor ** (attempt - 1);
   const capped = Math.min(exponential, config.maxDelayMs);
-  // Full jitter: a random point in [0, capped].
-  return Math.floor(random() * capped);
+  // Full jitter unless explicitly disabled.
+  return config.jitter === false ? capped : Math.floor(random() * capped);
 }
 
 /**
- * Whether an HTTP status warrants a retry.
+ * HTTP statuses retried by default: rate limiting (`429`) and the gateway /
+ * transient server errors (`502`, `503`, `504`).
  *
- * Only transient server-side conditions are retryable:
- * - `429 Too Many Requests` — a rate-limit window that will reopen.
- * - Any `5xx` — the server failed to fulfil an otherwise valid request.
- *
- * Every other `4xx` is a client error (bad request, auth, validation, …):
- * retrying it cannot succeed and only burns the caller's latency budget and
- * the API's rate limit, so those statuses are never retried.
+ * Every other status — including `4xx` client errors and `500` — is treated as
+ * non-transient unless the caller supplies their own `retryableStatuses`.
  */
-export function isRetryableStatus(status: number): boolean {
-  return status === 429 || (status >= 500 && status < 600);
+export const DEFAULT_RETRYABLE_STATUSES: readonly number[] = [429, 502, 503, 504];
+
+/**
+ * Parse a `Retry-After` response header into a non-negative number of seconds.
+ *
+ * The header is defined (RFC 7231 §7.1.3) as either *delta-seconds* or an
+ * HTTP-date, so both forms are supported:
+ *
+ * - `"120"`        → `120`
+ * - `"Wed, 21 Oct 2026 07:28:00 GMT"` → whole seconds from now until that
+ *   instant (clamped at `0` when the date is in the past).
+ *
+ * Unparseable or empty values yield `undefined` rather than poisoning the
+ * retry computation.
+ *
+ * @param value  The raw header value (or `null` when the header is absent).
+ * @param now    Current time in epoch ms; injectable for deterministic tests.
+ */
+export function parseRetryAfter(
+  value: string | null | undefined,
+  now: number = Date.now(),
+): number | undefined {
+  if (value === null || value === undefined) return undefined;
+  const trimmed = value.trim();
+  if (trimmed === '') return undefined;
+
+  // Form 1: delta-seconds (a non-negative decimal integer per the RFC).
+  const seconds = Number(trimmed);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds);
+
+  // Form 2: HTTP-date — wait until that instant, clamped at 0 when past.
+  const target = Date.parse(trimmed);
+  if (Number.isNaN(target)) return undefined;
+  return Math.max(0, Math.ceil((target - now) / 1000));
+}
+
+/**
+ * Whether a response status warrants a retry.
+ *
+ * @param status   The HTTP status code to classify.
+ * @param statuses The allow-list of retryable statuses. Defaults to
+ *                 {@link DEFAULT_RETRYABLE_STATUSES}.
+ */
+export function isRetryableStatus(
+  status: number,
+  statuses: readonly number[] = DEFAULT_RETRYABLE_STATUSES,
+): boolean {
+  return statuses.includes(status);
 }
 
 /** Sleep for `ms`, resolving early (rejecting) if the signal aborts. */

@@ -40,11 +40,29 @@ export interface RetryConfig {
   /** Upper bound for a single backoff delay in ms. Default 8000. */
   maxDelayMs: number;
   /**
-   * Exponential growth factor between retries: the uncapped delay for retry
-   * `n` is `baseDelayMs * multiplier^(n-1)`. Optional — defaults to 2 (classic
-   * doubling) when omitted, so this addition stays backward compatible.
+   * HTTP statuses that should be retried. Defaults to the SDK set
+   * `[429, 502, 503, 504]` (rate limiting and gateway errors).
    */
-  multiplier?: number;
+  retryableStatuses?: number[];
+  /**
+   * Apply full jitter (a random point in `[0, cappedDelay]`) to each backoff
+   * delay. Default `true`; set to `false` for deterministic delays.
+   */
+  jitter?: boolean;
+  /**
+   * Multiplier applied per attempt when computing exponential backoff:
+   * `baseDelayMs * backoffFactor^(attempt - 1)`. Default `2`.
+   */
+  backoffFactor?: number;
+  /**
+   * The HTTP status codes that warrant a retry.
+   *
+   * When omitted, the SDK-wide default applies: `429` and any `5xx`. Supply an
+   * explicit list (e.g. `[429, 502, 503, 504]`) to retry only those statuses —
+   * useful when an upstream gateway emits transient codes outside the standard
+   * set. `shouldRetryStatus` on the retry middleware takes precedence over this.
+   */
+  retryableStatusCodes?: number[];
 }
 
 /**
@@ -109,7 +127,14 @@ export interface AstroidClientConfig extends AuthConfig {
   baseUrl?: string;
   /** API version path segment. Default `v1`. */
   apiVersion?: string;
-  /** Global request timeout in milliseconds. Default 10_000. */
+  /**
+   * Global request timeout in milliseconds (issue #263). Requests exceeding
+   * this deadline are aborted via `AbortController` and reject with a
+   * {@link AstroidTimeoutError}. Default {@link DEFAULT_TIMEOUT_MS} (30s).
+   *
+   * Individual requests can override it with the per-request `timeoutMs`
+   * request option.
+   */
   timeoutMs?: number;
   /** Alias for {@link timeoutMs} (accepted for API parity). */
   timeout?: number;
@@ -162,11 +187,21 @@ export interface ResolvedConfig {
 /** The default public API base URL. */
 export const DEFAULT_BASE_URL = 'https://api.astroid.finance';
 
+/**
+ * Default per-request timeout in milliseconds (issue #263): 30 seconds.
+ *
+ * Applied when neither the client config (`timeoutMs` / `timeout`) nor the
+ * individual request (`options.timeoutMs`) specifies a deadline. Configurable
+ * so long-running operations can raise it and latency-sensitive agents can
+ * lower it.
+ */
+export const DEFAULT_TIMEOUT_MS = 30_000;
+
 const DEFAULT_RETRY: RetryConfig = {
   maxRetries: 3,
   baseDelayMs: 250,
   maxDelayMs: 8000,
-  multiplier: 2,
+  backoffFactor: 2,
 };
 
 /** Strip a single trailing slash so URL joins stay clean. */
@@ -191,7 +226,7 @@ export function resolveConfig(config: AstroidClientConfig): ResolvedConfig {
   return {
     baseUrl: trimTrailingSlash(config.baseUrl ?? DEFAULT_BASE_URL),
     apiVersion: config.apiVersion ?? 'v1',
-    timeoutMs: config.timeoutMs ?? config.timeout ?? 10_000,
+    timeoutMs: config.timeoutMs ?? config.timeout ?? DEFAULT_TIMEOUT_MS,
     retry,
     headers: { ...(config.headers ?? {}) },
     auth: {

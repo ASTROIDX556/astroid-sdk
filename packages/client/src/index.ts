@@ -30,9 +30,17 @@ import {
   type AstroidClientConfig as CoreClientConfig,
   type Middleware,
   type QueryValue,
+  type RetryConfig,
 } from '@astroid/core';
-import type { PaginationParams } from '@astroid/types';
-import { serializePaginationParams } from './pagination.js';
+import type { PaginatedResponse, PaginationParams, ResponseMeta } from '@astroid/types';
+import {
+  extractNextCursor,
+  extractPaginationCursors,
+  extractPrevCursor,
+  serializePaginationParams,
+} from './pagination.js';
+import { buildFilterQuery, buildListQuery } from './filters.js';
+import type { CommonListFilters } from './filters.js';
 import { createCorrelationMiddleware } from './middleware/correlation.js';
 import { createRateLimiterMiddleware } from './middleware/rate-limiter.js';
 import { createLoggingMiddleware, type LoggingMiddlewareOptions } from './middleware/logging.js';
@@ -68,18 +76,46 @@ import { createTokenRefreshInterceptor } from './token-refresh.js';
  * Configuration accepted by `new Astroid({ ... })`.
  *
  * Extends the core client config with shorthand retry options
- * (`retries` / `retryDelay`) for convenience.
+ * (`retries` / `minTimeout` / `maxTimeout` / `backoffFactor` /
+ * `retryableStatuses` / `jitter`) for convenience. Each is merged into the
+ * `retry` block, so the full {@link RetryConfig} remains available for advanced
+ * use.
  */
 export interface AstroidClientConfig extends CoreClientConfig {
   /** Maximum number of retries after the first attempt (shorthand for `retry.maxRetries`). */
   retries?: number;
-  /** Base retry delay in ms (shorthand for `retry.baseDelayMs`). */
-  retryDelay?: number;
   /**
-   * Exponential backoff multiplier between retries (shorthand for
-   * `retry.multiplier`). Defaults to `2` (classic doubling).
+   * Minimum (base) backoff delay in ms before the first retry — the delay grows
+   * exponentially from here (shorthand for `retry.baseDelayMs`).
    */
-  retryMultiplier?: number;
+  minTimeout?: number;
+  /**
+   * Maximum backoff delay in ms for any single retry (shorthand for
+   * `retry.maxDelayMs`).
+   */
+  maxTimeout?: number;
+  /**
+   * HTTP statuses that should be retried (shorthand for
+   * `retry.retryableStatuses`). Defaults to `[429, 502, 503, 504]`.
+   */
+  retryableStatuses?: number[];
+  /**
+   * Exponential growth factor applied between retries — the uncapped delay for
+   * retry `n` is `retry.baseDelayMs * backoffFactor^(n-1)` (shorthand for
+   * `retry.backoffFactor`). Defaults to `2`; use `1` for a constant delay and
+   * values above `2` to back off more aggressively.
+   */
+  backoffFactor?: number;
+  /**
+   * Apply full jitter to each backoff delay (shorthand for `retry.jitter`).
+   * Default `true`; set to `false` for deterministic delays.
+   */
+  jitter?: boolean;
+  /**
+   * Base retry delay in ms. Legacy alias for {@link AstroidClientConfig.minTimeout}.
+   * @deprecated Prefer `minTimeout`.
+   */
+  retryDelay?: number;
   /** Request/response logging hooks with automatic header redaction. */
   logging?: LoggingMiddlewareOptions;
   /**
@@ -408,33 +444,121 @@ export class Astroid {
   /**
    * Merge pagination parameters with arbitrary query parameters into a single
    * serialisable record, ready to pass as the `query` option of any request.
+   *
+   * Pagination fields (`cursor`, `limit`, `order`, `page`) are normalized via
+   * {@link serializePaginationParams} — `limit` is clamped into `[1, 200]`,
+   * empty cursors and invalid `order` values are dropped — while every other
+   * key passes through untouched.
    */
-  buildQuery(params: PaginationParams & Record<string, QueryValue>): Record<string, QueryValue> {
-    return { ...serializePaginationParams(params), ...params };
+  buildQuery(
+    params: PaginationParams & Record<string, QueryValue>,
+  ): Record<string, QueryValue> {
+    const { cursor, limit, order, page, ...rest } = params;
+    return {
+      ...rest,
+      ...serializePaginationParams(
+        cursor !== undefined || limit !== undefined || order !== undefined || page !== undefined
+          ? { cursor, limit, order, page }
+          : undefined,
+      ),
+    };
+  }
+
+  /**
+   * Merge list filters (pagination + common filters) onto an optional base
+   * query without mutating either input. Filter values win over colliding
+   * base keys. Ready to pass as the `query` option of any request.
+   *
+   * ```ts
+   * astroid.http.get('/agents', {
+   *   query: astroid.buildListQuery({ status: 'ACTIVE', limit: 50 }),
+   * });
+   * ```
+   */
+  buildListQuery(
+    filters?: CommonListFilters | null,
+    baseQuery?: Record<string, QueryValue> | null,
+  ): Record<string, QueryValue> {
+    return buildListQuery(filters, baseQuery);
+  }
+
+  /**
+   * Serialize list filters to a query-parameter record (pure, no mutation).
+   */
+  buildFilterQuery(filters?: CommonListFilters | null): Record<string, QueryValue> {
+    return buildFilterQuery(filters);
+  }
+
+  /**
+   * Extract the `next_cursor` pagination cursor from response headers.
+   *
+   * Returns `null` when the header is missing, empty, or malformed — never throws.
+   */
+  getNextCursor(headers: Headers | Record<string, string | string[] | null | undefined> | null | undefined): string | null {
+    return extractNextCursor(headers);
+  }
+
+  /**
+   * Extract the `prev_cursor` pagination cursor from response headers.
+   *
+   * Returns `null` when the header is missing, empty, or malformed — never throws.
+   */
+  getPrevCursor(headers: Headers | Record<string, string | string[] | null | undefined> | null | undefined): string | null {
+    return extractPrevCursor(headers);
+  }
+
+  /**
+   * Extract both `next_cursor` / `prev_cursor` cursors from response headers.
+   */
+  getPaginationCursors(headers: Headers | Record<string, string | string[] | null | undefined> | null | undefined): {
+    nextCursor: string | null;
+    prevCursor: string | null;
+  } {
+    return extractPaginationCursors(headers);
   }
 }
 
 export default Astroid;
 
 /**
- * Normalise the shorthand `retries` / `retryDelay` / `retryMultiplier` options
- * into a core retry config, merging (rather than replacing) any explicit
- * `retry` object the caller also supplied.
+ * Normalise the flat retry shorthand options
+ * (`retries` / `minTimeout` / `maxTimeout` / `backoffFactor` /
+ * `retryableStatuses` / `jitter`) into a single core `retry` block, merging
+ * with any explicit `retry` object.
+ *
+ * Shorthand keys win over the corresponding `retry.*` field; `retry: false`
+ * always disables retries. When no shorthand is supplied the config is returned
+ * untouched so core defaults apply.
  */
 function normalizeConfig(config: AstroidClientConfig): CoreClientConfig {
-  const { retries, retryDelay, retryMultiplier } = config;
-  if (retries === undefined && retryDelay === undefined && retryMultiplier === undefined) {
-    return config;
-  }
-  const existing = typeof config.retry === 'object' && config.retry !== null ? config.retry : {};
+  const {
+    retries,
+    retryDelay,
+    minTimeout,
+    maxTimeout,
+    backoffFactor,
+    retryableStatuses,
+    jitter,
+    retry,
+    ...rest
+  } = config;
+
+  const shorthand: Partial<RetryConfig> = {};
+  if (retries !== undefined) shorthand.maxRetries = retries;
+  const baseDelayMs = minTimeout ?? retryDelay;
+  if (baseDelayMs !== undefined) shorthand.baseDelayMs = baseDelayMs;
+  if (maxTimeout !== undefined) shorthand.maxDelayMs = maxTimeout;
+  if (backoffFactor !== undefined) shorthand.backoffFactor = backoffFactor;
+  if (retryableStatuses !== undefined) shorthand.retryableStatuses = retryableStatuses;
+  if (jitter !== undefined) shorthand.jitter = jitter;
+
+  // Nothing to merge, or retries explicitly disabled: leave the config as-is.
+  if (Object.keys(shorthand).length === 0 || retry === false) return config;
+
+  const baseRetry: Partial<RetryConfig> = retry && typeof retry === 'object' ? retry : {};
   return {
-    ...config,
-    retry: {
-      ...existing,
-      ...(retries !== undefined ? { maxRetries: retries } : {}),
-      ...(retryDelay !== undefined ? { baseDelayMs: retryDelay } : {}),
-      ...(retryMultiplier !== undefined ? { multiplier: retryMultiplier } : {}),
-    },
+    ...rest,
+    retry: { ...baseRetry, ...shorthand },
   };
 }
 
@@ -470,6 +594,10 @@ export {
   retryMiddleware,
   backoffDelay,
   isRetryableStatus,
+  parseRetryAfter,
+  DEFAULT_RETRYABLE_STATUSES,
+  DEFAULT_TIMEOUT_MS,
+  AstroidTimeoutError,
   type Middleware,
   type RateLimitConfig,
   type RetryConfig,
@@ -583,6 +711,7 @@ export {
 
 // Shared auto-pagination helpers — cursor (keyset) iteration for any list
 // endpoint, plus query-parameter builders for standalone list requests.
+export type { PaginationParams, PaginatedResponse, ResponseMeta };
 export {
   paginateCursor,
   normalizeCursorPage,
@@ -596,4 +725,60 @@ export {
   buildPaginationQueryString,
   serializePaginationParams,
   unwrapPaginatedResponse,
+  clampPaginationLimit,
+  normalizePaginationCursor,
+  normalizePaginationOrder,
+  resolvePaginationParams,
+  extractPaginationCursors,
+  extractNextCursor,
+  extractPrevCursor,
+  hasNextPage,
+  hasPrevPage,
+  normalizePaginatedResponse,
+  MIN_PAGE_LIMIT,
+  MAX_PAGE_LIMIT,
+  DEFAULT_PAGE_LIMIT,
+  DEFAULT_PAGE_ORDER,
+  DEFAULT_PAGINATION_PARAMS,
+  type PaginationCursors,
+  type PaginationHeadersInput,
 } from './pagination.js';
+
+// Standardized query-parameter serialization (issue #264): strings, numbers,
+// booleans, Dates (ISO), arrays and nested objects; null/undefined omitted.
+export {
+  serializeQuery,
+  type QueryParams,
+  type QueryParamValue,
+  type QueryParamScalar,
+  type QueryArrayFormat,
+  type SerializeQueryOptions,
+} from './query.js';
+
+// Typed list-filter builders and cursor-iteration helpers: pagination
+// (`limit`, `cursor`, `order`/`direction`) plus common filters (`search`,
+// `status`, `asset`, `walletId`, `agentId`, date ranges, `sort`).
+export {
+  buildFilterQuery,
+  buildListQuery,
+  buildListQueryString,
+  normalizeSortDirection,
+  normalizeFilterString,
+  normalizeFilterDate,
+  normalizeStatusFilter,
+  parsePaginatedResponse,
+  iterateCursorPages,
+  collectCursorPages,
+  MAX_LIST_PAGES,
+  type SortDirection,
+  type CursorPaginationInput,
+  type SearchFilter,
+  type SortingFilter,
+  type DateRangeFilter,
+  type StatusFilter,
+  type EntityScopeFilter,
+  type CommonListFilters,
+  type ListQueryParams,
+  type ListPageFetcher,
+  type IterateCursorPagesOptions,
+} from './filters.js';

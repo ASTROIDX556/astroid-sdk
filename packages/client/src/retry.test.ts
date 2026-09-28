@@ -10,7 +10,7 @@ import {
 
 describe('Exponential Backoff & Retry Logic in Client & Middleware', () => {
   it('backoffDelay calculates exponential backoff with full jitter', () => {
-    const config = { maxRetries: 3, baseDelayMs: 100, maxDelayMs: 1000, multiplier: 2 };
+    const config = { maxRetries: 3, baseDelayMs: 100, maxDelayMs: 1000 };
 
     const mockRandomHalf = () => 0.5;
 
@@ -22,32 +22,22 @@ describe('Exponential Backoff & Retry Logic in Client & Middleware', () => {
     expect(backoffDelay(10, config, mockRandomMax)).toBe(1000);
   });
 
-  it('honours a configurable backoff multiplier', () => {
-    const tripling = { maxRetries: 3, baseDelayMs: 100, maxDelayMs: 10_000, multiplier: 3 };
-    expect(backoffDelay(1, tripling, () => 1)).toBe(100);
-    expect(backoffDelay(2, tripling, () => 1)).toBe(300);
-    expect(backoffDelay(3, tripling, () => 1)).toBe(900);
-  });
-
-  it('isRetryableStatus retries every 5xx and 429, and no other 4xx', () => {
-    // Retryable: rate limiting and any server-side failure.
+  it('isRetryableStatus retries only the default 429 / 502 / 503 / 504 set', () => {
     expect(isRetryableStatus(429)).toBe(true);
-    expect(isRetryableStatus(500)).toBe(true);
-    expect(isRetryableStatus(501)).toBe(true);
     expect(isRetryableStatus(502)).toBe(true);
     expect(isRetryableStatus(503)).toBe(true);
     expect(isRetryableStatus(504)).toBe(true);
-    expect(isRetryableStatus(505)).toBe(true);
 
-    // Non-retryable client errors — including transient-looking 4xx such as
-    // 408 (Request Timeout) and 425 (Too Early).
+    // Not retried by default (configurable via `retryableStatuses`).
+    expect(isRetryableStatus(500)).toBe(false);
     expect(isRetryableStatus(400)).toBe(false);
     expect(isRetryableStatus(401)).toBe(false);
     expect(isRetryableStatus(403)).toBe(false);
     expect(isRetryableStatus(404)).toBe(false);
-    expect(isRetryableStatus(408)).toBe(false);
-    expect(isRetryableStatus(422)).toBe(false);
-    expect(isRetryableStatus(425)).toBe(false);
+
+    // A caller-supplied allow-list replaces the default.
+    expect(isRetryableStatus(500, [500])).toBe(true);
+    expect(isRetryableStatus(503, [500])).toBe(false);
   });
 
   it('supports constructor retries and retryDelay options', () => {
