@@ -47,6 +47,11 @@ export interface AgentMetadata {
   externalId?: string;
   /** Free-form tags used for grouping and filtering. */
   tags?: string[];
+  /**
+   * Optional Stellar account (`G…`) associated with the agent. Validated by
+   * `@astroid/agent`'s `validateCreateAgentParams` before the request is sent.
+   */
+  stellarAddress?: string;
   [key: string]: unknown;
 }
 
@@ -160,9 +165,7 @@ export const AGENT_STATUS_VALUES = Object.freeze(
 ) as readonly AgentStatus[];
 
 /** Every valid {@link AgentRole} value, as a readonly tuple. */
-export const AGENT_ROLE_VALUES = Object.freeze(
-  Object.values(AgentRole),
-) as readonly AgentRole[];
+export const AGENT_ROLE_VALUES = Object.freeze(Object.values(AgentRole)) as readonly AgentRole[];
 
 /** Runtime type guard: whether `value` is a valid {@link AgentStatus}. */
 export function isAgentStatus(value: unknown): value is AgentStatus {

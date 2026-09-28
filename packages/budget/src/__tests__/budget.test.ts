@@ -67,9 +67,12 @@ function makeUtilization(overrides: Partial<BudgetUtilization> = {}): BudgetUtil
 
 describe('toBudgetQuery', () => {
   it('drops undefined, null and empty-string values and stringifies the rest', () => {
-    expect(
-      toBudgetQuery({ a: 1, b: 'x', c: true, d: undefined, e: null, f: '', g: 0 }),
-    ).toEqual({ a: 1, b: 'x', c: true, g: 0 });
+    expect(toBudgetQuery({ a: 1, b: 'x', c: true, d: undefined, e: null, f: '', g: 0 })).toEqual({
+      a: 1,
+      b: 'x',
+      c: true,
+      g: 0,
+    });
   });
 
   it('returns an empty object for no params', () => {

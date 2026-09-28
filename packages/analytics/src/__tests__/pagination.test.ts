@@ -14,7 +14,17 @@ function makeClient() {
     get: vi.fn(async (path: string, opts?: { query?: Record<string, unknown> }) => {
       calls.push({ path, query: opts?.query });
       const data = await handler(path, opts?.query);
-      return { data, meta: { page: 1, limit: 20, total: data.length, totalPages: 1, hasNextPage: false, hasPreviousPage: false } };
+      return {
+        data,
+        meta: {
+          page: 1,
+          limit: 20,
+          total: data.length,
+          totalPages: 1,
+          hasNextPage: false,
+          hasPreviousPage: false,
+        },
+      };
     }),
     post: vi.fn(),
     patch: vi.fn(),

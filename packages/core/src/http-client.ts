@@ -23,7 +23,7 @@ import {
   type RequestOptions,
 } from './http-types.js';
 import { buildUrl } from './url.js';
-import { backoffDelay, isRetryableStatus, sleep } from './backoff.js';
+import { backoffDelay, isRetryableStatus, parseRetryAfter, sleep } from './backoff.js';
 import { AstroidTimeoutError } from './timeout-error.js';
 
 /** Methods considered safe to retry by default (idempotent verbs). */
@@ -205,7 +205,21 @@ export class HttpClient {
         // Non-2xx: decide whether to retry, otherwise throw a typed error.
         const error = this.toError(raw);
         await this.middleware.applyError(error, prepared);
-        const shouldRetryStatus = contextOptions?.shouldRetryStatus ?? isRetryableStatus;
+        // Resolve the retryable-status predicate. Precedence:
+        //   1. a custom predicate supplied to the retry middleware,
+        //   2. an explicit `retryableStatusCodes` list,
+        //   3. an explicit `retryableStatuses` list,
+        //   4. the SDK-wide default.
+        const retryableStatusCodes =
+          contextOptions?.retryableStatusCodes ?? retry?.retryableStatusCodes;
+        const retryableStatuses = retry?.retryableStatuses;
+        const shouldRetryStatus =
+          contextOptions?.shouldRetryStatus ??
+          (retryableStatusCodes
+            ? (status: number) => retryableStatusCodes.includes(status)
+            : retryableStatuses && retryableStatuses.length > 0
+              ? (status: number) => retryableStatuses.includes(status)
+              : isRetryableStatus);
         if (retry && prepared.retryable && attempt < maxAttempts && shouldRetryStatus(raw.status)) {
           lastError = error;
           const delay = this.retryDelay(attempt, raw, retry);
@@ -219,8 +233,27 @@ export class HttpClient {
       } catch (err) {
         if (isAbortError(err)) throw err;
         // Transport-level failure (DNS, reset, timeout): retry if allowed.
-        const isTyped = isAstroidErrorLike(err);
-        if (isTyped) throw err; // already thrown above, propagate
+        //
+        // Errors that carry an HTTP status were already given their retry
+        // decision by the non-2xx branch above, so they propagate untouched.
+        // Status-less typed errors (i.e. no response was ever received) such as
+        // `AstroidTimeoutError` are transient transport failures and must go
+        // through the same backoff as a raw `TypeError` would.
+        if (isAstroidErrorLike(err)) {
+          const typed = err as AstroidError;
+          if (!isTransportFailure(typed)) throw typed;
+          if (retry && prepared.retryable && attempt < maxAttempts) {
+            lastError = typed;
+            const delay = backoffDelay(attempt, retry);
+            if (contextOptions?.onRetry) {
+              contextOptions.onRetry(attempt, typed, delay, prepared);
+            }
+            await sleep(delay, prepared.signal);
+            continue;
+          }
+          await this.middleware.applyError(typed, prepared);
+          throw typed;
+        }
         const networkError = toNetworkError(err);
         if (retry && prepared.retryable && attempt < maxAttempts) {
           lastError = networkError;
@@ -358,23 +391,53 @@ export class HttpClient {
   private toError(raw: RawResponse): AstroidError {
     const envelope = raw.body as { error?: ApiError; requestId?: string } | undefined;
     const requestId = envelope?.requestId ?? raw.requestId;
-    if (envelope?.error) {
-      return fromApiError(envelope.error, { status: raw.status, requestId });
+
+    // Surface the server-advised wait on rate-limit / maintenance responses so
+    // callers can honour it (e.g. `RateLimitError.retryAfter`) even when the
+    // body is missing or non-JSON. A body-supplied `retryAfter` is more
+    // precise, so the header value only fills the gap when the envelope did
+    // not already provide one.
+    let retryAfterDetails: Record<string, unknown> | undefined;
+    if (raw.status === 429 || raw.status === 503) {
+      const seconds = parseRetryAfter(raw.headers.get('retry-after'));
+      if (seconds !== undefined) retryAfterDetails = { retryAfter: seconds };
     }
-    return fromStatus(raw.status, `Request failed with status ${raw.status}`, { requestId });
+
+    if (envelope?.error) {
+      // The body-enveloped `retryAfter` is more precise than the header, so the
+      // header value only fills the gap when the envelope did not supply one
+      // (fromApiError would otherwise let `context.details` win).
+      const envelopeRetryAfter = envelope.error.details?.retryAfter;
+      return fromApiError(envelope.error, {
+        status: raw.status,
+        requestId,
+        details: envelopeRetryAfter !== undefined ? undefined : retryAfterDetails,
+      });
+    }
+    return fromStatus(raw.status, `Request failed with status ${raw.status}`, {
+      requestId,
+      details: retryAfterDetails,
+    });
   }
 
-  /** Honour `Retry-After` (seconds) on 429s, else exponential backoff. */
+  /**
+   * Compute the wait before the next attempt.
+   *
+   * A server-supplied `Retry-After` header — on `429` rate limits and `503`
+   * maintenance/maintenance-window responses alike — is authoritative and
+   * overrides the computed exponential backoff (capped at `maxDelayMs`), in
+   * both delta-seconds and HTTP-date forms (issue #222). Otherwise the delay
+   * grows exponentially with jitter via {@link backoffDelay}.
+   */
   private retryDelay(
     attempt: number,
     raw: RawResponse,
     retry: RetryConfig | null = this.config.retry,
   ): number {
     if (!retry) return 0;
-    if (raw.status === 429) {
-      const header = raw.headers.get('retry-after');
-      const seconds = header ? Number(header) : NaN;
-      if (Number.isFinite(seconds) && seconds >= 0) {
+    if (raw.status === 429 || raw.status === 503) {
+      const seconds = parseRetryAfter(raw.headers.get('retry-after'));
+      if (seconds !== undefined) {
         return Math.min(seconds * 1000, retry.maxDelayMs);
       }
     }
@@ -382,9 +445,20 @@ export class HttpClient {
   }
 }
 
-/** Whether an unknown value is a DOMException-style abort. */
+/**
+ * Whether an unknown value is an abort error.
+ *
+ * `fetch` and our `sleep` reject with a `DOMException` named `AbortError`,
+ * which is **not** an `instanceof Error` in every runtime, so we match on the
+ * `name` property instead. This guarantees an abort stops pending retries
+ * immediately rather than being mistaken for a retryable network failure.
+ */
 function isAbortError(value: unknown): boolean {
-  return value instanceof Error && value.name === 'AbortError';
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (value as { name?: unknown }).name === 'AbortError'
+  );
 }
 
 /** Build a DOM-compatible abort error regardless of runtime. */
@@ -399,4 +473,16 @@ function abortError(reason: unknown): Error {
 /** Loose check: was this error already produced by our error layer? */
 function isAstroidErrorLike(value: unknown): boolean {
   return value instanceof Error && 'code' in value && 'isRetryable' in value;
+}
+
+/**
+ * Whether a typed error is a transport-level failure — no HTTP response was
+ * ever received, so the request may still succeed on a later attempt.
+ *
+ * `AstroidTimeoutError` is the canonical example. Errors mapped from a non-2xx
+ * response carry an HTTP `status` and have already had their retry decision
+ * made against `isRetryableStatus`, so they are excluded here.
+ */
+function isTransportFailure(error: AstroidError): boolean {
+  return error.status === undefined && error.isRetryable;
 }

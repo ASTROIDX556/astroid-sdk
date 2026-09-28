@@ -1,166 +1,204 @@
-# feat(policy,transaction,analytics,auth): policy builder, memo-aware payment builder, time-series analytics & API-key sessions
+# feat(policy, agent, react, transaction): local policy pre-flight engine and rule/approval helpers
 
-Closes #225
-Closes #226
-Closes #227
-Closes #228
+Closes #17
+Closes #104
+Closes #105
+Closes #106
 
----
-
-## Overview
-
-This PR lands four related agent-safety and agent-runtime capabilities across the
-SDK. They share a theme — giving autonomous agents **type-safe, validated
-primitives for the money-moving path** — so they are implemented together:
-
-| Package | What changed |
-| --- | --- |
-| `@astroid/policy` | New fluent `PolicyBuilder` + rule validation utilities |
-| `@astroid/transaction` | Payment builder now supports text/hash/return/id memos |
-| `@astroid/analytics` + `@astroid/types` | `getTimeSeriesData` + strongly-typed time-series DTOs |
-| `@astroid/auth` | `SessionManager` now supports API-key **and** JWT auth modes |
+This PR delivers the four assigned issues as one coherent change set. It adds
+the new local authorization pre-flight engine in `@astroid/policy` (issue #17)
+and completes/extends the three companion acceptance criteria across
+`@astroid/agent` (#104), `@astroid/react` (#105) and `@astroid/transaction`
+(#106). Every package's test suite, `pnpm typecheck`, `pnpm lint` and
+`pnpm build` pass.
 
 ---
 
-## Issue #225 — Policy condition builder & validation utilities (`@astroid/policy`)
+## Issue #17 — local policy validation engine (policy)
 
-New module `packages/policy/src/builder.ts`.
+### Background
 
-- **`PolicyBuilder`** — a fluent, chainable class for assembling a policy draft:
-  - Destinations: `allowDestination(s)` / `denyDestination(s)`
-  - Assets: `allowAsset(s)` / `denyAsset(s)` (`XLM`, bare codes, `CODE:ISSUER`)
-  - Limits: `maxAmount`, `minAmount`, `dailyLimit`, `weeklyLimit`, `monthlyLimit`
-  - Window/scope: `timeWindow`, `forAgent`, `withPriority`, `enabled`, `ofType`
-  - `build()` returns the exact `PolicyDraft` payload accepted by
-    `PolicyResource.create` and infers the policy `type` from the configured
-    conditions (or `COMPOSITE` when several families are combined).
-- **Validation during construction** — Stellar address format, asset identifiers,
-  positive numeric bounds, and ordered `timeWindow` bounds are checked as the
-  rule is built, throwing structured `ValidationError`s.
-- **Standalone utilities** — `validatePolicyRule` (non-throwing, returns every
-  issue), `assertValidPolicyRule` (throws), and the
-  `isValidPolicyAddress` / `isValidPolicyAsset` predicates.
-- Exported from `packages/policy/src/index.ts` with full TSDoc + usage example.
+Before an agent's action is dispatched for online authorization, it should be
+validated against local policy rules offline — no network, no blockchain, no
+side effects. The package had a client-side simulation engine
+(`simulatePolicy`), but no evaluator exposing the issue's
+`evaluatePolicy(policySet, tx)` contract, no destination-list handling that
+tolerated case/federation variations, no time-of-day (allowed-hours) rule, and
+no signature-weight threshold check.
 
-**Acceptance criteria**
-- [x] Fluent `PolicyBuilder` with rule chaining for destinations, assets, and
-      velocity limits.
-- [x] Stellar public-key formats and numeric bounds validated at construction.
-- [x] Exported from `@astroid/policy` with TSDoc + usage examples.
-- [x] Unit tests cover serialization and validation-error throwing.
+### Changes
 
----
+- **`packages/policy/src/evaluation.ts`** (new) — the offline engine:
+  - `evaluatePolicy(policySet: PolicySet, tx: TransactionDetails, options?)`
+    returns a `PolicyEvaluationResult`. It is pure and total: malformed or
+    missing input is treated as an empty set that passes, and a breach resolves
+    to `allowed: false` instead of throwing.
+  - **Address restrictions** — destination allowlists and denylists are matched
+    through `normalizeAddress`, which upper-cases Stellar strkeys, lower-cases
+    both halves of federated addresses (`name*domain`, per SEP-0002), and trims
+    whitespace. An allowlist with no recipient supplied fails; a denylist with
+    no recipient passes.
+  - **Timing restrictions** — `isActionWithinAllowedHours` supports inclusive
+    start / exclusive end hours, wrap-around windows (`22` → `6`), a full-day
+    window (`start === end`), IANA timezones (defaulting to UTC, with an invalid
+    zone degrading to UTC instead of throwing) and optional weekday
+    restrictions. The clock comes from `tx.timestamp`, falling back to
+    `options.now` then the current time.
+  - **Signature thresholds** — `resolveSignedWeight` sums `tx.signatures`
+    weights (default `1`, matching Stellar low-threshold signers), honours an
+    explicit `tx.signedWeight`, and grants no weight for malformed values so a
+    bad weight cannot silently satisfy a threshold.
+  - **Detailed reporting** — one `PolicyRuleEvaluation` per evaluated check with
+    `{ rule, check, success, explanation? }`, plus `evaluatedRules`,
+    `failedRules` and de-duplicated `failedRuleNames`.
+  - `policySetFromPolicies(policies)` adapts server `Policy` records into a
+    `PolicySet` (enabled policies only), so the existing
+    `listPolicies()` workflow feeds straight into the engine.
+- **`packages/policy/src/index.ts`** — exports `evaluatePolicy`,
+  `policySetFromPolicies`, `normalizeAddress`, `addressesMatch`,
+  `isActionWithinAllowedHours`, `resolveSignedWeight`, the
+  `EvaluatePolicyOptions` type and the evaluation types.
+- **`packages/types/src/policy.ts`** — adds the strict schemas
+  `PolicyAllowedHours`, `TransactionSignature`, `TransactionDetails`,
+  `PolicyRule`, `PolicySet`, `PolicyRuleCheck`, `PolicyRuleEvaluation` and
+  `PolicyEvaluationResult`, all re-exported from `@astroid/types`.
+- **`packages/types/src/entities.ts`** — `PolicyConfiguration` gains typed
+  `allowedHours` and `requiredSignatures` fields.
+- **`packages/types/src/schemas.ts`** — zod mirrors of every new type plus
+  `validatePolicySet` / `validateTransactionDetails` helpers, and the two new
+  `PolicyConfiguration` fields.
 
-## Issue #226 — Memo-aware payment transaction builder (`@astroid/transaction`)
+### Acceptance criteria
 
-`packages/transaction/src/builder.ts` previously only supported `memoText`.
-`BuildTransactionOptions` now accepts the full memo surface:
+- [x] `evaluatePolicy(policySet: PolicySet, tx: TransactionDetails):
+PolicyEvaluationResult` exposed from `@astroid/policy`.
+- [x] Address restrictions validated (allowlist membership and denylist
+      avoidance) with case- and federation-safe comparison.
+- [x] Timing restrictions validated against configured allowed hours.
+- [x] Required signing thresholds validated against the payload's collected
+      signature weight.
+- [x] Detailed execution reporting per rule name, success state and failure
+      explanation.
 
-- `memoText` (≤28 bytes), `memoHash` / `memoReturn` (32 bytes as 64 hex chars),
-  and `memoId` (uint64).
-- Memo options are mutually exclusive — supplying more than one fails fast with
-  a structured `ValidationError` (`CONFLICTING_MEMO`).
-- New validators `isValidMemoHash` / `assertValidMemoHash` in
-  `packages/transaction/src/validate.ts`.
-- Existing `buildPaymentTransaction` continues to support native XLM and custom
-  issued assets, fee configuration, and recipient address validation.
+### Tests
 
-**Acceptance criteria**
-- [x] `buildPaymentTransaction` supports native XLM and custom issued assets.
-- [x] Memo handling for text, hash, and return (plus id) and fee options.
-- [x] Validation for recipient Stellar addresses and memo values.
-- [x] Unit tests decode the built envelope and assert memo structure + errors.
-
----
-
-## Issue #227 — Analytics time-series query helpers (`@astroid/analytics`, `@astroid/types`)
-
-- New DTOs in `packages/types/src/analytics.ts`: `TimeSeriesMetric`,
-  `TimeSeriesDataParams`, `TimeSeriesDataPoint`, and `TimeSeriesDataResponse`.
-- New `AnalyticsResource.getTimeSeriesData(query)` in
-  `packages/analytics/src/index.ts`, hitting `/analytics/time-series` and
-  serialising date range, granularity, metric family/ies, and agent/wallet/asset
-  scope filters (undefined fields omitted).
-- `getAgentMetrics` (already present) plus the new method round out the
-  aggregated, strongly-typed metrics API. The new DTOs are re-exported from
-  `@astroid/analytics`.
-
-**Acceptance criteria**
-- [x] `getAgentMetrics` and `getTimeSeriesData` available in `@astroid/analytics`.
-- [x] Query parameters for date ranges, granularity, and metric types.
-- [x] Strongly-typed metric DTOs live in `@astroid/types`.
-- [x] Unit tests mock API responses for several time-series queries.
-
----
-
-## Issue #228 — JWT & API-key session handlers (`@astroid/auth`)
-
-`packages/auth/src/session.ts` already managed JWT access/refresh tokens. It now
-models the auth strategy explicitly:
-
-- `SessionAuthMode = 'jwt' | 'apiKey'`, inferred from the supplied credentials or
-  set via config.
-- **API-key mode** stores a long-lived key, persists it through the pluggable
-  `TokenStorage`, and injects it via a configurable header (`x-api-key` by
-  default) through `getAuthHeaders` / `applyAuthHeaders`.
-- **JWT mode** keeps automatic expiration detection and queued refresh; the
-  middleware continues to refresh before requests and clear credentials on 401.
-- Clear error handling: `assertAuthenticated` throws structured
-  `AuthenticationError`s (`UNAUTHENTICATED` / `TOKEN_EXPIRED`), and
-  `refreshSession` rejects in API-key mode (`API_KEY_MODE`) since keys don't
-  rotate.
-- `createSessionMiddleware` and `wireSessionToHttpClient` are mode-aware.
-
-**Acceptance criteria**
-- [x] Session manager supports API-key and JWT modes.
-- [x] Token expiration detection and automatic refresh (JWT).
-- [x] Clear errors for unauthenticated / expired sessions.
-- [x] Unit tests verify header injection and session state transitions.
+New `packages/policy/__tests__/evaluation.test.ts` (45 tests): allow/deny list
+membership including case and federated variants and a missing recipient; time
+windows including boundaries, wrap-around, timezones, weekdays and
+`options.now`; signature thresholds at, above and below the limit; the
+per-check reporting contract, disabled rules, determinism, malformed-input
+totals, and the `Policy` → `PolicySet` adapter. New schema tests in
+`packages/types/src/schemas.test.ts` (8 tests).
 
 ---
 
-## Files changed
+## Issue #104 — typed input validation for agent creation (agent)
 
-**Added**
-- `packages/policy/src/builder.ts`
-- `packages/policy/__tests__/builder.test.ts`
-- `packages/analytics/__tests__/time-series-data.test.ts`
-- `packages/auth/__tests__/api-key-session.test.ts`
+### Background
 
-**Modified**
-- `packages/policy/src/index.ts`
-- `packages/transaction/src/builder.ts`
-- `packages/transaction/src/validate.ts`
-- `packages/transaction/__tests__/builder.test.ts`
-- `packages/types/src/analytics.ts`
-- `packages/analytics/src/index.ts`
-- `packages/auth/src/session.ts`
+`validateCreateAgentParams` already checked `name`, `capabilities` and
+`initialBudget`, but not the Stellar public keys the issue calls out.
+
+### Changes
+
+- **`packages/agent/src/validation.ts`** — adds `isValidStellarPublicKey`
+  (`G` + 55 base-32 characters, the same check as the policy builder) and
+  validates optional addresses carried by the payload: the top-level
+  `stellarAddress` and `metadata.stellarAddress`. It also validates that
+  `metadata`, when present, is a plain object and that `primaryWalletId`, when
+  present, is a non-empty string — each failure throwing a descriptive
+  `AstroidValidationError` naming the offending field.
+- **`packages/agent/src/index.ts`** — exports `isValidStellarPublicKey`.
+- **`packages/types/src/agent.ts`** — documents the conventional
+  `metadata.stellarAddress` key on `AgentMetadata`.
+
+### Acceptance criteria
+
+- [x] Validation for the agent creation input extended in `@astroid/agent`.
+- [x] Descriptive validation errors for missing required fields and invalid
+      Stellar public keys.
+- [x] Full test coverage for valid and invalid agent payloads.
+
+### Tests
+
+`packages/agent/src/__tests__/validation.test.ts` (+8 tests): valid key shapes
+and every malformed variant, valid top-level and metadata addresses, invalid
+addresses by field, non-object metadata, and optional `primaryWalletId`.
+
+---
+
+## Issue #105 — `useBudgetUtilization` polling hook (react)
+
+### Background
+
+The hook and its options (`enabled`, `refetchInterval`, `staleTime`) already
+existed in `packages/react/src/hooks/use-budget.ts` and was exported from
+`@astroid/react`, but loading-state behaviour was not explicitly asserted.
+
+### Changes
+
+No production change was required — the acceptance criteria were already met.
+This PR adds the missing **loading → success** test so the hook's state
+contract is pinned.
+
+### Acceptance criteria
+
+- [x] `useBudgetUtilization` exported from `@astroid/react`.
+- [x] Configurable refetch interval and budget-id parameter.
+- [x] Fully typed return values (loading, error, data).
+- [x] Unit tests verify loading and success states.
+
+### Tests
+
+`packages/react/src/__tests__/use-budget.test.tsx` (+1 test): the hook reports
+`isLoading: true` with no data until the deferred request resolves, then
+exposes the utilization snapshot with `isLoading: false`.
+
+---
+
+## Issue #106 — transaction fee estimation helper (transaction)
+
+### Background
+
+`estimateFee` in `packages/transaction/src/fee-estimation.ts` already decoded
+XDR envelopes, handled multi-operation transactions, sampled mocked Horizon
+`fee_stats` with a configurable buffer, and degraded gracefully offline. The
+exported `formatFeeAsXlm` / `parseFeeInStroops` helpers, however, had no test
+coverage.
+
+### Changes
+
+No production change was required. This PR closes the coverage gap on the unit
+conversion helpers that underpin the estimate.
+
+### Acceptance criteria
+
+- [x] Fee estimation function exported from `@astroid/transaction`.
+- [x] Handles standard transaction envelopes and multi-operation transactions.
+- [x] Comprehensive unit tests verifying fee calculations against mock Stellar
+      ledger data.
+
+### Tests
+
+`packages/transaction/__tests__/estimate-fee.test.ts` (+5 tests): stroop → XLM
+formatting, XLM → stroop parsing, invalid/negative handling and a drift-free
+round trip.
 
 ---
 
 ## Validation
 
-| package | command | result |
+| Scope | Command | Result |
 | --- | --- | --- |
-| workspace | `pnpm build` | pass |
+| workspace | `pnpm build` | all packages build |
 | workspace | `pnpm typecheck` | 16/16 packages pass |
-| workspace | `pnpm lint` | pass |
-| workspace | `pnpm test` | all packages pass |
-| `@astroid/policy` | `pnpm test` | 4 files / 97 tests pass |
-| `@astroid/transaction` | `pnpm test` | 14 files / 160 tests pass |
-| `@astroid/analytics` | `pnpm test` | 9 files / 106 tests pass |
-| `@astroid/auth` | `pnpm test` | 2 files / 22 tests pass |
+| workspace | `pnpm lint` | 0 errors |
+| workspace | `pnpm test` | **1,703 passed**, 0 failed (15 packages) |
+| `@astroid/policy` | `pnpm test` | 160 passed (was 115) |
+| `@astroid/agent` | `pnpm test` | 46 passed (was 38) |
+| `@astroid/react` | `pnpm test` | 169 passed (was 168) |
+| `@astroid/transaction` | `pnpm test` | 231 passed (was 226) |
+| `@astroid/types` | `pnpm test` | 71 passed (was 63) |
 
----
-
-## Notes / design decisions
-
-- The policy builder stays dependency-free beyond `@astroid/errors`: address and
-  asset checks are format validations, with the backend remaining the source of
-  truth for full checksum verification.
-- Memo options are intentionally mutually exclusive so a transaction can never
-  silently carry two memos.
-- `getTimeSeriesData` reuses the existing `AnalyticsResource` base so no new
-  transport concerns are introduced.
-- API-key sessions deliberately do not expose a refresh cycle; treating a key as
-  unrefreshable surfaces a single, clear error instead of a confusing 401 loop.
+Prettier formatting is clean on every changed file. No merge conflicts — the
+branch is up to date with `upstream/main`.

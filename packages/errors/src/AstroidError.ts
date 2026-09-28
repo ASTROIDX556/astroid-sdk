@@ -12,6 +12,8 @@
 
 export {
   AstroidError,
+  setIncludeStackInErrors,
+  getIncludeStackInErrors,
   AuthenticationError,
   AuthorizationError,
   ForbiddenError,
@@ -23,8 +25,10 @@ export {
   BudgetExceededError,
   ApprovalRequiredError,
   RateLimitError,
+  ApiRateLimitError,
   NetworkError,
   InternalServerError,
   ServerError,
   type AstroidErrorOptions,
+  type SerializedAstroidError,
 } from './index.js';

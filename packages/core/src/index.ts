@@ -13,6 +13,7 @@ export { AstroidTimeoutError } from './timeout-error.js';
 export {
   resolveConfig,
   DEFAULT_BASE_URL,
+  DEFAULT_TIMEOUT_MS,
   type AstroidClientConfig,
   type ResolvedConfig,
   type AuthConfig,
@@ -35,7 +36,7 @@ export {
 } from './http-types.js';
 export { Resource, type ListRequestOptions, type RequestOptionsExtras } from './resource.js';
 export { buildUrl, buildQueryString } from './url.js';
-export { backoffDelay, isRetryableStatus, sleep } from './backoff.js';
+export { backoffDelay, isRetryableStatus, parseRetryAfter, sleep, DEFAULT_RETRYABLE_STATUSES } from './backoff.js';
 export {
   paginate,
   paginateCursor,
