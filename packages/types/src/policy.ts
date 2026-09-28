@@ -114,6 +114,17 @@ export interface SimulatePolicyRequest {
   spentInWindow?: string;
 }
 
+export interface PolicyRuleSimulationRequest {
+  rule: PolicyRule;
+  transaction: TransactionDetails;
+}
+
+export interface PolicyRuleSimulationResult {
+  allowed: boolean;
+  denied: boolean;
+  triggeredRuleIds: string[];
+}
+
 /* -------------------------------------------------------------------------- */
 /* Local evaluation engine                                                     */
 /* -------------------------------------------------------------------------- */
