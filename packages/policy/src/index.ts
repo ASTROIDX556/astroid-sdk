@@ -34,6 +34,17 @@ export {
   type PolicySimulationHttpClient,
 } from './simulate-policy.js';
 
+/**
+ * Policy simulation parameter builders — a fluent, validated way to assemble a
+ * {@link PolicySimulationRequest} for `simulatePolicy` / `PolicyResource.simulatePolicy`
+ * ({@link PolicySimulationBuilder}, {@link simulationParams}).
+ */
+export {
+  PolicySimulationBuilder,
+  simulationParams,
+  validatePolicySimulationParams,
+} from './simulation-params.js';
+
 /** Offline policy-engine types and helpers (see {@link evaluatePolicyRules}). */
 export {
   simulatePolicyLocal,
