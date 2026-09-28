@@ -28,6 +28,8 @@ import {
   TransactionDetailsSchema,
   PolicySimulationInputSchema,
   PolicySimulationEvaluationSchema,
+  validatePolicySimulationInput,
+  validatePolicySimulationEvaluation,
   validatePolicySet,
   validateTransactionDetails,
   type InferredAgent,
