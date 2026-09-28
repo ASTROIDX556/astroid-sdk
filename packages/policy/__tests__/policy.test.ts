@@ -179,7 +179,7 @@ describe('PolicyResource — pre-flight simulation and dry-run helper', () => {
 
     let caught: unknown;
     try {
-      await resource.simulatePolicy({ walletId: 'w_1', asset: 'USDC', amount: '-5' });
+      await resource.simulatePolicy({ walletId: 'w_1', asset: 'USDC', amount: '-5' }); // Schema allows strings
     } catch (err) {
       caught = err;
     }
