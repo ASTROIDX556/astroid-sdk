@@ -200,6 +200,14 @@ export const AgentSchema = z.object({
   deletedAt: IsoDateTimeSchema.nullable().optional(),
 });
 
+/**
+ * The TypeScript type inferred from {@link AgentSchema} (issue #265).
+ *
+ * Compile-time assertion below proves it is structurally identical to the
+ * canonical {@link Agent} interface, so either can be used interchangeably.
+ */
+export type InferredAgent = z.infer<typeof AgentSchema>;
+
 /** Wallet entity. */
 export const WalletSchema = z.object({
   id: z.string(),
@@ -214,6 +222,9 @@ export const WalletSchema = z.object({
   updatedAt: IsoDateTimeSchema,
   deletedAt: IsoDateTimeSchema.nullable().optional(),
 });
+
+/** The TypeScript type inferred from {@link WalletSchema} (issue #265). */
+export type InferredWallet = z.infer<typeof WalletSchema>;
 
 /** Asset balance on a wallet. */
 export const AssetBalanceSchema = z.object({
@@ -279,6 +290,9 @@ export const PolicySchema = z.object({
   updatedAt: IsoDateTimeSchema,
   deletedAt: IsoDateTimeSchema.nullable().optional(),
 });
+
+/** The TypeScript type inferred from {@link PolicySchema} (issue #265). */
+export type InferredPolicy = z.infer<typeof PolicySchema>;
 
 /* -------------------------------------------------------------------------- */
 /* Local policy evaluation schemas                                             */
@@ -423,6 +437,9 @@ export const BudgetSchema = z.object({
   updatedAt: IsoDateTimeSchema,
   deletedAt: IsoDateTimeSchema.nullable().optional(),
 });
+
+/** The TypeScript type inferred from {@link BudgetSchema} (issue #265). */
+export type InferredBudget = z.infer<typeof BudgetSchema>;
 
 /** Budget history entry. */
 export const BudgetHistoryEntrySchema = z.object({

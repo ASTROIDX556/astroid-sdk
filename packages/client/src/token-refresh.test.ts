@@ -254,4 +254,91 @@ describe('Astroid token refresh integration', () => {
     expect(client.sessionManager.getAccessToken()).toBeUndefined();
     expect(client.sessionManager.getRefreshToken()).toBeUndefined();
   });
+
+  it('fails over to a single refresh network call when many parallel requests 401 (issue #237)', async () => {
+    let refreshCalls = 0;
+
+    const mockFetch = vi.fn().mockImplementation(async (url: string | URL, options?: RequestInit) => {
+      const urlStr = url.toString();
+      const headers = (options?.headers as Record<string, string>) ?? {};
+
+      if (urlStr.includes('/auth/refresh')) {
+        refreshCalls++;
+        await new Promise((r) => setTimeout(r, 50));
+        return jsonResponse({
+          accessToken: 'fresh_access',
+          refreshToken: 'fresh_refresh',
+          expiresIn: 3600,
+          tokenType: 'Bearer',
+        });
+      }
+
+      if (headers.authorization === 'Bearer fresh_access') {
+        return jsonResponse({ data: { id: urlStr.split('/').pop(), ok: true } });
+      }
+      return unauthorized();
+    });
+
+    const client = new Astroid({
+      accessToken: INITIAL_TOKENS.accessToken,
+      refreshToken: INITIAL_TOKENS.refreshToken,
+      baseUrl: 'https://api.test/v1',
+      fetch: mockFetch as unknown as typeof fetch,
+    });
+
+    // Fire many parallel requests against a stale token.
+    const settled = await Promise.all([
+      client.wallets.get('w1'),
+      client.agents.get('a1'),
+      client.budgets.get('b1'),
+      client.http.get<{ id: string }>('/transactions/t1'),
+      client.http.get<{ id: string }>('/policies/p1'),
+    ]);
+
+    // Resource getters unwrap the envelope; raw http.get returns AstroidResponse.
+    const ids = settled.map((r) => {
+      const body = r as { data?: { id?: string }; id?: string };
+      return body.data?.id ?? body.id;
+    });
+    expect(ids).toEqual(['w1', 'a1', 'b1', 't1', 'p1']);
+    // All five 401s coalesced into exactly one refresh network call.
+    expect(refreshCalls).toBe(1);
+    expect(client.sessionManager.getAccessToken()).toBe('fresh_access');
+  });
+
+  it('surfaces an onAuthFailure event when a refresh fails through the client (issue #237)', async () => {
+    const mockFetch = vi.fn().mockImplementation(async (url: string | URL) => {
+      const urlStr = url.toString();
+      if (urlStr.includes('/auth/refresh')) {
+        return new Response(
+          JSON.stringify({ error: { message: 'Refresh revoked', code: 'TOKEN_INVALID' } }),
+          { status: 401, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      return unauthorized();
+    });
+
+    const authFailures: Array<{ reason: string; error: unknown; timestamp: string }> = [];
+    const client = new Astroid({
+      accessToken: INITIAL_TOKENS.accessToken,
+      refreshToken: INITIAL_TOKENS.refreshToken,
+      baseUrl: 'https://api.test/v1',
+      fetch: mockFetch as unknown as typeof fetch,
+      onAuthFailure: (event) => {
+        authFailures.push(event);
+      },
+    });
+
+    await expect(client.wallets.get('w1')).rejects.toThrow(AuthenticationError);
+
+    expect(authFailures).toHaveLength(1);
+    expect(authFailures[0]!.reason).toBe('refresh_failed');
+    // The event carries the raw underlying refresh error (the thrown result
+    // is the wrapped AuthenticationError; the event exposes the cause).
+    expect(authFailures[0]!.error).toBeInstanceOf(Error);
+    expect((authFailures[0]!.error as Error).message).toContain('Refresh revoked');
+    expect(new Date(authFailures[0]!.timestamp).getTime()).not.toBeNaN();
+    expect(client.sessionManager.getAccessToken()).toBeUndefined();
+    expect(client.sessionManager.getRefreshToken()).toBeUndefined();
+  });
 });

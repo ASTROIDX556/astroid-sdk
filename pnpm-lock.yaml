@@ -382,6 +382,9 @@ importers:
       '@astroid/types':
         specifier: workspace:*
         version: link:../types
+      zod:
+        specifier: ^4.5.4
+        version: 4.5.4
     devDependencies:
       tsup:
         specifier: 8.3.5

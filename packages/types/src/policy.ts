@@ -114,6 +114,95 @@ export interface SimulatePolicyRequest {
   spentInWindow?: string;
 }
 
+export interface PolicyRuleSimulationRequest {
+  rule: PolicyRule;
+  transaction: TransactionDetails;
+}
+
+export interface PolicyRuleSimulationResult {
+  allowed: boolean;
+  denied: boolean;
+  triggeredRuleIds: string[];
+}
+
+/* -------------------------------------------------------------------------- */
+/* Policy update simulation (issue #249)                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A dry-run validation of a proposed policy rule change (issue #249).
+ *
+ * The proposed rule is replayed against historical transaction payloads so a
+ * policy update can be tested before it is persisted — without risking
+ * unintended transaction rejections on the Stellar network. Sent to the
+ * `POST /policies/simulate-update` endpoint.
+ */
+export interface PolicyUpdateSimulationRequest {
+  /** The policy whose update is being validated. */
+  policyId: string;
+  /** The proposed replacement rule to validate before persisting. */
+  proposedRule: PolicyRule;
+  /**
+   * Historical transaction payloads to replay against the proposed rule.
+   * At least one transaction is required — simulating against an empty
+   * history proves nothing.
+   */
+  transactions: TransactionDetails[];
+  /** Optional scope narrowing: agent whose context the rule applies to. */
+  agentId?: string;
+  /** Optional scope narrowing: wallet whose context the rule applies to. */
+  walletId?: string;
+  /** Arbitrary caller metadata, echoed back by the API. */
+  metadata?: Record<string, unknown>;
+}
+
+/** The replay of one historical transaction against the proposed rule. */
+export interface PolicyUpdateSimulationOutcome {
+  /** Zero-based index of the historical transaction in the request. */
+  transactionIndex: number;
+  /** Whether the proposed rule permits this historical transaction. */
+  allowed: boolean;
+  /** Names of the proposed rules this transaction complies with. */
+  passedRules: string[];
+  /** The checks this transaction failed under the proposed rule. */
+  violatedConstraints: PolicyRuleEvaluation[];
+}
+
+/** The estimated effect of persisting the proposed policy change. */
+export interface PolicyUpdateSimulationImpact {
+  /** Number of historical transactions evaluated. */
+  evaluatedTransactionCount: number;
+  /** Number of historical transactions the proposed rule would reject. */
+  blockedTransactionCount: number;
+  /** Fraction of evaluated transactions blocked, between `0` and `1`. */
+  blockedRatio: number;
+}
+
+/**
+ * The outcome of a policy update simulation (`PolicyResource.simulatePolicyUpdate`).
+ *
+ * An invalid proposed rule is **not** an error: `valid` is `false` and
+ * `violatedConstraints` / `estimatedImpact` explain exactly which historical
+ * transactions the change would have rejected, so callers can surface a
+ * precise message instead of catching an exception.
+ */
+export interface PolicyUpdateSimulationResult {
+  /** Whether the proposed change is safe: no historical transaction would be blocked. */
+  valid: boolean;
+  /** Alias of {@link PolicyUpdateSimulationResult.valid} using pass/fail terminology. */
+  passed: boolean;
+  /** One outcome per replayed historical transaction, in request order. */
+  outcomes: PolicyUpdateSimulationOutcome[];
+  /** Names of the proposed rules that passed against every historical transaction. */
+  passedRules: string[];
+  /** Every failed check across the replay, in first-failure order. */
+  violatedConstraints: PolicyRuleEvaluation[];
+  /** Aggregate effect of persisting the change. */
+  estimatedImpact: PolicyUpdateSimulationImpact;
+  /** Human-readable summary of the simulation. */
+  explanation: string;
+}
+
 /* -------------------------------------------------------------------------- */
 /* Single-policy simulation (POST /policies/{id}/simulate)                     */
 /* -------------------------------------------------------------------------- */

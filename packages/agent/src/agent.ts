@@ -45,8 +45,15 @@ export class AgentResource extends Resource {
    *
    * @param params Agent creation parameters.
    * @returns The created agent entity.
-   * @throws {AstroidValidationError} When `params` is missing required fields or
-   *   any field carries the wrong type.
+   *
+   * @example
+   * ```ts
+   * const agent = await astroid.agents.create({
+   *   name: 'TradingBot',
+   *   capabilities: ['trade'],
+   *   initialBudget: { currency: 'USDC', amount: '100' }
+   * });
+   * ```
    */
   async create(params: CreateAgentParams): Promise<Agent> {
     validateCreateAgentParams(params);
@@ -59,6 +66,12 @@ export class AgentResource extends Resource {
    *
    * @param agentId The unique agent ID.
    * @returns The agent entity.
+   *
+   * @example
+   * ```ts
+   * const agent = await astroid.agents.get('agt_12345');
+   * console.log(agent.status);
+   * ```
    */
   async get(agentId: string): Promise<Agent> {
     return this.getData<Agent>(`/agents/${encodeURIComponent(agentId)}`);
@@ -69,6 +82,12 @@ export class AgentResource extends Resource {
    *
    * @param params Optional filters and pagination parameters.
    * @returns A paginated list of agent entities.
+   *
+   * @example
+   * ```ts
+   * const result = await astroid.agents.list({ status: 'ACTIVE', limit: 10 });
+   * console.log(result.data.length);
+   * ```
    */
   async list(params: AgentListParams = {}): Promise<Paginated<Agent>> {
     return this.listData<Agent>('/agents', { ...params });
@@ -123,8 +142,11 @@ export class AgentResource extends Resource {
    * @param agentId The unique agent ID.
    * @param params Updated agent parameters.
    * @returns The updated agent entity.
-   * @throws {AstroidValidationError} When `agentId` is blank, `params` carries no
-   *   updatable field, or any supplied field has the wrong type.
+   *
+   * @example
+   * ```ts
+   * const updatedAgent = await astroid.agents.update('agt_12345', { status: 'SUSPENDED' });
+   * ```
    */
   async update(agentId: string, params: UpdateAgentParams): Promise<Agent> {
     assertValidAgentId(agentId);
@@ -142,6 +164,12 @@ export class AgentResource extends Resource {
    *
    * @param agentId The unique agent ID.
    * @returns The deactivated agent entity.
+   *
+   * @example
+   * ```ts
+   * const deactivated = await astroid.agents.deactivate('agt_12345');
+   * console.log(deactivated.status); // 'ARCHIVED'
+   * ```
    */
   async deactivate(agentId: string): Promise<Agent> {
     const res = await this.client.post<Agent>(
