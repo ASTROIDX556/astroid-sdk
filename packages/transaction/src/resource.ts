@@ -5,7 +5,7 @@
  * @module
  */
 
-import { Resource } from '@astroid/core';
+import { Resource, type RequestOptionsExtras } from '@astroid/core';
 import type {
   CreateTransactionInput,
   Paginated,
@@ -29,23 +29,36 @@ export type ProposalListParams = PaginationParams & {
  */
 export class TransactionsResource extends Resource {
   /** Fetch a single transaction by id. */
-  async get(transactionId: string): Promise<Transaction> {
-    return this.getData<Transaction>(`/transactions/${encodeURIComponent(transactionId)}`);
+  async get(transactionId: string, options?: RequestOptionsExtras): Promise<Transaction> {
+    return this.getData<Transaction>(
+      `/transactions/${encodeURIComponent(transactionId)}`,
+      undefined,
+      options,
+    );
   }
 
   /** List transactions, filterable by status, asset, wallet, and agent. */
-  async list(params: TransactionListParams = {}): Promise<Paginated<Transaction>> {
-    return this.listData<Transaction>('/transactions', { ...params });
+  async list(
+    params: TransactionListParams = {},
+    options?: RequestOptionsExtras,
+  ): Promise<Paginated<Transaction>> {
+    return this.listData<Transaction>('/transactions', { ...params }, options);
   }
 
   /** Iterate every transaction across all pages. */
-  iterate(params: TransactionListParams = {}): AsyncGenerator<Transaction, void, void> {
-    return this.iterateData<Transaction>('/transactions', { ...params });
+  iterate(
+    params: TransactionListParams = {},
+    options?: RequestOptionsExtras,
+  ): AsyncGenerator<Transaction, void, void> {
+    return this.iterateData<Transaction>('/transactions', { ...params }, options);
   }
 
   /** Create a transaction envelope for a wallet. */
-  async create(input: CreateTransactionInput): Promise<Transaction> {
-    const res = await this.client.post<Transaction>('/transactions', input);
+  async create(
+    input: CreateTransactionInput,
+    options?: RequestOptionsExtras,
+  ): Promise<Transaction> {
+    const res = await this.client.post<Transaction>('/transactions', input, options);
     return res.data;
   }
 
@@ -55,14 +68,18 @@ export class TransactionsResource extends Resource {
    * Delegates to the backend `/transactions/estimate-fee` endpoint, which
    * combines live network fee data with the organization's own configuration.
    */
-  async estimateFee(input: {
-    transactionXdr?: string;
-    operationCount?: number;
-    network?: string;
-  }): Promise<TransactionFeeEstimate> {
+  async estimateFee(
+    input: {
+      transactionXdr?: string;
+      operationCount?: number;
+      network?: string;
+    },
+    options?: RequestOptionsExtras,
+  ): Promise<TransactionFeeEstimate> {
     const res = await this.client.post<TransactionFeeEstimate>(
       '/transactions/estimate-fee',
       input,
+      options,
     );
     return res.data;
   }
@@ -71,13 +88,17 @@ export class TransactionsResource extends Resource {
    * Run a server-side dry-run of a transaction through the Astroid API before
    * broadcast. Delegates to `/transactions/simulate`.
    */
-  async simulate(input: {
-    transactionXdr: string;
-    networkPassphrase?: string;
-  }): Promise<TransactionSimulationOutcome> {
+  async simulate(
+    input: {
+      transactionXdr: string;
+      networkPassphrase?: string;
+    },
+    options?: RequestOptionsExtras,
+  ): Promise<TransactionSimulationOutcome> {
     const res = await this.client.post<TransactionSimulationOutcome>(
       '/transactions/simulate',
       input,
+      options,
     );
     return res.data;
   }

@@ -34,6 +34,7 @@ export const ApiErrorCode = {
   // Client-side (SDK generated)
   NETWORK_ERROR: 'NETWORK_ERROR',
   TIMEOUT: 'TIMEOUT',
+  REQUEST_TIMEOUT: 'REQUEST_TIMEOUT',
 } as const;
 export type ApiErrorCode = (typeof ApiErrorCode)[keyof typeof ApiErrorCode];
 

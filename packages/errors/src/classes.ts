@@ -8,7 +8,7 @@
  * @module
  */
 
-import { AstroidError } from './base.js';
+import { AstroidError, type AstroidErrorOptions } from './base.js';
 
 /** 401 — missing/invalid credentials, expired token, or invalid API key. */
 export class AuthenticationError extends AstroidError {}
@@ -76,6 +76,44 @@ export class ApiRateLimitError extends RateLimitError {}
 export class NetworkError extends AstroidError {
   override get isRetryable(): boolean {
     return true;
+  }
+}
+
+/**
+ * The caller-configured request deadline elapsed before the server responded.
+ *
+ * Issued by the HTTP client when a request exceeds its `timeoutMs` deadline.
+ * Derived from {@link NetworkError} so it is part of the core error hierarchy:
+ * `isAstroidError(err)`, `err instanceof NetworkError` and structured
+ * branching (`err.code`, `err.isRetryable`) all work. Like every transport
+ * failure it is retryable — no response was ever received.
+ */
+export class AstroidTimeoutError extends NetworkError {
+  /** The deadline (in ms) that was exceeded, when known. */
+  readonly timeoutMs: number | undefined;
+
+  /**
+   * Build a timeout error.
+   *
+   * Accepts either the transport-shorthand form —
+   * `new AstroidTimeoutError(15_000)` — used by the HTTP client when a request
+   * exceeds its deadline, or the standard envelope form —
+   * `new AstroidTimeoutError(message, { code: 'REQUEST_TIMEOUT' })` — so the
+   * class stays compatible with `errorClassForCode`/`fromApiError`.
+   *
+   * @param timeoutOrMessage  Deadline in ms, or a human-readable message.
+   * @param options           Standard error options; `details.timeoutMs`, when
+   *                          present, populates {@link AstroidTimeoutError.timeoutMs}.
+   */
+  constructor(timeoutOrMessage: number | string, options?: AstroidErrorOptions) {
+    const isDeadline = typeof timeoutOrMessage === 'number';
+    super(
+      isDeadline ? `Astroid request timed out after ${timeoutOrMessage}ms.` : timeoutOrMessage,
+      { code: 'REQUEST_TIMEOUT', ...(options ?? {}) },
+    );
+    const detailTimeout =
+      typeof options?.details?.timeoutMs === 'number' ? options.details.timeoutMs : undefined;
+    this.timeoutMs = isDeadline ? timeoutOrMessage : detailTimeout;
   }
 }
 

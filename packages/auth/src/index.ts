@@ -9,7 +9,7 @@
  * @packageDocumentation
  */
 
-import type { HttpClient } from '@astroid/core';
+import type { HttpClient, RequestOptionsExtras } from '@astroid/core';
 import type {
   ApiKey,
   ApiKeyWithSecret,
@@ -50,30 +50,30 @@ export class AuthResource {
   }
 
   /** Create a new organization and its first owner, returning auth tokens. */
-  async register(input: RegisterInput): Promise<AuthResult> {
-    const res = await this.client.post<AuthResult>('/auth/register', input);
+  async register(input: RegisterInput, options?: RequestOptionsExtras): Promise<AuthResult> {
+    const res = await this.client.post<AuthResult>('/auth/register', input, options);
     await this.adoptToken(res.data);
     return res.data;
   }
 
   /** Log in with email + password. Sets the access token on the client. */
-  async login(input: LoginInput): Promise<AuthResult> {
-    const res = await this.client.post<AuthResult>('/auth/login', input);
+  async login(input: LoginInput, options?: RequestOptionsExtras): Promise<AuthResult> {
+    const res = await this.client.post<AuthResult>('/auth/login', input, options);
     await this.adoptToken(res.data);
     return res.data;
   }
 
   /** Exchange a refresh token for a fresh access token. */
-  async refresh(input: RefreshInput): Promise<AuthTokens> {
-    const res = await this.client.post<AuthTokens>('/auth/refresh', input);
+  async refresh(input: RefreshInput, options?: RequestOptionsExtras): Promise<AuthTokens> {
+    const res = await this.client.post<AuthTokens>('/auth/refresh', input, options);
     await this.adoptToken(res.data);
     return res.data;
   }
 
   /** Revoke the current session server-side and clear the local token. */
-  async logout(): Promise<void> {
+  async logout(options?: RequestOptionsExtras): Promise<void> {
     try {
-      await this.client.post<void>('/auth/logout');
+      await this.client.post<void>('/auth/logout', undefined, options);
     } finally {
       this.client.setAccessToken(undefined);
       await this.sessionManager?.clearTokens();
@@ -81,8 +81,8 @@ export class AuthResource {
   }
 
   /** The currently authenticated user, organization, and session. */
-  async me(): Promise<AuthSession> {
-    const res = await this.client.get<AuthSession>('/auth/me');
+  async me(options?: RequestOptionsExtras): Promise<AuthSession> {
+    const res = await this.client.get<AuthSession>('/auth/me', options);
     return res.data;
   }
 
@@ -92,14 +92,24 @@ export class AuthResource {
    * Begin passkey (WebAuthn) registration; returns the creation options to pass
    * to the browser's `navigator.credentials.create`.
    */
-  async passkeyRegister(input: PasskeyRegisterInput): Promise<Record<string, unknown>> {
-    const res = await this.client.post<Record<string, unknown>>('/auth/passkey/register', input);
+  async passkeyRegister(
+    input: PasskeyRegisterInput,
+    options?: RequestOptionsExtras,
+  ): Promise<Record<string, unknown>> {
+    const res = await this.client.post<Record<string, unknown>>(
+      '/auth/passkey/register',
+      input,
+      options,
+    );
     return res.data;
   }
 
   /** Complete passkey authentication; sets the access token on success. */
-  async passkeyVerify(input: PasskeyVerifyInput): Promise<AuthResult> {
-    const res = await this.client.post<AuthResult>('/auth/passkey/verify', input);
+  async passkeyVerify(
+    input: PasskeyVerifyInput,
+    options?: RequestOptionsExtras,
+  ): Promise<AuthResult> {
+    const res = await this.client.post<AuthResult>('/auth/passkey/verify', input, options);
     await this.adoptToken(res.data);
     return res.data;
   }
@@ -107,26 +117,26 @@ export class AuthResource {
   /* ------------------------------- sessions ------------------------------- */
 
   /** List the current user's active sessions. */
-  async listSessions(): Promise<Session[]> {
-    const res = await this.client.get<Session[]>('/auth/sessions');
+  async listSessions(options?: RequestOptionsExtras): Promise<Session[]> {
+    const res = await this.client.get<Session[]>('/auth/sessions', options);
     return res.data ?? [];
   }
 
   /** Revoke a single session by id. */
-  async revokeSession(sessionId: string): Promise<void> {
-    await this.client.delete<void>(`/auth/sessions/${encodeURIComponent(sessionId)}`);
+  async revokeSession(sessionId: string, options?: RequestOptionsExtras): Promise<void> {
+    await this.client.delete<void>(`/auth/sessions/${encodeURIComponent(sessionId)}`, options);
   }
 
   /** Revoke every session except the current one. */
-  async revokeOtherSessions(): Promise<void> {
-    await this.client.post<void>('/auth/sessions/revoke-others');
+  async revokeOtherSessions(options?: RequestOptionsExtras): Promise<void> {
+    await this.client.post<void>('/auth/sessions/revoke-others', undefined, options);
   }
 
   /* ------------------------------- API keys ------------------------------- */
 
   /** List the organization's API keys (secrets are never returned here). */
-  async listApiKeys(): Promise<ApiKey[]> {
-    const res = await this.client.get<ApiKey[]>('/auth/api-keys');
+  async listApiKeys(options?: RequestOptionsExtras): Promise<ApiKey[]> {
+    const res = await this.client.get<ApiKey[]>('/auth/api-keys', options);
     return res.data ?? [];
   }
 
@@ -134,14 +144,17 @@ export class AuthResource {
    * Create an API key. The plaintext `key` is returned exactly once — persist
    * it now; it cannot be retrieved again.
    */
-  async createApiKey(input: CreateApiKeyInput): Promise<ApiKeyWithSecret> {
-    const res = await this.client.post<ApiKeyWithSecret>('/auth/api-keys', input);
+  async createApiKey(
+    input: CreateApiKeyInput,
+    options?: RequestOptionsExtras,
+  ): Promise<ApiKeyWithSecret> {
+    const res = await this.client.post<ApiKeyWithSecret>('/auth/api-keys', input, options);
     return res.data;
   }
 
   /** Revoke an API key by id. */
-  async revokeApiKey(apiKeyId: string): Promise<void> {
-    await this.client.delete<void>(`/auth/api-keys/${encodeURIComponent(apiKeyId)}`);
+  async revokeApiKey(apiKeyId: string, options?: RequestOptionsExtras): Promise<void> {
+    await this.client.delete<void>(`/auth/api-keys/${encodeURIComponent(apiKeyId)}`, options);
   }
 
   /** Push a freshly-issued access token onto the shared client, if present. */

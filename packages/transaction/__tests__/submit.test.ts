@@ -99,4 +99,38 @@ describe('submitSignedTransaction', () => {
       NetworkError,
     );
   });
+
+  it('forwards a caller-supplied AbortSignal to the transport', async () => {
+    // Stays open until its signal aborts, then rejects — proving the caller's
+    // signal reached fetch rather than being silently dropped.
+    const fetchMock = vi.fn().mockImplementation(
+      (_url, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = (init as RequestInit | undefined)?.signal as AbortSignal | undefined;
+          if (signal?.aborted) {
+            reject(new DOMException('Aborted', 'AbortError'));
+            return;
+          }
+          signal?.addEventListener('abort', () => {
+            reject(new DOMException('Aborted', 'AbortError'));
+          });
+        }),
+    );
+    const http = new HttpClient({
+      apiKey: 'sk_test',
+      baseUrl: 'https://api.example.test',
+      retry: false,
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+
+    const controller = new AbortController();
+    const pending = submitSignedTransaction(http, buildSignedXdr(), {
+      signal: controller.signal,
+    });
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    controller.abort();
+
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+  });
 });

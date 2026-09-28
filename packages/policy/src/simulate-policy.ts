@@ -13,7 +13,7 @@
  * @module
  */
 
-import type { AstroidResponse } from '@astroid/core';
+import type { AstroidResponse, RequestOptionsExtras } from '@astroid/core';
 import type { PolicySimulationRequest, PolicySimulationResult } from '@astroid/types';
 
 /** The path of the server-side policy simulation endpoint. */
@@ -26,7 +26,11 @@ export const POLICY_SIMULATE_PATH = '/policies/simulate';
  * `PolicyResource` passes in; tests can pass a lightweight mock.
  */
 export interface PolicySimulationHttpClient {
-  post<TData>(path: string, body?: unknown): Promise<AstroidResponse<TData>>;
+  post<TData>(
+    path: string,
+    body?: unknown,
+    options?: RequestOptionsExtras,
+  ): Promise<AstroidResponse<TData>>;
 }
 
 /**
@@ -37,11 +41,13 @@ export interface PolicySimulationHttpClient {
  * specific policies, or `walletId` / `agentId` to evaluate every enabled policy
  * in scope. Nothing is committed — the endpoint is a pure dry-run.
  *
- * @param client The transport used to reach the API (an `HttpClient` satisfies it).
- * @param input  The transaction payload plus the policy rules to evaluate against.
- * @returns      The decision, the breached rules, required approvals, risk and
- *               budget impact. A rejection resolves normally with `allowed: false`.
- * @throws       `NetworkError` / typed API errors when the request itself fails.
+ * @param client  The transport used to reach the API (an `HttpClient` satisfies it).
+ * @param input   The transaction payload plus the policy rules to evaluate against.
+ * @param options Extra request options (e.g. `signal`, `timeoutMs`) forwarded to
+ *                the transport.
+ * @returns       The decision, the breached rules, required approvals, risk and
+ *                budget impact. A rejection resolves normally with `allowed: false`.
+ * @throws        `NetworkError` / typed API errors when the request itself fails.
  *
  * @example
  * ```ts
@@ -65,7 +71,8 @@ export interface PolicySimulationHttpClient {
 export async function simulatePolicy(
   client: PolicySimulationHttpClient,
   input: PolicySimulationRequest,
+  options?: RequestOptionsExtras,
 ): Promise<PolicySimulationResult> {
-  const res = await client.post<PolicySimulationResult>(POLICY_SIMULATE_PATH, input);
+  const res = await client.post<PolicySimulationResult>(POLICY_SIMULATE_PATH, input, options);
   return res.data;
 }

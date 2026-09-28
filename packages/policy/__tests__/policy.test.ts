@@ -373,6 +373,33 @@ describe('PolicyResource — simulateTransaction wrapper (list + local evaluate)
     expect(url).not.toContain('walletId');
   });
 
+  it('forwards a caller-supplied AbortSignal to the policy-listing request', async () => {
+    // Stays open until its signal aborts, then rejects — proving the caller's
+    // signal reached fetch rather than being silently dropped.
+    const { resource, fetch } = client(((_url, init) =>
+      new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal;
+        if (signal?.aborted) {
+          reject(new DOMException('Aborted', 'AbortError'));
+          return;
+        }
+        signal?.addEventListener('abort', () => {
+          reject(new DOMException('Aborted', 'AbortError'));
+        });
+      })) as unknown as typeof fetch);
+
+    const controller = new AbortController();
+    const pending = resource.simulateTransaction(
+      { walletId: 'w_1', transaction: { asset: 'XLM', amount: '1' } },
+      { signal: controller.signal },
+    );
+
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce());
+    controller.abort();
+
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
 /* -------------------------------------------------------------------------- */
 /* PolicyClient — the name from the #242 acceptance criteria                   */
 /* -------------------------------------------------------------------------- */

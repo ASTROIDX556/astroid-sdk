@@ -1,4 +1,4 @@
-import { Resource } from '@astroid/core';
+import { Resource, type RequestOptionsExtras } from '@astroid/core';
 import type {
   Agent,
   AgentEventSubscription,
@@ -38,9 +38,9 @@ export class AgentResource extends Resource {
    * @param params Agent creation parameters.
    * @returns The created agent entity.
    */
-  async create(params: CreateAgentParams): Promise<Agent> {
+  async create(params: CreateAgentParams, options?: RequestOptionsExtras): Promise<Agent> {
     validateCreateAgentParams(params);
-    const res = await this.client.post<Agent>('/agents', params);
+    const res = await this.client.post<Agent>('/agents', params, options);
     return res.data;
   }
 
@@ -50,8 +50,8 @@ export class AgentResource extends Resource {
    * @param agentId The unique agent ID.
    * @returns The agent entity.
    */
-  async get(agentId: string): Promise<Agent> {
-    return this.getData<Agent>(`/agents/${encodeURIComponent(agentId)}`);
+  async get(agentId: string, options?: RequestOptionsExtras): Promise<Agent> {
+    return this.getData<Agent>(`/agents/${encodeURIComponent(agentId)}`, undefined, options);
   }
 
   /**
@@ -60,8 +60,11 @@ export class AgentResource extends Resource {
    * @param params Optional filters and pagination parameters.
    * @returns A paginated list of agent entities.
    */
-  async list(params: AgentListParams = {}): Promise<Paginated<Agent>> {
-    return this.listData<Agent>('/agents', { ...params });
+  async list(
+    params: AgentListParams = {},
+    options?: RequestOptionsExtras,
+  ): Promise<Paginated<Agent>> {
+    return this.listData<Agent>('/agents', { ...params }, options);
   }
 
   /**
@@ -69,8 +72,11 @@ export class AgentResource extends Resource {
    *
    * @param params Optional filters and pagination parameters.
    */
-  iterate(params: AgentListParams = {}): AsyncGenerator<Agent, void, void> {
-    return this.iterateData<Agent>('/agents', { ...params });
+  iterate(
+    params: AgentListParams = {},
+    options?: RequestOptionsExtras,
+  ): AsyncGenerator<Agent, void, void> {
+    return this.iterateData<Agent>('/agents', { ...params }, options);
   }
 
   /**
@@ -99,8 +105,11 @@ export class AgentResource extends Resource {
    * }
    * ```
    */
-  iterateByCursor(params: AgentCursorListParams = {}): AsyncGenerator<Agent, void, void> {
-    return this.iterateCursorData<Agent>('/agents', { ...params });
+  iterateByCursor(
+    params: AgentCursorListParams = {},
+    options?: RequestOptionsExtras,
+  ): AsyncGenerator<Agent, void, void> {
+    return this.iterateCursorData<Agent>('/agents', { ...params }, options);
   }
 
   /**
@@ -110,8 +119,16 @@ export class AgentResource extends Resource {
    * @param params Updated agent parameters.
    * @returns The updated agent entity.
    */
-  async update(agentId: string, params: UpdateAgentParams): Promise<Agent> {
-    const res = await this.client.patch<Agent>(`/agents/${encodeURIComponent(agentId)}`, params);
+  async update(
+    agentId: string,
+    params: UpdateAgentParams,
+    options?: RequestOptionsExtras,
+  ): Promise<Agent> {
+    const res = await this.client.patch<Agent>(
+      `/agents/${encodeURIComponent(agentId)}`,
+      params,
+      options,
+    );
     return res.data;
   }
 
@@ -125,9 +142,11 @@ export class AgentResource extends Resource {
    * @param agentId The unique agent ID.
    * @returns The deactivated agent entity.
    */
-  async deactivate(agentId: string): Promise<Agent> {
+  async deactivate(agentId: string, options?: RequestOptionsExtras): Promise<Agent> {
     const res = await this.client.post<Agent>(
       `/agents/${encodeURIComponent(agentId)}/deactivate`,
+      undefined,
+      options,
     );
     return res.data;
   }
@@ -137,8 +156,8 @@ export class AgentResource extends Resource {
    *
    * @param agentId The unique agent ID.
    */
-  async delete(agentId: string): Promise<void> {
-    await this.client.delete<void>(`/agents/${encodeURIComponent(agentId)}`);
+  async delete(agentId: string, options?: RequestOptionsExtras): Promise<void> {
+    await this.client.delete<void>(`/agents/${encodeURIComponent(agentId)}`, options);
   }
 
   /**
@@ -147,8 +166,12 @@ export class AgentResource extends Resource {
    * @param agentId The unique agent ID.
    * @returns The agent's status metrics.
    */
-  async status(agentId: string): Promise<AgentStatusMetrics> {
-    return this.getData<AgentStatusMetrics>(`/agents/${encodeURIComponent(agentId)}/status`);
+  async status(agentId: string, options?: RequestOptionsExtras): Promise<AgentStatusMetrics> {
+    return this.getData<AgentStatusMetrics>(
+      `/agents/${encodeURIComponent(agentId)}/status`,
+      undefined,
+      options,
+    );
   }
 
   /**
@@ -157,8 +180,12 @@ export class AgentResource extends Resource {
    * @param agentId The unique agent ID.
    * @returns A paginated list of agent log entries.
    */
-  async logs(agentId: string): Promise<Paginated<AgentLog>> {
-    return this.listData<AgentLog>(`/agents/${encodeURIComponent(agentId)}/logs`);
+  async logs(agentId: string, options?: RequestOptionsExtras): Promise<Paginated<AgentLog>> {
+    return this.listData<AgentLog>(
+      `/agents/${encodeURIComponent(agentId)}/logs`,
+      undefined,
+      options,
+    );
   }
 
   /* ------------------------------------------------------------------------ */
@@ -176,10 +203,11 @@ export class AgentResource extends Resource {
   async listEvents(
     agentId: string,
     params?: ListAgentEventsParams,
+    options?: RequestOptionsExtras,
   ): Promise<PaginatedResponse<AgentLifecycleEvent>> {
     const res = await this.client.get<PaginatedResponse<AgentLifecycleEvent>>(
       `/v1/agents/${encodeURIComponent(agentId)}/events`,
-      { query: toAgentEventQuery(params) },
+      { query: toAgentEventQuery(params), ...options },
     );
     return res.data;
   }
@@ -194,10 +222,12 @@ export class AgentResource extends Resource {
   async subscribe(
     agentId: string,
     options: AgentEventSubscriptionOptions = {},
+    requestOptions?: RequestOptionsExtras,
   ): Promise<AgentEventSubscription> {
     const res = await this.client.post<AgentEventSubscription>(
       `/v1/agents/${encodeURIComponent(agentId)}/events/subscriptions`,
       options,
+      requestOptions,
     );
     return res.data;
   }
@@ -208,9 +238,14 @@ export class AgentResource extends Resource {
    * @param agentId The unique agent ID.
    * @param subscriptionId The subscription to remove.
    */
-  async unsubscribe(agentId: string, subscriptionId: string): Promise<void> {
+  async unsubscribe(
+    agentId: string,
+    subscriptionId: string,
+    options?: RequestOptionsExtras,
+  ): Promise<void> {
     await this.client.delete<void>(
       `/v1/agents/${encodeURIComponent(agentId)}/events/subscriptions/${encodeURIComponent(subscriptionId)}`,
+      options,
     );
   }
 }

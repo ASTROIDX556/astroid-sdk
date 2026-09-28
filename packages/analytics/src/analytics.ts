@@ -14,7 +14,7 @@
  * @module
  */
 
-import type { HttpClient } from '@astroid/core';
+import type { HttpClient, RequestOptionsExtras } from '@astroid/core';
 import type {
   AgentAnalytics,
   AnalyticsMetricsResponse,
@@ -205,9 +205,10 @@ export function buildAnalyticsPath(
 export async function getTransactionVolume(
   client: HttpClient,
   filter: TimeRangeFilter = {},
+  options?: RequestOptionsExtras,
 ): Promise<VolumeSummary> {
   const path = buildAnalyticsPath(filter, 'transaction_volume');
-  const res = await client.get<AnalyticsMetricsResponse>(path);
+  const res = await client.get<AnalyticsMetricsResponse>(path, options);
   return res.data.summary;
 }
 
@@ -222,9 +223,10 @@ export async function getTransactionVolume(
 export async function getFeeExpenditure(
   client: HttpClient,
   filter: TimeRangeFilter = {},
+  options?: RequestOptionsExtras,
 ): Promise<VolumeSummary> {
   const path = buildAnalyticsPath(filter, 'fee_expenditure');
-  const res = await client.get<AnalyticsMetricsResponse>(path);
+  const res = await client.get<AnalyticsMetricsResponse>(path, options);
   return res.data.summary;
 }
 
@@ -239,9 +241,10 @@ export async function getFeeExpenditure(
 export async function getAgentExecutionCounts(
   client: HttpClient,
   filter: TimeRangeFilter = {},
+  options?: RequestOptionsExtras,
 ): Promise<AgentAnalytics> {
   const path = buildAnalyticsPath(filter, undefined, '/analytics/agents');
-  const res = await client.get<AgentAnalytics>(path);
+  const res = await client.get<AgentAnalytics>(path, options);
   return res.data;
 }
 
@@ -268,17 +271,26 @@ export class AnalyticsQueryResource {
   constructor(private readonly client: HttpClient) {}
 
   /** @see {@link getTransactionVolume} */
-  getTransactionVolume(filter: TimeRangeFilter = {}): Promise<VolumeSummary> {
-    return getTransactionVolume(this.client, filter);
+  getTransactionVolume(
+    filter: TimeRangeFilter = {},
+    options?: RequestOptionsExtras,
+  ): Promise<VolumeSummary> {
+    return getTransactionVolume(this.client, filter, options);
   }
 
   /** @see {@link getFeeExpenditure} */
-  getFeeExpenditure(filter: TimeRangeFilter = {}): Promise<VolumeSummary> {
-    return getFeeExpenditure(this.client, filter);
+  getFeeExpenditure(
+    filter: TimeRangeFilter = {},
+    options?: RequestOptionsExtras,
+  ): Promise<VolumeSummary> {
+    return getFeeExpenditure(this.client, filter, options);
   }
 
   /** @see {@link getAgentExecutionCounts} */
-  getAgentExecutionCounts(filter: TimeRangeFilter = {}): Promise<AgentAnalytics> {
-    return getAgentExecutionCounts(this.client, filter);
+  getAgentExecutionCounts(
+    filter: TimeRangeFilter = {},
+    options?: RequestOptionsExtras,
+  ): Promise<AgentAnalytics> {
+    return getAgentExecutionCounts(this.client, filter, options);
   }
 }

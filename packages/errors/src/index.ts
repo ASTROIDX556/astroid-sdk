@@ -23,6 +23,7 @@ export {
   isRateLimitError,
   isApiRateLimitError,
   isNetworkError,
+  isTimeoutError,
   isServerError,
 } from './guards.js';
 
@@ -53,6 +54,7 @@ export {
   RateLimitError,
   ApiRateLimitError,
   NetworkError,
+  AstroidTimeoutError,
   ServerError,
   InternalServerError,
 } from './classes.js';
@@ -68,6 +70,7 @@ import {
   ApprovalRequiredError,
   RateLimitError,
   NetworkError,
+  AstroidTimeoutError,
   InternalServerError,
 } from './classes.js';
 
@@ -122,6 +125,8 @@ export function errorClassForCode(code: string): typeof AstroidError {
     case ApiErrorCode.NETWORK_ERROR:
     case ApiErrorCode.TIMEOUT:
       return NetworkError;
+    case ApiErrorCode.REQUEST_TIMEOUT:
+      return AstroidTimeoutError;
     case ApiErrorCode.INTERNAL_ERROR:
     case ApiErrorCode.SERVICE_UNAVAILABLE:
       return InternalServerError;

@@ -10,7 +10,7 @@
  */
 
 import type { FeeBumpTransaction, Transaction } from '@stellar/stellar-base';
-import type { HttpClient } from '@astroid/core';
+import type { HttpClient, RequestOptionsExtras } from '@astroid/core';
 import type { Transaction as ApiTransaction } from '@astroid/types';
 import { normalizeTransactionError } from './errors.js';
 import type { TransactionSubmissionError } from './errors.js';
@@ -65,9 +65,10 @@ export function formatTransactionForSubmission(
 export async function submitSignedTransaction(
   client: HttpClient,
   source: TransactionSource,
+  options?: RequestOptionsExtras,
 ): Promise<ApiTransaction> {
   const body = formatTransactionForSubmission(source);
-  const res = await client.post<ApiTransaction>('/transactions/submit', body);
+  const res = await client.post<ApiTransaction>('/transactions/submit', body, options);
   return res.data;
 }
 
