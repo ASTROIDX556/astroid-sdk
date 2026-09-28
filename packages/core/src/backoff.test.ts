@@ -7,6 +7,9 @@ function config(multiplier = 2, maxDelayMs = 8_000) {
   return { maxRetries: 3, baseDelayMs: 100, maxDelayMs, multiplier };
 }
 
+/** A legacy retry config that predates the optional `multiplier` field. */
+const WITHOUT_MULTIPLIER = { maxRetries: 3, baseDelayMs: 100, maxDelayMs: 8_000 };
+
 describe('backoffDelay', () => {
   it('grows the uncapped delay exponentially by the default multiplier (2)', () => {
     // With random() = 1 the full jitter returns the capped delay, so the
@@ -21,6 +24,12 @@ describe('backoffDelay', () => {
     expect(backoffDelay(1, config(3), () => 1)).toBe(100);
     expect(backoffDelay(2, config(3), () => 1)).toBe(300);
     expect(backoffDelay(3, config(3), () => 1)).toBe(900);
+  });
+
+  it('falls back to a multiplier of 2 when the field is omitted (back-compat)', () => {
+    expect(backoffDelay(1, WITHOUT_MULTIPLIER, () => 1)).toBe(100);
+    expect(backoffDelay(2, WITHOUT_MULTIPLIER, () => 1)).toBe(200);
+    expect(backoffDelay(3, WITHOUT_MULTIPLIER, () => 1)).toBe(400);
   });
 
   it('produces a constant delay when multiplier is 1', () => {

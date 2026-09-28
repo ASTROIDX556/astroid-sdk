@@ -17,7 +17,8 @@ export function backoffDelay(
   config: RetryConfig,
   random: () => number = Math.random,
 ): number {
-  const exponential = config.baseDelayMs * config.multiplier ** (attempt - 1);
+  const multiplier = config.multiplier ?? 2;
+  const exponential = config.baseDelayMs * multiplier ** (attempt - 1);
   const capped = Math.min(exponential, config.maxDelayMs);
   // Full jitter: a random point in [0, capped].
   return Math.floor(random() * capped);

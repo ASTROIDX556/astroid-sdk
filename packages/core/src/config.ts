@@ -41,9 +41,10 @@ export interface RetryConfig {
   maxDelayMs: number;
   /**
    * Exponential growth factor between retries: the uncapped delay for retry
-   * `n` is `baseDelayMs * multiplier^(n-1)`. Default 2 (classic doubling).
+   * `n` is `baseDelayMs * multiplier^(n-1)`. Optional — defaults to 2 (classic
+   * doubling) when omitted, so this addition stays backward compatible.
    */
-  multiplier: number;
+  multiplier?: number;
 }
 
 /**

@@ -13,7 +13,7 @@ predictable when the network (or the policy engine) says "no".
 
 | Package | What changed |
 | --- | --- |
-| `@astroid/core` | `RetryConfig.multiplier` — the exponential growth factor is now configurable (default `2`), and `backoffDelay` uses it instead of a hard-coded `2`. New `backoff.test.ts`. |
+| `@astroid/core` | Optional `RetryConfig.multiplier` — the exponential growth factor is now configurable (default `2`), and `backoffDelay` uses it instead of a hard-coded `2`. New `backoff.test.ts`. |
 | `@astroid/client` | The retry middleware and client-init shorthand surface the multiplier end-to-end (`retry.multiplier`, `retryMultiplier`), and shorthand options now *merge* with an explicit `retry` object. Regression tests added. |
 | `@astroid/policy` | Verified and locked down the already-shipped `simulatePolicy` resource method + local engine with a new test suite for the decoded-transaction simulation path. |
 
@@ -31,9 +31,12 @@ so callers could tune the base delay and cap but not the growth curve.
 - **`RetryConfig.multiplier`** (`@astroid/core`) — governs the uncapped delay for
   retry `n`: `baseDelayMs * multiplier^(n-1)`. Defaults to `2` (classic doubling);
   `1` yields a constant delay and values above `2` back off more aggressively.
-- **`backoffDelay(attempt, config, random?)`** now reads `config.multiplier` while
-  keeping full jitter (`random() * min(exponential, maxDelayMs)`), so tests stay
-  deterministic via the injected RNG.
+  The field is **optional**, so hand-written `RetryConfig` literals that predate
+  it keep compiling and behave exactly as before.
+- **`backoffDelay(attempt, config, random?)`** now reads
+  `config.multiplier ?? 2` while keeping full jitter
+  (`random() * min(exponential, maxDelayMs)`), so tests stay deterministic via the
+  injected RNG.
 - **Retry middleware** (`@astroid/core/src/middleware.ts` and
   `@astroid/client/src/middleware/retry.ts`) forwards `multiplier` into the
   per-request `_retryConfig` context consumed by `HttpClient.request`.
@@ -128,13 +131,15 @@ regress.
 | workspace | `pnpm build` | pass |
 | workspace | `pnpm typecheck` | 16/16 packages pass |
 | workspace | `pnpm test` | 1225 tests pass |
-| `@astroid/core` | `pnpm test` | 3 files / 37 tests pass |
+| `@astroid/core` | `pnpm test` | 3 files / 38 tests pass |
 | `@astroid/client` | `pnpm test` | 19 files / 272 tests pass |
 | `@astroid/policy` | `pnpm test` | 5 files / 105 tests pass |
 | `@astroid/react` | `pnpm test` | 17 files / 127 tests pass |
 
-No breaking changes: `multiplier` defaults to `2`, so existing retry timing and
-all prior tests are unchanged.
+No breaking changes: `multiplier` is optional and defaults to `2`, so existing
+retry timing is unchanged. The only source edits outside tests are the new field,
+the `?? 2` fallback in `backoffDelay`, and threading the value through the retry
+middleware; a regression test pins the omitted-field fallback.
 
 ---
 
