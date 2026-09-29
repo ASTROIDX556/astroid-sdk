@@ -44,8 +44,12 @@ export interface RetryConfig {
   maxRetries: number;
   /** Base backoff in ms; grows exponentially with jitter. Default 250. */
   baseDelayMs: number;
+  /** Alias for baseDelayMs. */
+  baseDelay?: number;
   /** Upper bound for a single backoff delay in ms. Default 8000. */
   maxDelayMs: number;
+  /** Alias for maxDelayMs. */
+  maxDelay?: number;
   /**
    * HTTP statuses that should be retried. Defaults to the SDK set
    * `[429, 502, 503, 504]` (rate limiting and gateway errors).
@@ -228,7 +232,16 @@ export function resolveConfig(config: AstroidClientConfig): ResolvedConfig {
     );
   }
 
-  const retry = config.retry === false ? null : { ...DEFAULT_RETRY, ...(config.retry ?? {}) };
+  let retry: RetryConfig | null = null;
+  if (config.retry !== false) {
+    const retryObj = config.retry && typeof config.retry === 'object' ? config.retry : {};
+    retry = {
+      ...DEFAULT_RETRY,
+      ...retryObj,
+      baseDelayMs: retryObj.baseDelayMs ?? retryObj.baseDelay ?? DEFAULT_RETRY.baseDelayMs,
+      maxDelayMs: retryObj.maxDelayMs ?? retryObj.maxDelay ?? DEFAULT_RETRY.maxDelayMs,
+    };
+  }
 
   return {
     baseUrl: trimTrailingSlash(config.baseUrl ?? DEFAULT_BASE_URL),
