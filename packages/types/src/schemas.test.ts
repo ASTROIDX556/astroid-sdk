@@ -32,12 +32,25 @@ import {
   validatePolicySimulationEvaluation,
   validatePolicySet,
   validateTransactionDetails,
+  // Agent DTO schemas (issue #215)
+  CreateAgentDtoSchema,
+  UpdateAgentDtoSchema,
+  AgentMetadataSchema,
+  AgentInitialBudgetSchema,
+  StellarPublicKeySchema,
+  DecimalAmountStringSchema,
+  UPDATE_AGENT_DTO_FIELDS,
+  isValidCreateAgentDto,
+  isValidUpdateAgentDto,
+  validateCreateAgentDto,
+  validateUpdateAgentDto,
   type InferredAgent,
   type InferredWallet,
   type InferredPolicy,
   type InferredBudget,
 } from './schemas.js';
 import type { Agent, Wallet, Policy, Budget } from './entities.js';
+import type { CreateAgentDto, UpdateAgentDto } from './agent.js';
 
 /* -------------------------------------------------------------------------- */
 /* Inferred-type exports (issue #265)                                          */
