@@ -71,7 +71,6 @@ import {
   ApprovalRequiredError,
   RateLimitError,
   NetworkError,
-  AstroidTimeoutError,
   InternalServerError,
 } from './classes.js';
 
