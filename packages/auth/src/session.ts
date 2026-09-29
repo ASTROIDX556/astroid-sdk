@@ -6,7 +6,6 @@
 
 import { AuthenticationError } from '@astroid/errors';
 import type { AuthTokens } from '@astroid/types';
-import type { HttpClient, Middleware, PreparedRequest } from '@astroid/core';
 
 /** Custom storage interface for persisting session tokens (e.g., localStorage). */
 export interface TokenStorage {
@@ -37,6 +36,8 @@ export interface SessionManagerConfig {
   storageKeyPrefix?: string;
   bufferSeconds?: number;
   onTokenUpdate?: (tokens: AuthTokens) => void | Promise<void>;
+  /** Callback fired when the session completely expires or refresh fails. */
+  onSessionExpired?: () => void | Promise<void>;
 }
 
 /** Standard JWT payload claims. */
@@ -114,6 +115,7 @@ export class SessionManager {
   private readonly authMode: SessionAuthMode;
   private readonly apiKeyHeader: string;
   private readonly onTokenUpdate?: (tokens: AuthTokens) => void | Promise<void>;
+  private readonly onSessionExpired?: () => void | Promise<void>;
   private activeRefreshPromise: Promise<AuthTokens> | null = null;
 
   constructor(config: SessionManagerConfig = {}) {
@@ -126,9 +128,9 @@ export class SessionManager {
     this.apiKeyHeader = config.apiKeyHeader ?? 'x-api-key';
     // Infer the mode when not explicit: an API key without bearer tokens means
     // key-based auth, otherwise default to the JWT flow.
-    this.authMode =
-      config.mode ?? (config.apiKey && !config.accessToken ? 'apiKey' : 'jwt');
+    this.authMode = config.mode ?? (config.apiKey && !config.accessToken ? 'apiKey' : 'jwt');
     this.onTokenUpdate = config.onTokenUpdate;
+    this.onSessionExpired = config.onSessionExpired;
   }
 
   /** The authentication strategy this session operates in. */
@@ -312,10 +314,10 @@ export class SessionManager {
     refreshFn: (refreshToken: string) => Promise<AuthTokens>,
   ): Promise<AuthTokens> {
     if (this.authMode === 'apiKey') {
-      throw new AuthenticationError(
-        'API key authentication does not support token refresh',
-        { code: 'API_KEY_MODE', status: 401 },
-      );
+      throw new AuthenticationError('API key authentication does not support token refresh', {
+        code: 'API_KEY_MODE',
+        status: 401,
+      });
     }
 
     if (this.activeRefreshPromise) {
@@ -324,6 +326,9 @@ export class SessionManager {
 
     if (!this.refreshToken || this.isRefreshTokenExpired(0)) {
       await this.clearTokens();
+      try {
+        await this.onSessionExpired?.();
+      } catch {}
       throw new AuthenticationError('Refresh token is missing or expired', {
         code: 'TOKEN_EXPIRED',
         status: 401,
@@ -339,6 +344,9 @@ export class SessionManager {
         return tokens;
       } catch (err) {
         await this.clearTokens();
+        try {
+          await this.onSessionExpired?.();
+        } catch {}
         if (err instanceof AuthenticationError) {
           throw err;
         }
@@ -376,101 +384,4 @@ export class SessionManager {
       // will produce the authoritative authentication error.
     }
   }
-}
-
-/**
- * Wire a {@link SessionManager} to an {@link HttpClient} so that 401
- * responses trigger automatic token refresh and the failed request is
- * retried with the new credentials.
- *
- * ```ts
- * import { SessionManager, wireSessionToHttpClient } from '@astroid/auth';
- *
- * const session = new SessionManager({ storage: localStorage });
- * const client = new Astroid({ baseUrl, apiKey });
- * wireSessionToHttpClient(client, session, refreshFn);
- * ```
- */
-export function wireSessionToHttpClient(
-  client: HttpClient,
-  sessionManager: SessionManager,
-  refreshFn: (refreshToken: string) => Promise<AuthTokens>,
-): void {
-  // API-key sessions have no refresh cycle: attach the key header via
-  // middleware instead of a 401 handler.
-  if (sessionManager.mode === 'apiKey') {
-    client.use(createSessionMiddleware(sessionManager, refreshFn));
-    return;
-  }
-
-  client.set401Handler(async () => {
-    try {
-      await sessionManager.refreshSession(refreshFn);
-      const token = sessionManager.getAccessToken();
-      if (token) client.setAccessToken(token);
-      return true;
-    } catch {
-      return false;
-    }
-  });
-}
-
-/**
- * Creates an SDK middleware interceptor that checks for token expiration
- * and automatically triggers queued session refresh before outgoing requests.
- */
-export function createSessionMiddleware(
-  sessionManager: SessionManager,
-  refreshFn: (refreshToken: string) => Promise<AuthTokens>,
-): Middleware {
-  return {
-    name: 'session-auto-refresh',
-    async onRequest(req: PreparedRequest): Promise<PreparedRequest> {
-      // API-key sessions carry a long-lived header and never refresh.
-      if (sessionManager.mode === 'apiKey') {
-        const apiKey = sessionManager.getApiKey();
-        return apiKey
-          ? { ...req, headers: sessionManager.applyAuthHeaders(req.headers) }
-          : req;
-      }
-
-      // Do not intercept authentication endpoints to prevent cyclic calls
-      if (
-        req.url.includes('/auth/refresh') ||
-        req.url.includes('/auth/login') ||
-        req.url.includes('/auth/register')
-      ) {
-        return req;
-      }
-
-      if (sessionManager.getRefreshToken() && sessionManager.isAccessTokenExpired()) {
-        try {
-          const newTokens = await sessionManager.refreshSession(refreshFn);
-          return {
-            ...req,
-            headers: {
-              ...req.headers,
-              authorization: `Bearer ${newTokens.accessToken}`,
-            },
-          };
-        } catch (err) {
-          if (err instanceof AuthenticationError) {
-            throw err;
-          }
-          throw new AuthenticationError('Session expired and token refresh failed', {
-            code: 'TOKEN_EXPIRED',
-            status: 401,
-            cause: err,
-          });
-        }
-      }
-
-      return req;
-    },
-    async onError(error: unknown, _req: PreparedRequest): Promise<void> {
-      if (error instanceof AuthenticationError && error.status === 401) {
-        await sessionManager.clearTokens();
-      }
-    },
-  };
 }
