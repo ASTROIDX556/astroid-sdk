@@ -408,8 +408,6 @@ export class PolicyResource extends Resource {
     input?: PolicySimulationInput | TransactionDetails,
   ): Promise<PolicySimulationResult | PolicySimulationEvaluation | PolicyRuleSimulationResult> {
     if (typeof policyOrRequest === 'string') {
-      // A missing payload is a local `ValidationError` from
-      // `validatePolicySimulationInput`, raised before any request is built.
       return this.simulatePolicyAgainst(policyOrRequest, input as PolicySimulationInput);
     }
     if (input) {
@@ -426,42 +424,9 @@ export class PolicyResource extends Resource {
    * Simulate a proposed transaction against a **single** policy, without
    * committing it.
    *
-   * The transaction payload is validated locally (a blank asset, a non-positive
-   * amount or a malformed field costs a local exception rather than a round
-   * trip), POSTed verbatim to `/policies/{id}/simulate`, and the response is
-   * parsed into a strict {@link PolicySimulationEvaluation}: the allow/deny
-   * decision, every violated rule with its limit and actual value, the 0..1 risk
-   * score and band, the required approvals and the budget impact.
-   *
-   * A denial is **not** an error: it resolves with `allowed: false` and the
-   * breaches in `violatedRules`. Only a transport/API failure, or a response
-   * carrying no decision at all, rejects — the check fails closed rather than
-   * reporting an unparseable answer as an allow.
-   *
    * @param policyId The policy to evaluate the transaction against.
    * @param input    The proposed transaction payload.
    * @returns        The decision, violated rules, risk score and budget impact.
-   * @throws         `ValidationError` for a blank id or malformed payload (no
-   *                 request is sent), `NetworkError` / typed API errors when the
-   *                 request fails, and a `ValidationError` with code
-   *                 `MALFORMED_RESPONSE` when the response carries no decision.
-   *
-   * @example
-   * ```ts
-   * const evaluation = await astroid.policies.simulatePolicyAgainst('pol_max_500', {
-   *   asset: 'USDC',
-   *   amount: '750',
-   *   recipientAddress: 'GABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUVW',
-   * });
-   *
-   * if (!evaluation.allowed) {
-   *   for (const rule of evaluation.violatedRules) {
-   *     console.warn(`${rule.rule}: ${rule.message}`); // MAX_AMOUNT: exceeds…
-   *   }
-   * }
-   *
-   * if (evaluation.riskScore > 0.8) requestHumanApproval();
-   * ```
    */
   async simulatePolicyAgainst(
     policyId: string,

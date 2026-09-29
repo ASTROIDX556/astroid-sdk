@@ -9,6 +9,7 @@ import type { ApiError } from '@astroid/types';
 
 import {
   resolveConfig,
+  normalizeTimeoutMs,
   type AstroidClientConfig,
   type ResolvedConfig,
   type RetryConfig,
@@ -311,7 +312,7 @@ export class HttpClient {
       url: buildUrl(this.config.baseUrl, this.config.apiVersion, options.path, options.query),
       headers,
       body,
-      timeoutMs: options.timeoutMs ?? timeoutMs,
+      timeoutMs: normalizeTimeoutMs(options.timeoutMs ?? timeoutMs),
       retryable,
       signal: options.signal,
       options,
