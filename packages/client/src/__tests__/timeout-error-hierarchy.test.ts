@@ -1,17 +1,20 @@
 import { describe, expect, it, vi } from 'vitest';
+import { isTimeoutError } from '@astroid/errors';
 import {
   Astroid,
   AstroidError,
   AstroidTimeoutError,
   NetworkError,
   isAstroidError,
-  isTimeoutError,
-} from '../src/index.js';
-import { DEFAULT_TIMEOUT_MS } from '../src/index.js';
+} from '../index.js';
+import { DEFAULT_TIMEOUT_MS } from '../index.js';
 
 /** A fetch that never settles until its AbortSignal fires. */
 function hangingFetch(): typeof fetch {
-  return (async (_url, init) => {
+  return (async (
+    _url: Parameters<typeof fetch>[0],
+    init?: Parameters<typeof fetch>[1],
+  ) => {
     const signal = init?.signal as AbortSignal | undefined;
     return new Promise<never>((_resolve, reject) => {
       if (signal?.aborted) {
