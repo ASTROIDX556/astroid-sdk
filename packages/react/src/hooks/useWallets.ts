@@ -182,16 +182,26 @@ export function useTransfer(
   } = options;
 
   return useMutation({
-    mutationFn: ({ walletId, input }: TransferVariables) => astroid.wallets.transfer(walletId, input),
+    mutationFn: ({ walletId, input }: TransferVariables) =>
+      astroid.wallets.transfer(walletId, input),
     onSuccess: async (data, variables, context) => {
       if (invalidateOnSuccess) {
-        void queryClient.invalidateQueries({ queryKey: queryKeys.wallets.balance(variables.walletId) });
-        void queryClient.invalidateQueries({ queryKey: queryKeys.wallets.detail(variables.walletId) });
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.wallets.balance(variables.walletId),
+        });
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.wallets.detail(variables.walletId),
+        });
         // Keep the multi-asset balance sync (issue #252) fresh after transfers.
-        void queryClient.invalidateQueries({ queryKey: walletBalancesKeys.byId(variables.walletId) });
+        void queryClient.invalidateQueries({
+          queryKey: walletBalancesKeys.byId(variables.walletId),
+        });
       }
       if (customInvalidate) {
-        const keys = typeof customInvalidate === 'function' ? customInvalidate(data, variables) : customInvalidate;
+        const keys =
+          typeof customInvalidate === 'function'
+            ? customInvalidate(data, variables)
+            : customInvalidate;
         for (const queryKey of keys) {
           void queryClient.invalidateQueries({ queryKey });
         }
@@ -225,7 +235,10 @@ export type WalletMutationVariables =
 export type WalletMutationResult = Wallet | Transaction;
 
 /** Options for the `useWalletMutation` hook. */
-export type UseWalletMutationOptions = WalletMutationOptions<WalletMutationResult, WalletMutationVariables>;
+export type UseWalletMutationOptions = WalletMutationOptions<
+  WalletMutationResult,
+  WalletMutationVariables
+>;
 
 /**
  * Mutation hook covering every wallet operation (create, import, update,
@@ -257,11 +270,7 @@ export type UseWalletMutationOptions = WalletMutationOptions<WalletMutationResul
  */
 export function useWalletMutation(
   options: UseWalletMutationOptions = {},
-): UseMutationResult<
-  WalletMutationResult,
-  Error,
-  WalletMutationVariables
-> {
+): UseMutationResult<WalletMutationResult, Error, WalletMutationVariables> {
   const astroid = useAstroidClient();
   const queryClient = useQueryClient();
   const {
@@ -308,7 +317,10 @@ export function useWalletMutation(
         }
       }
       if (customInvalidate) {
-        const keys = typeof customInvalidate === 'function' ? customInvalidate(data, variables) : customInvalidate;
+        const keys =
+          typeof customInvalidate === 'function'
+            ? customInvalidate(data, variables)
+            : customInvalidate;
         for (const queryKey of keys) {
           void queryClient.invalidateQueries({ queryKey });
         }

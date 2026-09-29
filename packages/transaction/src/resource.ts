@@ -60,10 +60,7 @@ export class TransactionsResource extends Resource {
     operationCount?: number;
     network?: string;
   }): Promise<TransactionFeeEstimate> {
-    const res = await this.client.post<TransactionFeeEstimate>(
-      '/transactions/estimate-fee',
-      input,
-    );
+    const res = await this.client.post<TransactionFeeEstimate>('/transactions/estimate-fee', input);
     return res.data;
   }
 

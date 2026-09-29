@@ -30,6 +30,9 @@ export type {
   SessionAuthMode,
   SessionManagerConfig,
   JwtPayload,
+  AuthFailureCallback,
+  AuthFailureEvent,
+  AuthFailureReason,
 } from './session.js';
 export {
   parseJwt,

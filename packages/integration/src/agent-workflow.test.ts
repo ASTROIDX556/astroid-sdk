@@ -105,7 +105,10 @@ function setupStack(): { api: MockApi; astroid: Astroid; budget: BudgetState } {
       body: {
         success: true,
         data: budgetSimulationFixture({
-          budget: budgetFixture({ spent: toMoney(budget.spent), remaining: toMoney(budget.remaining) }),
+          budget: budgetFixture({
+            spent: toMoney(budget.spent),
+            remaining: toMoney(budget.remaining),
+          }),
           allowed: !wouldExceed,
           wouldExceed,
           remainingAfter: toMoney(budget.remaining - amount),

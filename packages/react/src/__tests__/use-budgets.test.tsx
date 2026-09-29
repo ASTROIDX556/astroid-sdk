@@ -57,7 +57,8 @@ function renderInProviders(
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
-  const client = options.client ?? new Astroid({ apiKey: 'sk_test_budgets', baseUrl: 'https://api.test' });
+  const client =
+    options.client ?? new Astroid({ apiKey: 'sk_test_budgets', baseUrl: 'https://api.test' });
   const queryClient =
     options.queryClient ??
     new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
@@ -211,7 +212,9 @@ describe('useUpdateBudget', () => {
 
     expect(updateSpy).toHaveBeenCalledWith('bud_1', { limitAmount: '2500' });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.budgets.detail('bud_1') });
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.budgets.utilization('bud_1') });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: queryKeys.budgets.utilization('bud_1'),
+    });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.budgets.all });
     unmount();
   });

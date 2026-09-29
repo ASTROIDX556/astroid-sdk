@@ -54,7 +54,9 @@ describe('createTokenRefreshInterceptor', () => {
     const refresh = vi.fn();
     const interceptor = createTokenRefreshInterceptor({ sessionManager, refresh });
 
-    const handled = await interceptor.handleUnauthorized(makeRequest('https://api.test/v1/wallets'));
+    const handled = await interceptor.handleUnauthorized(
+      makeRequest('https://api.test/v1/wallets'),
+    );
 
     expect(handled).toBe(false);
     expect(refresh).not.toHaveBeenCalled();
@@ -70,7 +72,9 @@ describe('createTokenRefreshInterceptor', () => {
     } satisfies AuthTokens);
     const interceptor = createTokenRefreshInterceptor({ sessionManager, refresh });
 
-    const handled = await interceptor.handleUnauthorized(makeRequest('https://api.test/v1/wallets'));
+    const handled = await interceptor.handleUnauthorized(
+      makeRequest('https://api.test/v1/wallets'),
+    );
 
     expect(handled).toBe(true);
     expect(refresh).toHaveBeenCalledTimes(1);
@@ -85,7 +89,9 @@ describe('createTokenRefreshInterceptor', () => {
       .mockRejectedValue(new AuthenticationError('refresh revoked', { code: 'TOKEN_EXPIRED' }));
     const interceptor = createTokenRefreshInterceptor({ sessionManager, refresh });
 
-    const handled = await interceptor.handleUnauthorized(makeRequest('https://api.test/v1/wallets'));
+    const handled = await interceptor.handleUnauthorized(
+      makeRequest('https://api.test/v1/wallets'),
+    );
 
     expect(handled).toBe(false);
     // Failed refresh clears credentials so subsequent 401s short-circuit.
@@ -170,27 +176,29 @@ describe('Astroid token refresh integration', () => {
     let refreshCalls = 0;
     let freshToken = false;
 
-    const mockFetch = vi.fn().mockImplementation(async (url: string | URL, options?: RequestInit) => {
-      const urlStr = url.toString();
-      const headers = (options?.headers as Record<string, string>) ?? {};
+    const mockFetch = vi
+      .fn()
+      .mockImplementation(async (url: string | URL, options?: RequestInit) => {
+        const urlStr = url.toString();
+        const headers = (options?.headers as Record<string, string>) ?? {};
 
-      if (urlStr.includes('/auth/refresh')) {
-        refreshCalls++;
-        await new Promise((r) => setTimeout(r, 50));
-        freshToken = true;
-        return jsonResponse({
-          accessToken: 'fresh_access',
-          refreshToken: 'fresh_refresh',
-          expiresIn: 3600,
-          tokenType: 'Bearer',
-        });
-      }
+        if (urlStr.includes('/auth/refresh')) {
+          refreshCalls++;
+          await new Promise((r) => setTimeout(r, 50));
+          freshToken = true;
+          return jsonResponse({
+            accessToken: 'fresh_access',
+            refreshToken: 'fresh_refresh',
+            expiresIn: 3600,
+            tokenType: 'Bearer',
+          });
+        }
 
-      if (headers.authorization === 'Bearer fresh_access') {
-        return jsonResponse({ data: { id: urlStr.split('/').pop(), ok: true } });
-      }
-      return unauthorized();
-    });
+        if (headers.authorization === 'Bearer fresh_access') {
+          return jsonResponse({ data: { id: urlStr.split('/').pop(), ok: true } });
+        }
+        return unauthorized();
+      });
 
     const client = new Astroid({
       accessToken: INITIAL_TOKENS.accessToken,
@@ -238,10 +246,7 @@ describe('Astroid token refresh integration', () => {
       fetch: mockFetch as unknown as typeof fetch,
     });
 
-    const results = await Promise.allSettled([
-      client.wallets.get('w1'),
-      client.agents.get('a1'),
-    ]);
+    const results = await Promise.allSettled([client.wallets.get('w1'), client.agents.get('a1')]);
 
     for (const result of results) {
       expect(result.status).toBe('rejected');

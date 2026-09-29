@@ -12,7 +12,10 @@ import {
 /* Test helpers                                                                */
 /* -------------------------------------------------------------------------- */
 
-function makePage<T>(items: T[], meta?: { hasMore?: boolean; nextCursor?: string | null; cursor?: string }) {
+function makePage<T>(
+  items: T[],
+  meta?: { hasMore?: boolean; nextCursor?: string | null; cursor?: string },
+) {
   return { data: items, meta };
 }
 
@@ -182,9 +185,7 @@ describe('forEachPaginated', () => {
   });
 
   it('supports async callbacks', async () => {
-    const fetcher = createFetcher([
-      makePage([{ id: 1 }], { hasMore: false }),
-    ]);
+    const fetcher = createFetcher([makePage([{ id: 1 }], { hasMore: false })]);
 
     const collected: number[] = [];
     await forEachPaginated(paginateAll(fetcher), async (item: unknown) => {
@@ -219,9 +220,7 @@ describe('takePaginated', () => {
   });
 
   it('yields all items when count exceeds total', async () => {
-    const fetcher = createFetcher([
-      makePage([{ id: 1 }, { id: 2 }], { hasMore: false }),
-    ]);
+    const fetcher = createFetcher([makePage([{ id: 1 }, { id: 2 }], { hasMore: false })]);
 
     const items: unknown[] = [];
     for await (const item of takePaginated(paginateAll(fetcher), 100)) {
@@ -232,9 +231,7 @@ describe('takePaginated', () => {
   });
 
   it('handles zero count', async () => {
-    const fetcher = createFetcher([
-      makePage([{ id: 1 }], { hasMore: false }),
-    ]);
+    const fetcher = createFetcher([makePage([{ id: 1 }], { hasMore: false })]);
 
     const items: unknown[] = [];
     for await (const item of takePaginated(paginateAll(fetcher), 0)) {

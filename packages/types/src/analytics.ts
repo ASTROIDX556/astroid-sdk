@@ -258,10 +258,7 @@ export interface TransactionVolumeReport {
 /* -------------------------------------------------------------------------- */
 
 /** The metric families the analytics service can aggregate over time. */
-export type TimeSeriesMetric =
-  | 'transaction_volume'
-  | 'fee_expenditure'
-  | 'agent_execution_count';
+export type TimeSeriesMetric = 'transaction_volume' | 'fee_expenditure' | 'agent_execution_count';
 
 /**
  * Query DTO for `GET /analytics/time-series`.

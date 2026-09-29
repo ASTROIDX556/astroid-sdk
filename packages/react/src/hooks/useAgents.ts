@@ -161,12 +161,17 @@ export interface UpdateAgentStatusVariables {
  * failures roll back to the pre-mutation snapshot, and the affected keys are
  * invalidated on settle.
  */
-export function useUpdateAgentStatus(): UseMutationResult<Agent, Error, UpdateAgentStatusVariables> {
+export function useUpdateAgentStatus(): UseMutationResult<
+  Agent,
+  Error,
+  UpdateAgentStatusVariables
+> {
   const astroid = useAstroidClient();
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ id, status }: UpdateAgentStatusVariables) => astroid.agents.update(id, { status }),
+    mutationFn: ({ id, status }: UpdateAgentStatusVariables) =>
+      astroid.agents.update(id, { status }),
     onMutate: async ({ id, status }) => {
       const context = await snapshotAgentCache(queryClient, id);
 
@@ -208,7 +213,11 @@ export interface UpdateAgentMetadataVariables {
  * API's merge semantics — instead of replacing it, so keys the UI did not send
  * keep their cached values until the server responds.
  */
-export function useUpdateAgentMetadata(): UseMutationResult<Agent, Error, UpdateAgentMetadataVariables> {
+export function useUpdateAgentMetadata(): UseMutationResult<
+  Agent,
+  Error,
+  UpdateAgentMetadataVariables
+> {
   const astroid = useAstroidClient();
   const queryClient = useQueryClient();
 

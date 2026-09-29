@@ -429,17 +429,23 @@ const TARGETED_ALERT_CHANNELS: readonly string[] = ['EMAIL', 'WEBHOOK', 'SLACK']
 function assertCreateAlertInput(input: CreateBudgetAlertInput): void {
   assertValidThresholdPercent(input.thresholdPercent);
   if (!isValidBudgetAlertChannel(input.channel)) {
-    throw new BudgetAlertValidationError(`Unknown budget alert channel "${String(input.channel)}".`, {
-      channel: input.channel,
-    });
+    throw new BudgetAlertValidationError(
+      `Unknown budget alert channel "${String(input.channel)}".`,
+      {
+        channel: input.channel,
+      },
+    );
   }
   if (
     TARGETED_ALERT_CHANNELS.includes(input.channel) &&
     (typeof input.target !== 'string' || input.target.trim() === '')
   ) {
-    throw new BudgetAlertValidationError(`A "${input.channel}" alert requires a non-empty target.`, {
-      channel: input.channel,
-    });
+    throw new BudgetAlertValidationError(
+      `A "${input.channel}" alert requires a non-empty target.`,
+      {
+        channel: input.channel,
+      },
+    );
   }
 }
 

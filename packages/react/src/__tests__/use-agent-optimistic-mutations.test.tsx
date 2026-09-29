@@ -23,7 +23,12 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
-import { useUpdateAgent, useUpdateAgentStatus, useUpdateAgentMetadata, useDeleteAgent } from '../hooks/useAgents.js';
+import {
+  useUpdateAgent,
+  useUpdateAgentStatus,
+  useUpdateAgentMetadata,
+  useDeleteAgent,
+} from '../hooks/useAgents.js';
 import { useAgent, useAgents, queryKeys } from '../hooks.js';
 import { createWrapper, AGENT_A, AGENT_B, AGENT_PAGE } from './test-utils.js';
 import type { Agent, Paginated, UpdateAgentParams } from '@astroid/types';
@@ -70,7 +75,9 @@ function createClient() {
     agents: {
       get: vi.fn(async (): Promise<Agent> => AGENT_A),
       list: vi.fn(async (): Promise<Paginated<Agent>> => AGENT_PAGE),
-      update: vi.fn(async (_id: string, _params: UpdateAgentParams): Promise<Agent> => UPDATED_AGENT),
+      update: vi.fn(
+        async (_id: string, _params: UpdateAgentParams): Promise<Agent> => UPDATED_AGENT,
+      ),
       delete: vi.fn(async (): Promise<void> => undefined),
     },
   } as unknown as AgentsMock & Astroid;
@@ -82,7 +89,10 @@ function listCache(queryClient: ReturnType<typeof createWrapper>['queryClient'])
 }
 
 /** Read the agent detail entry from the cache. */
-function detailCache(queryClient: ReturnType<typeof createWrapper>['queryClient'], id = AGENT_A.id) {
+function detailCache(
+  queryClient: ReturnType<typeof createWrapper>['queryClient'],
+  id = AGENT_A.id,
+) {
   return queryClient.getQueryData<Agent>(queryKeys.agents.detail(id));
 }
 

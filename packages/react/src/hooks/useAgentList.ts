@@ -238,7 +238,8 @@ export function useAgentList(options: UseAgentListOptions = {}): UseAgentListRes
 
   const pages = query.data?.pages ?? [];
   const items = useMemo<Agent[]>(() => pages.flatMap((page) => page.data), [pages]);
-  const total = pages.length > 0 ? readMeta(pages[pages.length - 1] as Paginated<Agent>).total : undefined;
+  const total =
+    pages.length > 0 ? readMeta(pages[pages.length - 1] as Paginated<Agent>).total : undefined;
 
   return { ...query, items, total };
 }

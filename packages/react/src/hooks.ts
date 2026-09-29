@@ -1,5 +1,11 @@
 import { useContext } from 'react';
-import { useMutation, useQuery, type QueryClient, type UseMutationResult, type UseQueryResult } from '@tanstack/react-query';
+import {
+  useMutation,
+  useQuery,
+  type QueryClient,
+  type UseMutationResult,
+  type UseQueryResult,
+} from '@tanstack/react-query';
 import { AstroidClientContext } from './provider.js';
 import type { Astroid } from '@astroid/client';
 import type {
@@ -105,8 +111,7 @@ export const queryKeys = {
   },
   policies: {
     all: ['astroid', 'policies'] as const,
-    list: (params?: object) =>
-      ['astroid', 'policies', 'list', params ?? {}] as const,
+    list: (params?: object) => ['astroid', 'policies', 'list', params ?? {}] as const,
     detail: (id: string) => ['astroid', 'policies', 'detail', id] as const,
   },
   budgets: {
@@ -117,8 +122,7 @@ export const queryKeys = {
   },
   transactions: {
     all: ['astroid', 'transactions'] as const,
-    list: (params?: object) =>
-      ['astroid', 'transactions', 'list', params ?? {}] as const,
+    list: (params?: object) => ['astroid', 'transactions', 'list', params ?? {}] as const,
     detail: (id: string) => ['astroid', 'transactions', 'detail', id] as const,
   },
 } as const;

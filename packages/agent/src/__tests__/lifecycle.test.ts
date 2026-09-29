@@ -68,7 +68,13 @@ describe('AgentResource lifecycle (issue #77)', () => {
   it('list() forwards status/role/search filters as query params', async () => {
     http.get.mockResolvedValue(httpOk([makeAgent()]));
 
-    await resource.list({ status: 'ACTIVE', role: 'OPERATIONS', search: 'bot', page: 1, limit: 10 });
+    await resource.list({
+      status: 'ACTIVE',
+      role: 'OPERATIONS',
+      search: 'bot',
+      page: 1,
+      limit: 10,
+    });
 
     expect(http.get).toHaveBeenCalledWith('/agents', {
       query: { status: 'ACTIVE', role: 'OPERATIONS', search: 'bot', page: 1, limit: 10 },

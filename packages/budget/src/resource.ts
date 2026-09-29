@@ -9,8 +9,4 @@
  * @module
  */
 
-export {
-  BudgetResource,
-  BudgetsResource,
-  type BudgetListParams,
-} from './index.js';
+export { BudgetResource, BudgetsResource, type BudgetListParams } from './index.js';

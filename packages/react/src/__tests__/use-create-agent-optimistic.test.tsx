@@ -84,9 +84,7 @@ describe('useCreateAgent — optimistic cache updates', () => {
     // …and the cache snaps back to the pre-mutation snapshot on failure.
     rejectCreate(new Error('Create rejected'));
     await waitFor(() => expect(result.current.isError).toBe(true));
-    await waitFor(() =>
-      expect(listCache(queryClient)?.data).toEqual(AGENT_PAGE.data),
-    );
+    await waitFor(() => expect(listCache(queryClient)?.data).toEqual(AGENT_PAGE.data));
     expect(listCache(queryClient)?.meta).toEqual(AGENT_PAGE.meta);
     expect(result.current.error?.message).toBe('Create rejected');
   });

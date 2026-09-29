@@ -206,7 +206,10 @@ export function mapStatusToError(
 ): AstroidError {
   const envelope = extractApiError(context.body);
   const resolvedMessage =
-    message ?? envelope?.message ?? extractMessage(context.body) ?? `Request failed with status ${status}`;
+    message ??
+    envelope?.message ??
+    extractMessage(context.body) ??
+    `Request failed with status ${status}`;
 
   // 1. Body code wins — it is the most specific signal.
   if (envelope) {
