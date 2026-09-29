@@ -28,12 +28,25 @@ import {
   TransactionDetailsSchema,
   validatePolicySet,
   validateTransactionDetails,
+  // Agent DTO schemas (issue #215)
+  CreateAgentDtoSchema,
+  UpdateAgentDtoSchema,
+  AgentMetadataSchema,
+  AgentInitialBudgetSchema,
+  StellarPublicKeySchema,
+  DecimalAmountStringSchema,
+  UPDATE_AGENT_DTO_FIELDS,
+  isValidCreateAgentDto,
+  isValidUpdateAgentDto,
+  validateCreateAgentDto,
+  validateUpdateAgentDto,
   type InferredAgent,
   type InferredWallet,
   type InferredPolicy,
   type InferredBudget,
 } from './schemas.js';
 import type { Agent, Wallet, Policy, Budget } from './entities.js';
+import type { CreateAgentDto, UpdateAgentDto } from './agent.js';
 
 /* -------------------------------------------------------------------------- */
 /* Inferred-type exports (issue #265)                                          */
@@ -848,5 +861,404 @@ describe('policy evaluation validators', () => {
       requiredSignatures: 2,
     });
     expect(result.success).toBe(true);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Agent DTO schemas (issue #215)                                              */
+/* -------------------------------------------------------------------------- */
+
+describe('Agent DTO schemas (issue #215)', () => {
+  /**
+   * A format-valid Stellar public key: `G` plus 55 base-32 characters (56 in
+   * total, as StrKey requires). The issue text mentions "52 characters", which
+   * is shorter than any real Stellar address, so the schemas — like the rest of
+   * the SDK — enforce the real StrKey length.
+   */
+  const STELLAR_ADDRESS = `G${'A'.repeat(55)}`;
+
+  describe('StellarPublicKeySchema', () => {
+    it('accepts a 56-character G-address, ignoring surrounding whitespace', () => {
+      expect(StellarPublicKeySchema.safeParse(STELLAR_ADDRESS).success).toBe(true);
+      expect(StellarPublicKeySchema.safeParse(`  ${STELLAR_ADDRESS}  `).success).toBe(true);
+    });
+
+    it('rejects short, lowercase, mis-prefixed and base-32-invalid addresses', () => {
+      for (const address of [
+        '',
+        'GABC',
+        `S${'A'.repeat(55)}`, // secret-key prefix
+        `G${'a'.repeat(55)}`, // lowercase is not base-32
+        `G${'1'.repeat(55)}`, // 1 is not in the base-32 alphabet
+        'not-an-address',
+      ]) {
+        expect(StellarPublicKeySchema.safeParse(address).success, address).toBe(false);
+      }
+    });
+
+    it('rejects non-strings', () => {
+      expect(StellarPublicKeySchema.safeParse(42).success).toBe(false);
+      expect(StellarPublicKeySchema.safeParse(null).success).toBe(false);
+    });
+  });
+
+  describe('DecimalAmountStringSchema / AgentInitialBudgetSchema', () => {
+    it('accepts non-negative decimal amount strings, including zero', () => {
+      for (const amount of ['0', '500', '1000.00', '0.000001']) {
+        expect(DecimalAmountStringSchema.safeParse(amount).success, amount).toBe(true);
+      }
+    });
+
+    it('rejects a negative budget cap and anything that only coerces to a number', () => {
+      for (const amount of [
+        '-50',
+        '-0.01',
+        '',
+        '  ',
+        'Infinity',
+        '0x10',
+        '1e3',
+        '5.',
+        '.5',
+        '+5',
+      ]) {
+        expect(DecimalAmountStringSchema.safeParse(amount).success, amount).toBe(false);
+      }
+    });
+
+    it('requires both currency and amount on the initial budget', () => {
+      expect(AgentInitialBudgetSchema.safeParse({ currency: 'USDC', amount: '100' }).success).toBe(
+        true,
+      );
+      expect(AgentInitialBudgetSchema.safeParse({ amount: '100' }).success).toBe(false);
+      expect(AgentInitialBudgetSchema.safeParse({ currency: 'USDC' }).success).toBe(false);
+      expect(AgentInitialBudgetSchema.safeParse({ currency: '  ', amount: '100' }).success).toBe(
+        false,
+      );
+    });
+  });
+});
+
+describe('CreateAgentDtoSchema (issue #215)', () => {
+  const STELLAR_ADDRESS = `G${'A'.repeat(55)}`;
+
+  const VALID_CREATE_AGENT = {
+    name: 'TradingBot',
+    capabilities: ['swap', 'arbitrage'],
+    initialBudget: { currency: 'USDC', amount: '500' },
+  };
+
+  const FULL_CREATE_AGENT = {
+    ...VALID_CREATE_AGENT,
+    description: 'Automated market maker on the Stellar DEX',
+    role: 'FINANCE',
+    provider: 'anthropic',
+    model: 'claude-sonnet-5',
+    primaryWalletId: 'wal_123',
+    metadata: { team: 'trading', tags: ['prod'], stellarAddress: STELLAR_ADDRESS },
+  };
+
+  it('accepts a minimal and a fully-populated creation payload', () => {
+    expect(CreateAgentDtoSchema.safeParse(VALID_CREATE_AGENT).success).toBe(true);
+    expect(CreateAgentDtoSchema.safeParse(FULL_CREATE_AGENT).success).toBe(true);
+  });
+
+  it('accepts a payload typed as the canonical CreateAgentDto', () => {
+    const typed: CreateAgentDto = { ...VALID_CREATE_AGENT, role: 'OPERATIONS' };
+    expect(isValidCreateAgentDto(typed)).toBe(true);
+    expect(CreateAgentDtoSchema.safeParse(typed).success).toBe(true);
+  });
+
+  it('requires a non-blank name', () => {
+    for (const name of ['', '   ', 42, null, undefined]) {
+      expect(
+        CreateAgentDtoSchema.safeParse({ ...VALID_CREATE_AGENT, name }).success,
+        JSON.stringify(name),
+      ).toBe(false);
+    }
+  });
+
+  it('requires at least one non-blank capability', () => {
+    for (const capabilities of [[], ['  '], ['swap', 42], ['swap', ''], 'swap', undefined]) {
+      expect(
+        CreateAgentDtoSchema.safeParse({ ...VALID_CREATE_AGENT, capabilities }).success,
+        JSON.stringify(capabilities),
+      ).toBe(false);
+    }
+  });
+
+  it('requires a valid initialBudget and rejects a negative budget cap', () => {
+    for (const initialBudget of [
+      undefined,
+      {},
+      { currency: 'USDC' },
+      { amount: '100' },
+      { currency: 'USDC', amount: '-100' },
+      { currency: 'USDC', amount: '1e3' },
+      { currency: '', amount: '100' },
+      'USDC:100',
+    ]) {
+      expect(
+        CreateAgentDtoSchema.safeParse({ ...VALID_CREATE_AGENT, initialBudget }).success,
+        JSON.stringify(initialBudget),
+      ).toBe(false);
+    }
+
+    expect(
+      CreateAgentDtoSchema.safeParse({
+        ...VALID_CREATE_AGENT,
+        initialBudget: { currency: 'USDC', amount: '0' },
+      }).success,
+    ).toBe(true);
+  });
+
+  it('validates the optional agent role against the enum', () => {
+    expect(CreateAgentDtoSchema.safeParse({ ...VALID_CREATE_AGENT, role: 'FINANCE' }).success).toBe(
+      true,
+    );
+    expect(CreateAgentDtoSchema.safeParse({ ...VALID_CREATE_AGENT, role: 'finance' }).success).toBe(
+      false,
+    );
+    expect(CreateAgentDtoSchema.safeParse({ ...VALID_CREATE_AGENT, role: 42 }).success).toBe(false);
+  });
+
+  it('rejects blank optional strings but allows an empty description', () => {
+    for (const field of ['provider', 'model', 'primaryWalletId'] as const) {
+      expect(
+        CreateAgentDtoSchema.safeParse({ ...VALID_CREATE_AGENT, [field]: '' }).success,
+        field,
+      ).toBe(false);
+    }
+    expect(CreateAgentDtoSchema.safeParse({ ...VALID_CREATE_AGENT, description: '' }).success).toBe(
+      true,
+    );
+    expect(CreateAgentDtoSchema.safeParse({ ...VALID_CREATE_AGENT, description: 42 }).success).toBe(
+      false,
+    );
+  });
+
+  it('reports the offending field path in the issues', () => {
+    const result = CreateAgentDtoSchema.safeParse({ ...VALID_CREATE_AGENT, name: '' });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.map((issue) => issue.path.join('.'))).toContain('name');
+    }
+  });
+});
+
+describe('UpdateAgentDtoSchema (issue #215)', () => {
+  it('accepts a single-field partial update', () => {
+    expect(UpdateAgentDtoSchema.safeParse({ status: 'PAUSED' }).success).toBe(true);
+    expect(UpdateAgentDtoSchema.safeParse({ capabilities: ['transfer'] }).success).toBe(true);
+  });
+
+  it('accepts a fully-populated update payload', () => {
+    const result = UpdateAgentDtoSchema.safeParse({
+      name: 'Renamed Bot',
+      description: 'Updated description',
+      role: 'OPERATIONS',
+      provider: 'anthropic',
+      model: 'claude-sonnet-5',
+      capabilities: ['trade', 'transfer'],
+      status: 'ACTIVE',
+      primaryWalletId: 'wal_456',
+      metadata: { team: 'ops', tags: ['prod'] },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts null primaryWalletId (wallet detach) and still rejects blank ids', () => {
+    expect(UpdateAgentDtoSchema.safeParse({ primaryWalletId: null }).success).toBe(true);
+    expect(UpdateAgentDtoSchema.safeParse({ primaryWalletId: 'wal_1' }).success).toBe(true);
+    expect(UpdateAgentDtoSchema.safeParse({ primaryWalletId: '' }).success).toBe(false);
+    expect(UpdateAgentDtoSchema.safeParse({ primaryWalletId: 42 }).success).toBe(false);
+  });
+
+  it('rejects an empty or all-undefined patch', () => {
+    expect(UpdateAgentDtoSchema.safeParse({}).success).toBe(false);
+    expect(UpdateAgentDtoSchema.safeParse({ name: undefined }).success).toBe(false);
+
+    const result = UpdateAgentDtoSchema.safeParse({});
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.message).toContain(UPDATE_AGENT_DTO_FIELDS[0]);
+    }
+  });
+
+  it('accepts every field the DTO declares', () => {
+    const validFields: Record<(typeof UPDATE_AGENT_DTO_FIELDS)[number], unknown> = {
+      name: 'Bot',
+      description: 'anything',
+      role: 'FINANCE',
+      provider: 'anthropic',
+      model: 'claude-sonnet-5',
+      capabilities: ['trade'],
+      status: 'SUSPENDED',
+      primaryWalletId: null,
+      metadata: { team: 'ops' },
+    };
+
+    for (const field of UPDATE_AGENT_DTO_FIELDS) {
+      expect(UpdateAgentDtoSchema.safeParse({ [field]: validFields[field] }).success, field).toBe(
+        true,
+      );
+    }
+  });
+
+  it('rejects malformed values for the enum and string fields', () => {
+    for (const payload of [
+      { name: '' },
+      { name: '   ' },
+      { role: 'finance' },
+      { status: 'active' },
+      { provider: '' },
+      { model: 42 },
+      { capabilities: [] },
+      { capabilities: [''] },
+      { metadata: 'nope' },
+      { metadata: { stellarAddress: 'GABC' } },
+      { metadata: { tags: [1] } },
+    ]) {
+      expect(UpdateAgentDtoSchema.safeParse(payload).success, JSON.stringify(payload)).toBe(false);
+    }
+  });
+
+  it('accepts a payload typed as the canonical UpdateAgentDto', () => {
+    const typed: UpdateAgentDto = { status: 'ARCHIVED', primaryWalletId: null };
+    expect(isValidUpdateAgentDto(typed)).toBe(true);
+  });
+});
+
+describe('Agent DTO validation helpers (issue #215)', () => {
+  const STELLAR_ADDRESS = `G${'A'.repeat(55)}`;
+
+  const VALID_CREATE_AGENT = {
+    name: 'TradingBot',
+    capabilities: ['swap'],
+    initialBudget: { currency: 'USDC', amount: '500' },
+  };
+
+  describe('validateCreateAgentDto', () => {
+    it('returns typed data for a valid payload', () => {
+      const result = validateCreateAgentDto({
+        ...VALID_CREATE_AGENT,
+        metadata: { stellarAddress: STELLAR_ADDRESS },
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.name).toBe('TradingBot');
+        expect(result.data.initialBudget.amount).toBe('500');
+      }
+    });
+
+    it('returns structured issues instead of throwing', () => {
+      const result = validateCreateAgentDto({
+        name: '',
+        capabilities: [],
+        initialBudget: { currency: 'USDC', amount: '-5' },
+      });
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        const paths = result.error.issues.map((issue) => issue.path.join('.'));
+        expect(paths).toContain('name');
+        expect(paths).toContain('capabilities');
+        expect(paths).toContain('initialBudget.amount');
+      }
+    });
+
+    it('treats non-object payloads as invalid', () => {
+      for (const payload of [null, undefined, 'agent', 42, []]) {
+        expect(validateCreateAgentDto(payload).success, JSON.stringify(payload)).toBe(false);
+      }
+    });
+  });
+
+  describe('validateUpdateAgentDto', () => {
+    it('returns a success result for a valid partial update', () => {
+      const result = validateUpdateAgentDto({ status: 'PAUSED' });
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.status).toBe('PAUSED');
+    });
+
+    it('rejects an empty patch with an issue on the payload root', () => {
+      const result = validateUpdateAgentDto({});
+      expect(result.success).toBe(false);
+      if (!result.success) expect(result.error.issues.length).toBeGreaterThan(0);
+    });
+
+    it('surfaces the path of a malformed field', () => {
+      const result = validateUpdateAgentDto({ metadata: { stellarAddress: 'GABC' } });
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues[0]?.path.join('.')).toContain('metadata');
+      }
+    });
+  });
+
+  describe('isValidCreateAgentDto / isValidUpdateAgentDto', () => {
+    it('narrows an unknown payload to the canonical DTO types', () => {
+      const createPayload: unknown = { ...VALID_CREATE_AGENT };
+      expect(isValidCreateAgentDto(createPayload)).toBe(true);
+      if (isValidCreateAgentDto(createPayload)) {
+        const name: CreateAgentDto['name'] = createPayload.name;
+        expect(name).toBe('TradingBot');
+      }
+
+      const updatePayload: unknown = { status: 'PAUSED' };
+      expect(isValidUpdateAgentDto(updatePayload)).toBe(true);
+      if (isValidUpdateAgentDto(updatePayload)) {
+        const status: UpdateAgentDto['status'] = updatePayload.status;
+        expect(status).toBe('PAUSED');
+      }
+    });
+
+    it('never throws for malformed input', () => {
+      for (const payload of [null, undefined, 0, 'nope', [], { name: 'x' }]) {
+        expect(isValidCreateAgentDto(payload)).toBe(false);
+      }
+      for (const payload of [null, undefined, 0, 'nope', [], {}]) {
+        expect(isValidUpdateAgentDto(payload)).toBe(false);
+      }
+    });
+  });
+
+  describe('AgentMetadataSchema', () => {
+    it('passes unknown keys through and accepts an empty bag', () => {
+      expect(AgentMetadataSchema.safeParse({}).success).toBe(true);
+      const result = AgentMetadataSchema.safeParse({ anything: [1, 2, 3], nested: { a: 1 } });
+      expect(result.success).toBe(true);
+    });
+
+    it('validates the typed keys it declares', () => {
+      expect(
+        AgentMetadataSchema.safeParse({
+          team: 'ops',
+          externalId: 'ext_1',
+          tags: ['prod'],
+          stellarAddress: STELLAR_ADDRESS,
+        }).success,
+      ).toBe(true);
+
+      for (const metadata of [
+        { team: 42 },
+        { externalId: '' },
+        { tags: 'prod' },
+        { tags: [1] },
+        { tags: [''] },
+        { stellarAddress: 'GABC' },
+      ]) {
+        expect(AgentMetadataSchema.safeParse(metadata).success, JSON.stringify(metadata)).toBe(
+          false,
+        );
+      }
+    });
+
+    it('points at the offending metadata key', () => {
+      const result = AgentMetadataSchema.safeParse({ stellarAddress: 'GABC' });
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues[0]?.path.join('.')).toBe('stellarAddress');
+      }
+    });
   });
 });
