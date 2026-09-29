@@ -208,6 +208,18 @@ export const DEFAULT_BASE_URL = 'https://api.astroid.finance';
  */
 export const DEFAULT_TIMEOUT_MS = 30_000;
 
+/**
+ * Coerce a raw timeout value into a valid millisecond deadline.
+ *
+ * `undefined` and invalid values (`<= 0`, `NaN`, `Infinity`) fall back to the
+ * SDK default {@link DEFAULT_TIMEOUT_MS} rather than letting `setTimeout`
+ * fire immediately (or never).
+ */
+export function normalizeTimeoutMs(value: number | undefined): number {
+  if (value === undefined) return DEFAULT_TIMEOUT_MS;
+  return Number.isFinite(value) && value > 0 ? value : DEFAULT_TIMEOUT_MS;
+}
+
 const DEFAULT_RETRY: RetryConfig = {
   maxRetries: 3,
   baseDelayMs: 250,
@@ -246,7 +258,7 @@ export function resolveConfig(config: AstroidClientConfig): ResolvedConfig {
   return {
     baseUrl: trimTrailingSlash(config.baseUrl ?? DEFAULT_BASE_URL),
     apiVersion: config.apiVersion ?? 'v1',
-    timeoutMs: config.timeoutMs ?? config.timeout ?? DEFAULT_TIMEOUT_MS,
+    timeoutMs: normalizeTimeoutMs(config.timeoutMs ?? config.timeout),
     retry,
     headers: { ...(config.headers ?? {}) },
     auth: {

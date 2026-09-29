@@ -14,6 +14,7 @@ export {
   resolveConfig,
   DEFAULT_BASE_URL,
   DEFAULT_TIMEOUT_MS,
+  normalizeTimeoutMs,
   type AstroidClientConfig,
   type ResolvedConfig,
   type AuthConfig,
