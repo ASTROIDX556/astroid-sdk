@@ -43,8 +43,17 @@ export {
   type UseWalletBalancesResult,
 } from './hooks/useWalletBalances.js';
 export { useAgentLogs, agentLogKeys, type UseAgentLogsOptions } from './hooks/useAgentLogs.js';
-export { useAgentStatus, agentStatusKeys, type UseAgentStatusOptions } from './hooks/useAgentStatus.js';
-export { useAgentMetrics, type UseAgentMetricsOptions, type AgentMetricsData, type UseAgentMetricsResult } from './hooks/useAgentMetrics.js';
+export {
+  useAgentStatus,
+  agentStatusKeys,
+  type UseAgentStatusOptions,
+} from './hooks/useAgentStatus.js';
+export {
+  useAgentMetrics,
+  type UseAgentMetricsOptions,
+  type AgentMetricsData,
+  type UseAgentMetricsResult,
+} from './hooks/useAgentMetrics.js';
 export {
   useInfiniteResource,
   createPaginatedResourceHook,
@@ -66,7 +75,11 @@ export {
 export {
   useBudget,
   useBudgetUtilization,
+  useBudgetThreshold,
+  type BudgetThresholdResult,
+  type BudgetThresholdStatus,
   type UseBudgetQueryOptions,
+  type UseBudgetThresholdOptions,
 } from './hooks/use-budget.js';
 export {
   usePolicies,
@@ -76,11 +89,7 @@ export {
   useDeletePolicy,
   type UpdatePolicyVariables,
 } from './hooks/use-policies.js';
-export {
-  useTransactions,
-  useTransaction,
-  useCreateTransaction,
-} from './hooks/use-transactions.js';
+export { useTransactions, useTransaction, useCreateTransaction } from './hooks/use-transactions.js';
 export {
   useAgentList,
   type UseAgentListParams,

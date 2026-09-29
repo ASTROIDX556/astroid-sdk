@@ -30,6 +30,7 @@
 
 import { AstroidError } from './base.js';
 import {
+  AstroidTimeoutError,
   AuthenticationError,
   ConflictError,
   ForbiddenError,
@@ -140,6 +141,17 @@ export function isApiRateLimitError(value: unknown): value is ApiRateLimitError 
 /** A transport-level failure: DNS, connection reset, offline, or timeout. */
 export function isNetworkError(value: unknown): value is NetworkError {
   return value instanceof NetworkError;
+}
+
+/**
+ * A request exceeded its configured deadline without a response.
+ *
+ * {@link AstroidTimeoutError} extends {@link NetworkError}, so
+ * {@link isNetworkError} matches it too — use this guard when the caller needs
+ * to distinguish a deadline miss from other transport failures.
+ */
+export function isTimeoutError(value: unknown): value is AstroidTimeoutError {
+  return value instanceof AstroidTimeoutError;
 }
 
 /** 5xx — the API failed to handle a valid request. `ServerError` is the same class. */

@@ -86,6 +86,9 @@ export interface RetryMiddlewareConfig extends RetryMiddlewareOptions {
    */
   maxRetries?: number;
 
+  /** Alias for maxRetries. */
+  retries?: number;
+
   /**
    * Initial backoff delay in milliseconds before the first retry. The actual
    * wait for attempt `n` is a random value in `[0, min(baseDelayMs * 2^(n-1),
@@ -94,6 +97,9 @@ export interface RetryMiddlewareConfig extends RetryMiddlewareOptions {
    */
   baseDelayMs?: number;
 
+  /** Alias for baseDelayMs. */
+  baseDelay?: number;
+
   /**
    * Upper bound for a single retry delay in milliseconds (including
    * `Retry-After` seconds). Prevents unbounded waits in heavily throttled
@@ -101,6 +107,9 @@ export interface RetryMiddlewareConfig extends RetryMiddlewareOptions {
    * @default 8000
    */
   maxDelayMs?: number;
+
+  /** Alias for maxDelayMs. */
+  maxDelay?: number;
 
   /**
    * Multiplier applied per attempt when computing exponential backoff:
@@ -116,6 +125,9 @@ export interface RetryMiddlewareConfig extends RetryMiddlewareOptions {
    * `shouldRetryStatus` takes precedence when both are supplied.
    */
   retryableStatusCodes?: number[];
+
+  /** Alias for retryableStatusCodes. */
+  retryableStatuses?: number[];
 
   /**
    * Called before each retry sleep so callers can log, trace, or emit metrics.
@@ -133,6 +145,12 @@ export interface RetryMiddlewareConfig extends RetryMiddlewareOptions {
    * (all other `4xx` client errors are never retried).
    */
   shouldRetryStatus?: (status: number) => boolean;
+
+  /**
+   * Apply full jitter to each backoff delay. Default `true`.
+   * @default true
+   */
+  jitter?: boolean;
 
   /**
    * When `true`, all HTTP methods are treated as retryable by this middleware
@@ -189,16 +207,20 @@ const DEFAULT_MAX_DELAY_MS = 8_000;
  * ```
  */
 export function createRetryMiddleware(options: RetryMiddlewareConfig = {}): Middleware {
+  const maxRetries = options.maxRetries ?? options.retries ?? DEFAULT_MAX_RETRIES;
+  const baseDelayMs = options.baseDelayMs ?? options.baseDelay ?? DEFAULT_BASE_DELAY_MS;
+  const maxDelayMs = options.maxDelayMs ?? options.maxDelay ?? DEFAULT_MAX_DELAY_MS;
+  const retryableStatuses = options.retryableStatuses ?? options.retryableStatusCodes;
+  const retryableStatusCodes = options.retryableStatusCodes ?? options.retryableStatuses;
+
   const retryConfig: RetryConfig = {
-    maxRetries: options.maxRetries ?? DEFAULT_MAX_RETRIES,
-    baseDelayMs: options.baseDelayMs ?? DEFAULT_BASE_DELAY_MS,
-    maxDelayMs: options.maxDelayMs ?? DEFAULT_MAX_DELAY_MS,
-    ...(options.retryableStatuses ? { retryableStatuses: options.retryableStatuses } : {}),
+    maxRetries,
+    baseDelayMs,
+    maxDelayMs,
+    ...(retryableStatuses ? { retryableStatuses } : {}),
     ...(options.jitter !== undefined ? { jitter: options.jitter } : {}),
     ...(options.backoffFactor !== undefined ? { backoffFactor: options.backoffFactor } : {}),
-    ...(options.retryableStatusCodes !== undefined
-      ? { retryableStatusCodes: options.retryableStatusCodes }
-      : {}),
+    ...(retryableStatusCodes !== undefined ? { retryableStatusCodes } : {}),
   };
 
   // Normalise the middleware options we forward to the HttpClient's retry loop.
@@ -207,8 +229,8 @@ export function createRetryMiddleware(options: RetryMiddlewareConfig = {}): Midd
     onRetry: options.onRetry,
     shouldRetryStatus:
       options.shouldRetryStatus ??
-      (options.retryableStatuses
-        ? (status: number) => options.retryableStatuses!.includes(status)
+      (retryableStatuses
+        ? (status: number) => retryableStatuses.includes(status)
         : isRetryableStatus),
     retryAllMethods: options.retryAllMethods ?? false,
   };
@@ -261,9 +283,10 @@ export default createRetryMiddleware;
 
 /**
  * Compute the retry delay in milliseconds for a given attempt and config,
- * honouring a server-supplied `Retry-After` header on 429 responses.
+ * honouring a server-supplied `Retry-After` header on retryable responses.
  *
- * - For 429 responses: reads `retryAfterSeconds`, capped at `config.maxDelayMs`.
+ * - For retryable responses with a `Retry-After` header: reads `retryAfterSeconds`,
+ *   capped at `config.maxDelayMs`.
  * - For all others: exponential backoff with full jitter via {@link backoffDelay}.
  *
  * @param attempt            The 1-based retry attempt number.
@@ -279,8 +302,12 @@ export function computeRetryDelay(
   retryAfterSeconds?: number,
   random: () => number = Math.random,
 ): number {
-  // Honour Retry-After on rate-limited responses.
-  if (status === 429 && retryAfterSeconds !== undefined && Number.isFinite(retryAfterSeconds)) {
+  // Honour Retry-After on any retryable response (e.g. 429, 503) or configured retryable statuses.
+  const isRetryable =
+    isRetryableStatus(status) ||
+    Boolean(config.retryableStatuses?.includes(status)) ||
+    Boolean(config.retryableStatusCodes?.includes(status));
+  if (isRetryable && retryAfterSeconds !== undefined && Number.isFinite(retryAfterSeconds)) {
     return Math.min(Math.max(0, retryAfterSeconds * 1000), config.maxDelayMs);
   }
   return backoffDelay(attempt, config, random);
