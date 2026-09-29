@@ -19,6 +19,7 @@ import type { PolicySimulationReport, SimulatedTransaction } from './simulator.j
 import { simulatePolicy } from './simulate-policy.js';
 import { simulatePolicyUpdate } from './simulate-policy-update.js';
 import { simulatePolicyEvaluation } from './simulation.js';
+import { assertPolicyCreateInput, assertPolicySimulationRequest } from './schemas.js';
 
 /**
  * The client-side (offline) policy engine. `evaluatePolicyRules` is the pure
@@ -193,8 +194,9 @@ export class PolicyResource extends Resource {
    *   also the type `PolicyBuilder#build()` returns.
    * @throws `ValidationError` when the API rejects the payload.
    */
-  async create(input: PolicyCreateInput, options?: RequestOptionsExtras): Promise<Policy> {
-    const res = await this.client.post<Policy>('/policies', input, options);
+  async create(input: PolicyCreateInput): Promise<Policy> {
+    const payload = assertPolicyCreateInput(input);
+    const res = await this.client.post<Policy>('/policies', payload);
     return res.data;
   }
 
@@ -418,7 +420,10 @@ export class PolicyResource extends Resource {
       });
       return res.data;
     }
-    return simulatePolicy(this.client, policyOrRequest as PolicySimulationRequest);
+    return simulatePolicy(
+      this.client,
+      assertPolicySimulationRequest(policyOrRequest) as PolicySimulationRequest,
+    );
   }
 
   /**
