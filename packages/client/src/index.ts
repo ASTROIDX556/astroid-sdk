@@ -669,6 +669,7 @@ export {
   InternalServerError,
   ServerError,
   isAstroidError,
+  isTimeoutError,
 } from '@astroid/errors';
 export {
   InsufficientFundsError,
