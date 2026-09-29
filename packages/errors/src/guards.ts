@@ -148,8 +148,7 @@ export function isNetworkError(value: unknown): value is NetworkError {
  *
  * {@link AstroidTimeoutError} extends {@link NetworkError}, so
  * {@link isNetworkError} matches it too — use this guard when the caller needs
- * to distinguish a deadline miss from other transport failures and read
- * `err.timeoutMs`.
+ * to distinguish a deadline miss from other transport failures.
  */
 export function isTimeoutError(value: unknown): value is AstroidTimeoutError {
   return value instanceof AstroidTimeoutError;

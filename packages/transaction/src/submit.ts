@@ -10,12 +10,14 @@
  */
 
 import type { FeeBumpTransaction, Transaction } from '@stellar/stellar-base';
-import type { HttpClient, RequestOptionsExtras } from '@astroid/core';
+import { Networks } from '@stellar/stellar-base';
+import type { HttpClient } from '@astroid/core';
 import type { Transaction as ApiTransaction } from '@astroid/types';
 import { normalizeTransactionError } from './errors.js';
 import type { TransactionSubmissionError } from './errors.js';
 
 import { encodeTransaction } from './builder.js';
+import { decodeTransactionXDR } from './decoder.js';
 
 /** A transaction ready for submission: an XDR string or a built instance. */
 export type TransactionSource = string | Transaction | FeeBumpTransaction;
@@ -23,6 +25,11 @@ export type TransactionSource = string | Transaction | FeeBumpTransaction;
 /** The request body accepted by the Astroid transaction submission endpoint. */
 export interface TransactionSubmissionBody {
   transactionXdr: string;
+}
+
+/** Network context used when validating a transaction envelope for submission. */
+export interface TransactionSubmissionOptions {
+  networkPassphrase?: string;
 }
 
 /**
@@ -38,8 +45,11 @@ export interface TransactionSubmissionBody {
  */
 export function formatTransactionForSubmission(
   source: TransactionSource,
+  options: TransactionSubmissionOptions = {},
 ): TransactionSubmissionBody {
-  return { transactionXdr: encodeTransaction(source) };
+  const transactionXdr = encodeTransaction(source);
+  decodeTransactionXDR(transactionXdr, options.networkPassphrase ?? Networks.PUBLIC);
+  return { transactionXdr };
 }
 
 /**
@@ -65,10 +75,10 @@ export function formatTransactionForSubmission(
 export async function submitSignedTransaction(
   client: HttpClient,
   source: TransactionSource,
-  options?: RequestOptionsExtras,
+  options: TransactionSubmissionOptions = {},
 ): Promise<ApiTransaction> {
-  const body = formatTransactionForSubmission(source);
-  const res = await client.post<ApiTransaction>('/transactions/submit', body, options);
+  const body = formatTransactionForSubmission(source, options);
+  const res = await client.post<ApiTransaction>('/transactions/submit', body);
   return res.data;
 }
 

@@ -293,6 +293,57 @@ describe('simulatePolicy — asset white/blacklists', () => {
 
     expect(result.passed).toBe(true);
   });
+
+  it('does not treat a different issuer as the same pinned asset', () => {
+    const pinned = 'USDC:GBSTRH4QOTWNSVA6E4HFIRETXPB3DW4K3KX7A2Q7S3ZK5Z2H7Z6Q7K5J';
+    const other = 'USDC:GBLTKZQDWL6X6BZWRZGRGV2Z4QSVLRV6UQ3M6Q4YQK2FJQ6ZQJ6JUA';
+
+    const blocked = simulatePolicy(
+      [
+        policy({
+          type: 'ALLOWED_ASSETS',
+          configuration: { allowedAssets: [pinned] },
+        }),
+      ],
+      { ...baseTx, asset: `USDC:${other}` },
+    );
+
+    expect(blocked.passed).toBe(false);
+    expect(blocked.violations[0]?.policyType).toBe('ALLOWED_ASSETS');
+  });
+
+  it('matches the exact same code:issuer pair', () => {
+    const pinned = 'USDC:GBSTRH4QOTWNSVA6E4HFIRETXPB3DW4K3KX7A2Q7S3ZK5Z2H7Z6Q7K5J';
+    const result = simulatePolicy(
+      [
+        policy({
+          type: 'BLOCKED_ASSETS',
+          configuration: { blockedAssets: [pinned] },
+        }),
+      ],
+      { ...baseTx, asset: pinned },
+    );
+
+    expect(result.passed).toBe(false);
+    expect(result.violations[0]?.policyType).toBe('BLOCKED_ASSETS');
+  });
+
+  it('does not flag a different issuer of a blocked asset', () => {
+    const pinned = 'USDC:GBSTRH4QOTWNSVA6E4HFIRETXPB3DW4K3KX7A2Q7S3ZK5Z2H7Z6Q7K5J';
+    const other = 'USDC:GBLTKZQDWL6X6BZWRZGRGV2Z4QSVLRV6UQ3M6Q4YQK2FJQ6ZQJ6JUA';
+
+    const result = simulatePolicy(
+      [
+        policy({
+          type: 'BLOCKED_ASSETS',
+          configuration: { blockedAssets: [pinned] },
+        }),
+      ],
+      { ...baseTx, asset: `USDC:${other}` },
+    );
+
+    expect(result.passed).toBe(true);
+  });
 });
 
 describe('simulatePolicy — minimum transfer limit', () => {
@@ -372,6 +423,59 @@ describe('simulatePolicy — decimal precision', () => {
     );
     expect(result.passed).toBe(false);
   });
+
+  it('does not throw on exponent-notation numeric amounts (1e-7)', () => {
+    const result = simulatePolicy(
+      [policy({ type: 'MAX_AMOUNT', configuration: { maxAmount: 500 } })],
+      { ...baseTx, amount: 1e-7 },
+    );
+    expect(result.passed).toBe(true);
+    expect(result.violations).toEqual([]);
+  });
+
+  it('compares exponent-notation numeric amounts correctly (1e-7)', () => {
+    const result = simulatePolicy(
+      [policy({ type: 'MAX_AMOUNT', configuration: { maxAmount: 0.01 } })],
+      { ...baseTx, amount: 1e-7 },
+    );
+    expect(result.passed).toBe(true);
+  });
+
+  it('detects overages on exponent-notation numeric amounts (1e-7 > 1e-8)', () => {
+    const result = simulatePolicy(
+      [policy({ type: 'MAX_AMOUNT', configuration: { maxAmount: 1e-8 } })],
+      { ...baseTx, amount: 1e-7 },
+    );
+    expect(result.passed).toBe(false);
+    expect(result.violations[0]?.actual).toBe(1e-7);
+  });
+
+  it('does not throw on very large exponent-notation amounts (1e21)', () => {
+    const result = simulatePolicy(
+      [policy({ type: 'MAX_AMOUNT', configuration: { maxAmount: 500 } })],
+      { ...baseTx, amount: 1e21 },
+    );
+    expect(result.passed).toBe(false);
+    expect(result.violations[0]?.actual).toBe(1e21);
+  });
+
+  it('does not throw on exponent-notation string amounts', () => {
+    const result = simulatePolicy(
+      [policy({ type: 'MAX_AMOUNT', configuration: { maxAmount: 500 } })],
+      { ...baseTx, amount: '1e3' },
+    );
+    expect(result.passed).toBe(false);
+    expect(result.violations[0]?.actual).toBe(1000);
+  });
+
+  it('handles exponent-notation amounts in the spent-in-window sum', () => {
+    const result = simulatePolicy(
+      [policy({ type: 'DAILY_BUDGET', configuration: { dailyLimit: 1000 } })],
+      { ...baseTx, amount: 1e2, spentInWindow: 1e3 },
+    );
+    expect(result.passed).toBe(false);
+    expect(result.violations[0]?.actual).toBe(1100);
+  });
 });
 
 describe('simulatePolicy — zero and edge amounts', () => {
@@ -416,14 +520,22 @@ describe('simulatePolicy — priority ordering', () => {
       [
         policy({ id: 'p-max', type: 'MAX_AMOUNT', configuration: { maxAmount: 50 } }),
         policy({ id: 'p-min', type: 'MIN_AMOUNT', configuration: { minAmount: 200 } }),
-        policy({ id: 'p-asset', type: 'ALLOWED_ASSETS', configuration: { allowedAssets: ['USDC'] } }),
+        policy({
+          id: 'p-asset',
+          type: 'ALLOWED_ASSETS',
+          configuration: { allowedAssets: ['USDC'] },
+        }),
       ],
       { ...baseTx, amount: '100', asset: 'DOGE' },
     );
 
     expect(result.passed).toBe(false);
     expect(result.violations).toHaveLength(3);
-    expect(result.violations.map((v) => v.policyType)).toEqual(['MAX_AMOUNT', 'MIN_AMOUNT', 'ALLOWED_ASSETS']);
+    expect(result.violations.map((v) => v.policyType)).toEqual([
+      'MAX_AMOUNT',
+      'MIN_AMOUNT',
+      'ALLOWED_ASSETS',
+    ]);
   });
 });
 
@@ -502,10 +614,10 @@ describe('simulatePolicy — general behavior', () => {
   });
 
   it('skips policies with missing configuration keys', () => {
-    const result = simulatePolicy(
-      [policy({ type: 'MAX_AMOUNT', configuration: {} })],
-      { ...baseTx, amount: '999999' },
-    );
+    const result = simulatePolicy([policy({ type: 'MAX_AMOUNT', configuration: {} })], {
+      ...baseTx,
+      amount: '999999',
+    });
     expect(result.passed).toBe(true);
   });
 

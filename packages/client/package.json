@@ -12,6 +12,16 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
+    },
+    "./client": {
+      "types": "./dist/client.d.ts",
+      "import": "./dist/client.js",
+      "require": "./dist/client.cjs"
+    },
+    "./retry": {
+      "types": "./dist/retry.d.ts",
+      "import": "./dist/retry.js",
+      "require": "./dist/retry.cjs"
     }
   },
   "files": ["dist"],

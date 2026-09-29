@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { Account, Keypair, Networks } from '@stellar/stellar-base';
 import { HttpClient } from '@astroid/core';
-import { NetworkError } from '@astroid/errors';
+import { NetworkError, ValidationError } from '@astroid/errors';
 import type { Transaction } from '@astroid/types';
 
 import { buildPaymentTransaction } from '../src/builder.js';
@@ -57,6 +57,12 @@ describe('formatTransactionForSubmission', () => {
     const body = formatTransactionForSubmission(tx);
     expect(body.transactionXdr).toBe(tx.toXDR());
   });
+
+  it('rejects malformed envelopes before they are prepared for submission', () => {
+    expect(() => formatTransactionForSubmission('not-a-valid-xdr')).toThrowError(
+      ValidationError,
+    );
+  });
 });
 
 describe('submitSignedTransaction', () => {
@@ -100,21 +106,12 @@ describe('submitSignedTransaction', () => {
     );
   });
 
-  it('forwards a caller-supplied AbortSignal to the transport', async () => {
-    // Stays open until its signal aborts, then rejects — proving the caller's
-    // signal reached fetch rather than being silently dropped.
-    const fetchMock = vi.fn().mockImplementation(
-      (_url, init) =>
-        new Promise<Response>((_resolve, reject) => {
-          const signal = (init as RequestInit | undefined)?.signal as AbortSignal | undefined;
-          if (signal?.aborted) {
-            reject(new DOMException('Aborted', 'AbortError'));
-            return;
-          }
-          signal?.addEventListener('abort', () => {
-            reject(new DOMException('Aborted', 'AbortError'));
-          });
-        }),
+  it('does not send a malformed envelope to the API', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ data: RECORD }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
     );
     const http = new HttpClient({
       apiKey: 'sk_test',
@@ -123,14 +120,9 @@ describe('submitSignedTransaction', () => {
       fetch: fetchMock as unknown as typeof fetch,
     });
 
-    const controller = new AbortController();
-    const pending = submitSignedTransaction(http, buildSignedXdr(), {
-      signal: controller.signal,
-    });
-
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
-    controller.abort();
-
-    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    await expect(submitSignedTransaction(http, 'not-a-valid-xdr')).rejects.toBeInstanceOf(
+      ValidationError,
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

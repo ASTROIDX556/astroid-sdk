@@ -1,5 +1,6 @@
 export * from './calculator.js';
 export * from './budget.js';
+export * from './helpers.js';
 
 // `metrics.ts`/`validation.ts` both define `SpendRequest`, and `metrics.ts`/
 // `utils.ts` both export `calculateUtilization` with different signatures

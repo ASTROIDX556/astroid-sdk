@@ -60,6 +60,7 @@ export {
 } from './classes.js';
 import {
   AuthenticationError,
+  AstroidTimeoutError,
   ForbiddenError,
   ValidationError,
   NotFoundError,
