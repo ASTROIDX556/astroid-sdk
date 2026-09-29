@@ -20,8 +20,16 @@ export {
 } from './agent.js';
 export { AstroidValidationError } from './errors.js';
 export {
+  // CreateAgentDto guards
   validateCreateAgentParams,
   isValidCreateAgentParams,
+  // UpdateAgentDto guards
+  validateUpdateAgentParams,
+  isValidUpdateAgentParams,
+  // Shared primitive guards
   isValidStellarPublicKey,
+  isValidAmountString,
+  isValidAgentId,
+  assertValidAgentId,
 } from './validation.js';
 export { AgentClient } from './client.js';

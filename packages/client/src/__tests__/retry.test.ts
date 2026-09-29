@@ -190,6 +190,10 @@ describe('computeRetryDelay', () => {
     expect(computeRetryDelay(1, config, 429, 1)).toBe(1000);
   });
 
+  it('uses Retry-After header on 503 responses (in ms)', () => {
+    expect(computeRetryDelay(1, config, 503, 1)).toBe(1000);
+  });
+
   it('caps Retry-After at maxDelayMs', () => {
     // 10 seconds → 10000ms, capped at 2000
     expect(computeRetryDelay(1, config, 429, 10)).toBe(2000);
@@ -396,6 +400,21 @@ describe('Astroid client — retry on 429', () => {
 /* -------------------------------------------------------------------------- */
 
 describe('Astroid client — non-retryable errors', () => {
+  it('does not retry on 401 (Unauthorized)', async () => {
+    const mockFetch = vi
+      .fn()
+      .mockImplementation(async () => errorResponse(401, 'UNAUTHORIZED', 'Unauthorized'));
+
+    const client = new Astroid({
+      ...BASE_CONFIG,
+      fetch: mockFetch as unknown as typeof fetch,
+    });
+    client.use(createRetryMiddleware({ maxRetries: 3, baseDelayMs: 5, maxDelayMs: 50 }));
+
+    await expect(client.wallets.get('w_401')).rejects.toBeDefined();
+    expect(mockFetch).toHaveBeenCalledTimes(1); // no retries
+  });
+
   it('does not retry on 400 (Bad Request)', async () => {
     const mockFetch = vi
       .fn()
@@ -625,6 +644,40 @@ describe('Astroid client — retry from config', () => {
     const wallet = await client.wallets.get('w_cfg');
     expect(wallet).toMatchObject({ id: 'w_config' });
     expect(callCount).toBe(2);
+  });
+
+  it('normalises the backoffFactor shorthand into the retry config', () => {
+    const client = new Astroid({
+      apiKey: 'sk_test_backoff',
+      baseUrl: 'https://api.astroid.test',
+      retries: 4,
+      minTimeout: 100,
+      backoffFactor: 1.5,
+      fetch: vi.fn() as unknown as typeof fetch,
+    });
+
+    expect(client.http.config.retry).toMatchObject({
+      maxRetries: 4,
+      baseDelayMs: 100,
+      backoffFactor: 1.5,
+    });
+  });
+
+  it('merges the backoffFactor shorthand with an explicit retry object', () => {
+    const client = new Astroid({
+      apiKey: 'sk_test_backoff',
+      baseUrl: 'https://api.astroid.test',
+      jitter: false,
+      retry: { maxRetries: 2, backoffFactor: 3, retryableStatuses: [503] },
+      fetch: vi.fn() as unknown as typeof fetch,
+    });
+
+    expect(client.http.config.retry).toMatchObject({
+      maxRetries: 2,
+      backoffFactor: 3,
+      retryableStatuses: [503],
+      jitter: false,
+    });
   });
 });
 

@@ -2,14 +2,23 @@ import { Resource } from '@astroid/core';
 import type {
   Paginated,
   Policy,
+  PolicySimulationEvaluation,
+  PolicySimulationInput,
   PolicySimulationRequest,
   PolicySimulationResult,
   PolicyType,
+  PolicyRule,
+  TransactionDetails,
+  PolicyRuleSimulationResult,
+  PolicyUpdateSimulationRequest,
+  PolicyUpdateSimulationResult,
 } from '@astroid/types';
 
 import { simulatePolicy as evaluatePolicyRules } from './simulator.js';
 import type { PolicySimulationReport, SimulatedTransaction } from './simulator.js';
 import { simulatePolicy } from './simulate-policy.js';
+import { simulatePolicyUpdate } from './simulate-policy-update.js';
+import { simulatePolicyEvaluation } from './simulation.js';
 
 /**
  * The client-side (offline) policy engine. `evaluatePolicyRules` is the pure
@@ -33,6 +42,34 @@ export {
   POLICY_SIMULATE_PATH,
   type PolicySimulationHttpClient,
 } from './simulate-policy.js';
+
+/**
+ * Server-side policy update simulation endpoint helper (issue #249). Import
+ * `simulatePolicyUpdate` to validate a proposed rule change against historical
+ * transactions without constructing a {@link PolicyResource}.
+ */
+export {
+  simulatePolicyUpdate,
+  validatePolicyUpdateSimulationInput,
+  POLICY_SIMULATE_UPDATE_PATH,
+  type PolicyUpdateSimulationHttpClient,
+} from './simulate-policy-update.js';
+
+/**
+ * Single-policy simulation helper — a dry-run against one policy by id
+ * (`POST /policies/{id}/simulate`), plus the local payload validation and the
+ * defensive response parser that back it.
+ */
+export {
+  simulatePolicyEvaluation,
+  toPolicySimulationEvaluation,
+  validatePolicySimulationInput,
+  policySimulationPath,
+  isValidPolicySimulationAmount,
+  isValidPolicySpentInWindow,
+  riskBandForScore,
+  POLICY_SIMULATE_BY_ID_PATH,
+} from './simulation.js';
 
 /** Offline policy-engine types and helpers (see {@link evaluatePolicyRules}). */
 export {
@@ -90,11 +127,18 @@ export type {
   PolicyConfiguration,
   PolicySimulationRequest,
   PolicySimulationResult,
+  PolicySimulationInput,
+  PolicySimulationEvaluation,
+  PolicyRuleBreach,
   PolicyViolation,
   PolicyViolationDetail,
   PolicyRiskAssessment,
   PolicyRiskFactor,
   PolicyBudgetImpact,
+  PolicyUpdateSimulationRequest,
+  PolicyUpdateSimulationOutcome,
+  PolicyUpdateSimulationImpact,
+  PolicyUpdateSimulationResult,
   SimulatePolicyRequest,
   Paginated,
 } from '@astroid/types';
@@ -326,8 +370,91 @@ export class PolicyResource extends Resource {
    * }
    * ```
    */
-  async simulatePolicy(input: PolicySimulationRequest): Promise<PolicySimulationResult> {
-    return simulatePolicy(this.client, input);
+  async simulatePolicy(input: PolicySimulationRequest): Promise<PolicySimulationResult>;
+  async simulatePolicy(
+    policyId: string,
+    input: PolicySimulationInput,
+  ): Promise<PolicySimulationEvaluation>;
+  /**
+   * Simulate a proposed policy rule against a target transaction payload.
+   *
+   * @param rule        The proposed policy rule to evaluate.
+   * @param transaction The target transaction/transfer payload.
+   * @returns           The simulation result indicating if it was allowed/denied.
+   */
+  async simulatePolicy(
+    rule: PolicyRule,
+    transaction: TransactionDetails,
+  ): Promise<PolicyRuleSimulationResult>;
+  async simulatePolicy(
+    policyOrRequest: string | PolicySimulationRequest | PolicyRule,
+    input?: PolicySimulationInput | TransactionDetails,
+  ): Promise<PolicySimulationResult | PolicySimulationEvaluation | PolicyRuleSimulationResult> {
+    if (typeof policyOrRequest === 'string') {
+      return this.simulatePolicyAgainst(policyOrRequest, input as PolicySimulationInput);
+    }
+    if (input) {
+      const res = await this.client.post<PolicyRuleSimulationResult>('/policies/simulate-rule', {
+        rule: policyOrRequest,
+        transaction: input,
+      });
+      return res.data;
+    }
+    return simulatePolicy(this.client, policyOrRequest as PolicySimulationRequest);
+  }
+
+  /**
+   * Simulate a proposed transaction against a **single** policy, without
+   * committing it.
+   *
+   * @param policyId The policy to evaluate the transaction against.
+   * @param input    The proposed transaction payload.
+   * @returns        The decision, violated rules, risk score and budget impact.
+   */
+  async simulatePolicyAgainst(
+    policyId: string,
+    input: PolicySimulationInput,
+  ): Promise<PolicySimulationEvaluation> {
+    return simulatePolicyEvaluation(this.client, policyId, input);
+  }
+
+  /**
+   * Validate a proposed policy rule change against historical transaction
+   * payloads before persisting the update (issue #249).
+   *
+   * The proposed rule is replayed against each historical transaction so the
+   * caller sees, up front, exactly which transactions the change would reject,
+   * which rule checks pass, and the estimated impact — all without committing
+   * anything.
+   *
+   * An unsafe change is **not** an error — `valid` is `false` and
+   * `violatedConstraints` / `estimatedImpact` describe the damage. Only a
+   * transport/API failure rejects.
+   *
+   * @param input The policy id, the proposed rule and the historical transactions.
+   * @returns     The verdict, per-transaction outcomes, aggregate impact and a
+   *              human-readable explanation.
+   * @throws      `ValidationError` when the request payload is malformed;
+   *              `NetworkError` / typed API errors when the request itself fails.
+   *
+   * @example
+   * ```ts
+   * const result = await astroid.policies.simulatePolicyUpdate({
+   *   policyId: 'pol_max',
+   *   proposedRule: { name: 'max-250', allowedRecipients: ['GABCD…'] },
+   *   transactions: [{ asset: 'USDC', amount: '150' }],
+   * });
+   *
+   * if (!result.valid) {
+   *   throw new Error(result.explanation);
+   * }
+   * await astroid.policies.update('pol_max', { /* the validated change *\/ });
+   * ```
+   */
+  async simulatePolicyUpdate(
+    input: PolicyUpdateSimulationRequest,
+  ): Promise<PolicyUpdateSimulationResult> {
+    return simulatePolicyUpdate(this.client, input);
   }
 
   /**
