@@ -41,9 +41,13 @@ describe('rate-limiter middleware — burst handling', () => {
     expect(results).toHaveLength(4);
     expect(results.every((w) => w.id === 'w_1')).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(4);
-    // A burst within capacity is dispatched without throttling delay.
+    // A burst within capacity is granted synchronously (token decrements), so
+    // the span only reflects scheduling noise. What it must never include is a
+    // refill wait: at 5 req/s a single queued request would add >= 200 ms, so
+    // 150 ms cleanly separates "dispatched immediately" from "throttled" while
+    // tolerating slow CI runners.
     const span = record.times[3]! - record.times[0]!;
-    expect(span).toBeLessThan(50);
+    expect(span).toBeLessThan(150);
   });
 });
 
