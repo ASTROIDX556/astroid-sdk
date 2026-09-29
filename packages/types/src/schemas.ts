@@ -150,6 +150,31 @@ export const IsoDateTimeSchema = z.string().datetime();
 export const DecimalStringSchema = z.string();
 
 /* -------------------------------------------------------------------------- */
+/* Asset descriptor schemas                                                    */
+/* -------------------------------------------------------------------------- */
+
+/** The native Stellar lumen asset. */
+export const NativeAssetDescriptorSchema = z.object({
+  type: z.literal('native'),
+});
+
+/** A custom issued (trustline) asset: code + issuer. */
+export const IssuedAssetDescriptorSchema = z.object({
+  type: z.literal('issued'),
+  code: z.string().regex(/^[A-Za-z0-9]{1,12}$/, 'Asset code must be 1–12 alphanumeric characters'),
+  issuer: z.string().min(1, 'Issuer is required'),
+});
+
+/** Any Stellar asset in canonical structured form. */
+export const AssetDescriptorSchema = z.discriminatedUnion('type', [
+  NativeAssetDescriptorSchema,
+  IssuedAssetDescriptorSchema,
+]);
+
+/** The TypeScript type inferred from {@link AssetDescriptorSchema}. */
+export type InferredAssetDescriptor = z.infer<typeof AssetDescriptorSchema>;
+
+/* -------------------------------------------------------------------------- */
 /* Core entity schemas                                                         */
 /* -------------------------------------------------------------------------- */
 
