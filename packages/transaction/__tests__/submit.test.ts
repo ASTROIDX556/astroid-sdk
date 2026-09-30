@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { Account, Keypair, Networks } from '@stellar/stellar-base';
 import { HttpClient } from '@astroid/core';
-import { NetworkError } from '@astroid/errors';
+import { NetworkError, ValidationError } from '@astroid/errors';
 import type { Transaction } from '@astroid/types';
 
 import { buildPaymentTransaction } from '../src/builder.js';
@@ -57,6 +57,12 @@ describe('formatTransactionForSubmission', () => {
     const body = formatTransactionForSubmission(tx);
     expect(body.transactionXdr).toBe(tx.toXDR());
   });
+
+  it('rejects malformed envelopes before they are prepared for submission', () => {
+    expect(() => formatTransactionForSubmission('not-a-valid-xdr')).toThrowError(
+      ValidationError,
+    );
+  });
 });
 
 describe('submitSignedTransaction', () => {
@@ -98,5 +104,25 @@ describe('submitSignedTransaction', () => {
     await expect(submitSignedTransaction(http, buildSignedXdr())).rejects.toBeInstanceOf(
       NetworkError,
     );
+  });
+
+  it('does not send a malformed envelope to the API', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ data: RECORD }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    const http = new HttpClient({
+      apiKey: 'sk_test',
+      baseUrl: 'https://api.example.test',
+      retry: false,
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+
+    await expect(submitSignedTransaction(http, 'not-a-valid-xdr')).rejects.toBeInstanceOf(
+      ValidationError,
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

@@ -6,7 +6,7 @@
  * the SDK never has to reason about `undefined`.
  */
 
-import type { AuthTokens } from '@astroid/types';
+import type { AuthFailureEvent, AuthTokens } from '@astroid/types';
 
 /** How the SDK authenticates each request. */
 export interface AuthConfig {
@@ -25,6 +25,13 @@ export interface AuthConfig {
   /** Callback invoked whenever tokens are refreshed or updated. */
   onTokenUpdate?: (tokens: AuthTokens) => void | Promise<void>;
   /**
+   * Fired whenever authentication fails and the session's stored credentials
+   * are cleared (issue #237): a failed refresh, a missing/expired refresh
+   * token, or a `401 Unauthorized` escalation. Lets applications and
+   * long-lived agents react to session loss (re-authenticate, alert, …).
+   */
+  onAuthFailure?: (event: AuthFailureEvent) => void | Promise<void>;
+  /**
    * Resolved dynamic token provider (set internally by `resolveConfig` when
    * `accessToken` is a function). Consumers should not set this directly.
    */
@@ -37,8 +44,12 @@ export interface RetryConfig {
   maxRetries: number;
   /** Base backoff in ms; grows exponentially with jitter. Default 250. */
   baseDelayMs: number;
+  /** Alias for baseDelayMs. */
+  baseDelay?: number;
   /** Upper bound for a single backoff delay in ms. Default 8000. */
   maxDelayMs: number;
+  /** Alias for maxDelayMs. */
+  maxDelay?: number;
   /**
    * HTTP statuses that should be retried. Defaults to the SDK set
    * `[429, 502, 503, 504]` (rate limiting and gateway errors).
@@ -197,6 +208,18 @@ export const DEFAULT_BASE_URL = 'https://api.astroid.finance';
  */
 export const DEFAULT_TIMEOUT_MS = 30_000;
 
+/**
+ * Coerce a raw timeout value into a valid millisecond deadline.
+ *
+ * `undefined` and invalid values (`<= 0`, `NaN`, `Infinity`) fall back to the
+ * SDK default {@link DEFAULT_TIMEOUT_MS} rather than letting `setTimeout`
+ * fire immediately (or never).
+ */
+export function normalizeTimeoutMs(value: number | undefined): number {
+  if (value === undefined) return DEFAULT_TIMEOUT_MS;
+  return Number.isFinite(value) && value > 0 ? value : DEFAULT_TIMEOUT_MS;
+}
+
 const DEFAULT_RETRY: RetryConfig = {
   maxRetries: 3,
   baseDelayMs: 250,
@@ -221,12 +244,21 @@ export function resolveConfig(config: AstroidClientConfig): ResolvedConfig {
     );
   }
 
-  const retry = config.retry === false ? null : { ...DEFAULT_RETRY, ...(config.retry ?? {}) };
+  let retry: RetryConfig | null = null;
+  if (config.retry !== false) {
+    const retryObj = config.retry && typeof config.retry === 'object' ? config.retry : {};
+    retry = {
+      ...DEFAULT_RETRY,
+      ...retryObj,
+      baseDelayMs: retryObj.baseDelayMs ?? retryObj.baseDelay ?? DEFAULT_RETRY.baseDelayMs,
+      maxDelayMs: retryObj.maxDelayMs ?? retryObj.maxDelay ?? DEFAULT_RETRY.maxDelayMs,
+    };
+  }
 
   return {
     baseUrl: trimTrailingSlash(config.baseUrl ?? DEFAULT_BASE_URL),
     apiVersion: config.apiVersion ?? 'v1',
-    timeoutMs: config.timeoutMs ?? config.timeout ?? DEFAULT_TIMEOUT_MS,
+    timeoutMs: normalizeTimeoutMs(config.timeoutMs ?? config.timeout),
     retry,
     headers: { ...(config.headers ?? {}) },
     auth: {
@@ -234,6 +266,7 @@ export function resolveConfig(config: AstroidClientConfig): ResolvedConfig {
       accessToken: typeof config.accessToken === 'function' ? undefined : config.accessToken,
       refreshToken: config.refreshToken,
       onTokenUpdate: config.onTokenUpdate,
+      onAuthFailure: config.onAuthFailure,
       tokenProvider: typeof config.accessToken === 'function' ? config.accessToken : undefined,
     },
     fetch: fetchImpl,

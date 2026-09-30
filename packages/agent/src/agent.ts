@@ -14,7 +14,11 @@ import type {
   PaginatedResponse,
   UpdateAgentParams,
 } from '@astroid/types';
-import { validateCreateAgentParams } from './validation.js';
+import {
+  assertValidAgentId,
+  validateCreateAgentParams,
+  validateUpdateAgentParams,
+} from './validation.js';
 
 /** Filters accepted by {@link AgentResource.list}. */
 export type AgentListParams = ListAgentsParams;
@@ -35,8 +39,21 @@ export class AgentResource extends Resource {
   /**
    * Create a new autonomous AI agent with strict input payload validation.
    *
+   * The payload is checked against {@link CreateAgentDto} before the request is
+   * dispatched: a malformed body throws an {@link AstroidValidationError}
+   * locally rather than costing a round trip and a 422.
+   *
    * @param params Agent creation parameters.
    * @returns The created agent entity.
+   *
+   * @example
+   * ```ts
+   * const agent = await astroid.agents.create({
+   *   name: 'TradingBot',
+   *   capabilities: ['trade'],
+   *   initialBudget: { currency: 'USDC', amount: '100' }
+   * });
+   * ```
    */
   async create(params: CreateAgentParams): Promise<Agent> {
     validateCreateAgentParams(params);
@@ -49,6 +66,12 @@ export class AgentResource extends Resource {
    *
    * @param agentId The unique agent ID.
    * @returns The agent entity.
+   *
+   * @example
+   * ```ts
+   * const agent = await astroid.agents.get('agt_12345');
+   * console.log(agent.status);
+   * ```
    */
   async get(agentId: string): Promise<Agent> {
     return this.getData<Agent>(`/agents/${encodeURIComponent(agentId)}`);
@@ -59,6 +82,12 @@ export class AgentResource extends Resource {
    *
    * @param params Optional filters and pagination parameters.
    * @returns A paginated list of agent entities.
+   *
+   * @example
+   * ```ts
+   * const result = await astroid.agents.list({ status: 'ACTIVE', limit: 10 });
+   * console.log(result.data.length);
+   * ```
    */
   async list(params: AgentListParams = {}): Promise<Paginated<Agent>> {
     return this.listData<Agent>('/agents', { ...params });
@@ -106,11 +135,22 @@ export class AgentResource extends Resource {
   /**
    * Update an existing agent configuration.
    *
+   * The payload is checked against {@link UpdateAgentDto} before the request is
+   * dispatched: a malformed body (or an empty no-op patch) throws an
+   * {@link AstroidValidationError} locally rather than costing a round trip.
+   *
    * @param agentId The unique agent ID.
    * @param params Updated agent parameters.
    * @returns The updated agent entity.
+   *
+   * @example
+   * ```ts
+   * const updatedAgent = await astroid.agents.update('agt_12345', { status: 'SUSPENDED' });
+   * ```
    */
   async update(agentId: string, params: UpdateAgentParams): Promise<Agent> {
+    assertValidAgentId(agentId);
+    validateUpdateAgentParams(params);
     const res = await this.client.patch<Agent>(`/agents/${encodeURIComponent(agentId)}`, params);
     return res.data;
   }
@@ -124,6 +164,12 @@ export class AgentResource extends Resource {
    *
    * @param agentId The unique agent ID.
    * @returns The deactivated agent entity.
+   *
+   * @example
+   * ```ts
+   * const deactivated = await astroid.agents.deactivate('agt_12345');
+   * console.log(deactivated.status); // 'ARCHIVED'
+   * ```
    */
   async deactivate(agentId: string): Promise<Agent> {
     const res = await this.client.post<Agent>(

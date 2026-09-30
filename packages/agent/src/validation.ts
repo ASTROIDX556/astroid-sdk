@@ -1,5 +1,40 @@
-import type { CreateAgentParams } from '@astroid/types';
+/**
+ * Runtime validation for the agent resource DTOs.
+ *
+ * `@astroid/agent` issues `POST /agents` and `PATCH /agents/:id` with developer
+ * supplied payloads. TypeScript erases at compile time, so anything crossing the
+ * network boundary from untyped input (a JSON body, a form, `localStorage`, a
+ * query string) can still be malformed by the time it reaches the resource
+ * method. These guards run **before** the HTTP request is dispatched, so a
+ * broken payload costs a local exception instead of a round trip and a 422.
+ *
+ * The module provides, for every DTO:
+ *
+ * - `validateX` — an assertion function that throws a descriptive
+ *   {@link AstroidValidationError} (field, expectation and received value in
+ *   `details`) on the first problem it finds.
+ * - `isValidX` — the matching non-throwing type guard for consumers that want to
+ *   branch on validity (form validation, feature flags, test fixtures).
+ *
+ * All exported helpers are pure and dependency-free, so they work identically in
+ * Node and browser runtimes and can be reused by consumer applications before
+ * they hand a payload to the SDK.
+ *
+ * @module
+ */
+
+import {
+  isAgentRole,
+  isAgentStatus,
+  type CreateAgentParams,
+  type UpdateAgentParams,
+} from '@astroid/types';
+
 import { AstroidValidationError } from './errors.js';
+
+/* -------------------------------------------------------------------------- */
+/* Patterns                                                                    */
+/* -------------------------------------------------------------------------- */
 
 /**
  * Stellar public key format: `G` followed by 55 base-32 characters.
@@ -11,7 +46,23 @@ import { AstroidValidationError } from './errors.js';
 const STELLAR_PUBLIC_KEY_PATTERN = /^G[A-Z2-7]{55}$/;
 
 /**
+ * Non-negative decimal amount, e.g. `"0"`, `"500"` or `"1000.00"`.
+ *
+ * Deliberately stricter than `Number(value)`, which happily accepts `"Infinity"`,
+ * `"0x10"`, `"1e3"` and `""` — all of which the Astroid API rejects. Amounts are
+ * decimal strings over the wire (to preserve precision), so only plain decimal
+ * notation is accepted here.
+ */
+const DECIMAL_AMOUNT_PATTERN = /^\d+(?:\.\d+)?$/;
+
+/* -------------------------------------------------------------------------- */
+/* Primitive guards                                                            */
+/* -------------------------------------------------------------------------- */
+
+/**
  * Whether `value` is a syntactically valid Stellar public key (`G…`).
+ *
+ * Surrounding whitespace is tolerated; the checksum is verified server-side.
  *
  * @param value The value to check.
  * @returns     `true` when `value` is a format-valid Stellar account address.
@@ -26,134 +77,244 @@ export function isValidStellarPublicKey(value: unknown): value is string {
   return typeof value === 'string' && STELLAR_PUBLIC_KEY_PATTERN.test(value.trim());
 }
 
-/** Throw a descriptive {@link AstroidValidationError} for an invalid address. */
+/**
+ * Whether `value` is a syntactically valid, non-negative decimal amount string.
+ *
+ * @param value The value to check.
+ *
+ * @example
+ * ```ts
+ * isValidAmountString('1000.00'); // true
+ * isValidAmountString('-1');       // false
+ * isValidAmountString('1e3');      // false
+ * ```
+ */
+export function isValidAmountString(value: unknown): value is string {
+  return typeof value === 'string' && DECIMAL_AMOUNT_PATTERN.test(value.trim());
+}
+
+/**
+ * Whether `value` can address an agent, i.e. a non-blank string.
+ *
+ * Ids are opaque (`agt_…`) and are percent-encoded before hitting the URL, so
+ * this deliberately checks presence only — never the shape.
+ */
+export function isValidAgentId(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Internals                                                                   */
+/* -------------------------------------------------------------------------- */
+
+/** Whether `value` is a non-null, non-array object. */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** A short, log-friendly description of a value's type. */
+function describeType(value: unknown): string {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'array';
+  return typeof value;
+}
+
+/** Throw the canonical {@link AstroidValidationError} for a field-level issue. */
+function fail(message: string, details: Record<string, unknown>): never {
+  throw new AstroidValidationError(message, details);
+}
+
+/**
+ * Require the payload root itself to be a plain object.
+ *
+ * @param params The value handed to the resource method.
+ * @param label   Human-readable name of the payload, used in the message.
+ */
+function requireObjectRoot(params: unknown, label: 'creation' | 'update'): Record<string, unknown> {
+  if (!isPlainObject(params)) {
+    fail(`Agent ${label} parameters must be a non-null object.`, {
+      received: describeType(params),
+      expected: 'object',
+    });
+  }
+  return params;
+}
+
+/** Require a present, non-blank string. */
+function requireNonEmptyString(value: unknown, field: string): void {
+  if (typeof value !== 'string' || value.trim() === '') {
+    fail(`Agent validation failed: "${field}" is required and must be a non-empty string.`, {
+      field,
+      received: value,
+      expected: 'string',
+    });
+  }
+}
+
+/** Require a present string when the field is supplied (empty text allowed). */
+function assertOptionalString(value: unknown, field: string): void {
+  if (typeof value !== 'string') {
+    fail(`Agent validation failed: "${field}" must be a string when provided.`, {
+      field,
+      received: value,
+      expected: 'string',
+    });
+  }
+}
+
+/** Require a non-blank string when the field is supplied. */
+function assertOptionalNonEmptyString(value: unknown, field: string): void {
+  if (typeof value !== 'string' || value.trim() === '') {
+    fail(`Agent validation failed: "${field}" must be a non-empty string when provided.`, {
+      field,
+      received: value,
+      expected: 'string',
+    });
+  }
+}
+
+/** Require a present, non-blank Stellar public key. */
 function assertStellarPublicKey(value: unknown, field: string): void {
   if (!isValidStellarPublicKey(value)) {
-    throw new AstroidValidationError(
+    fail(
       `Agent validation failed: "${field}" must be a valid Stellar public key (G…, 56 characters).`,
-      { field, received: value },
+      { field, received: value, expected: 'Stellar public key (G…)' },
+    );
+  }
+}
+
+/** Require a present, non-empty array of non-blank strings. */
+function assertCapabilities(value: unknown, field = 'capabilities'): void {
+  if (!Array.isArray(value) || value.length === 0) {
+    fail(
+      `Agent validation failed: "${field}" is required and must be a non-empty array of strings.`,
+      { field, received: value, expected: 'string[]' },
+    );
+  }
+
+  value.forEach((capability, index) => {
+    if (typeof capability !== 'string' || capability.trim() === '') {
+      fail(`Agent validation failed: "${field}[${index}]" must be a non-empty string.`, {
+        field: `${field}[${index}]`,
+        received: capability,
+        expected: 'string',
+      });
+    }
+  });
+}
+
+/** Require a `value` to be one of the {@link AgentStatus} enum members. */
+function assertAgentStatus(value: unknown, field: string): void {
+  if (!isAgentStatus(value)) {
+    fail(
+      `Agent validation failed: "${field}" must be a valid agent status ` +
+        `(ACTIVE, PAUSED, SUSPENDED or ARCHIVED).`,
+      { field, received: value, expected: 'AgentStatus' },
+    );
+  }
+}
+
+/** Require a `value` to be one of the {@link AgentRole} enum members. */
+function assertAgentRole(value: unknown, field: string): void {
+  if (!isAgentRole(value)) {
+    fail(
+      `Agent validation failed: "${field}" must be a valid agent role ` +
+        `(FINANCE, RESEARCH, OPERATIONS, PROCUREMENT or CUSTOM).`,
+      { field, received: value, expected: 'AgentRole' },
     );
   }
 }
 
 /**
- * Validates a CreateAgentParams payload.
- * Ensures required fields (name, capabilities, initialBudget) are present and correctly typed.
- * Throws {@link AstroidValidationError} when invalid.
+ * Validate the free-form `metadata` bag: a plain object, with the two
+ * conventionally typed keys checked. Unknown keys are passed through untouched
+ * because the backend stores metadata as JSONB.
+ */
+function assertMetadata(value: unknown, field = 'metadata'): Record<string, unknown> {
+  if (!isPlainObject(value)) {
+    fail(`Agent validation failed: "${field}" must be an object when provided.`, {
+      field,
+      received: value,
+      expected: 'object',
+    });
+  }
+
+  if (value['tags'] !== undefined) {
+    const tags = value['tags'];
+    if (!Array.isArray(tags) || tags.some((tag) => typeof tag !== 'string' || tag.trim() === '')) {
+      fail(`Agent validation failed: "${field}.tags" must be an array of non-empty strings.`, {
+        field: `${field}.tags`,
+        received: tags,
+        expected: 'string[]',
+      });
+    }
+  }
+
+  if (value['stellarAddress'] !== undefined) {
+    assertStellarPublicKey(value['stellarAddress'], `${field}.stellarAddress`);
+  }
+
+  return value;
+}
+
+/* -------------------------------------------------------------------------- */
+/* CreateAgentDto                                                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Validates a {@link CreateAgentDto} / `CreateAgentParams` payload.
+ *
+ * Ensures the required fields (`name`, `capabilities`, `initialBudget`) are
+ * present and correctly typed, that the initial budget is a well-formed
+ * non-negative decimal amount, and that the optional enum/string fields hold
+ * values the API understands. Throws {@link AstroidValidationError} on the first
+ * problem found.
  *
  * @param params The agent creation parameters to validate.
- * @throws {AstroidValidationError} If any required field is missing or invalid.
+ * @throws {AstroidValidationError} If the payload or any of its fields is invalid.
  *
  * @example
  * ```ts
  * validateCreateAgentParams({
  *   name: 'MyAgent',
  *   capabilities: ['trade'],
- *   initialBudget: { currency: 'USDC', amount: '100' }
+ *   initialBudget: { currency: 'USDC', amount: '100' },
  * });
  * ```
  */
 export function validateCreateAgentParams(params: unknown): asserts params is CreateAgentParams {
-  if (!params || typeof params !== 'object') {
-    throw new AstroidValidationError('Agent creation parameters must be a non-null object.', {
-      received: typeof params,
-    });
-  }
-
-  const p = params as Record<string, unknown>;
+  const p = requireObjectRoot(params, 'creation');
 
   // Validate name
-  if (typeof p['name'] !== 'string' || p['name'].trim() === '') {
-    throw new AstroidValidationError(
-      'Agent validation failed: "name" is required and must be a non-empty string.',
-      {
-        field: 'name',
-        received: p['name'],
-      },
-    );
-  }
+  requireNonEmptyString(p['name'], 'name');
 
   // Validate capabilities
-  if (!Array.isArray(p['capabilities']) || p['capabilities'].length === 0) {
-    throw new AstroidValidationError(
-      'Agent validation failed: "capabilities" is required and must be a non-empty array of strings.',
-      {
-        field: 'capabilities',
-        received: p['capabilities'],
-      },
-    );
-  }
-
-  for (const cap of p['capabilities']) {
-    if (typeof cap !== 'string' || cap.trim() === '') {
-      throw new AstroidValidationError(
-        'Agent validation failed: every capability must be a non-empty string.',
-        {
-          field: 'capabilities',
-          received: cap,
-        },
-      );
-    }
-  }
+  assertCapabilities(p['capabilities']);
 
   // Validate initialBudget
   const budget = p['initialBudget'];
-  if (!budget || typeof budget !== 'object') {
-    throw new AstroidValidationError(
-      'Agent validation failed: "initialBudget" is required and must be an object.',
-      {
-        field: 'initialBudget',
-        received: budget,
-      },
-    );
+  if (!isPlainObject(budget)) {
+    fail('Agent validation failed: "initialBudget" is required and must be an object.', {
+      field: 'initialBudget',
+      received: budget,
+      expected: 'object',
+    });
   }
 
-  const b = budget as Record<string, unknown>;
+  requireNonEmptyString(budget['currency'], 'initialBudget.currency');
+  requireNonEmptyString(budget['amount'], 'initialBudget.amount');
 
-  if (typeof b['currency'] !== 'string' || b['currency'].trim() === '') {
-    throw new AstroidValidationError(
-      'Agent validation failed: "initialBudget.currency" is required and must be a non-empty string.',
-      {
-        field: 'initialBudget.currency',
-        received: b['currency'],
-      },
-    );
-  }
-
-  if (typeof b['amount'] !== 'string' || b['amount'].trim() === '') {
-    throw new AstroidValidationError(
-      'Agent validation failed: "initialBudget.amount" is required and must be a non-empty string.',
-      {
-        field: 'initialBudget.amount',
-        received: b['amount'],
-      },
-    );
-  }
-
-  // Validate amount format / bounds (must be a valid positive numeric string)
-  const numAmount = Number(b['amount']);
-  if (isNaN(numAmount) || numAmount < 0) {
-    throw new AstroidValidationError(
+  // Validate amount format / bounds (must be a valid non-negative decimal string)
+  if (!isValidAmountString(budget['amount'])) {
+    fail(
       'Agent validation failed: "initialBudget.amount" must be a valid non-negative number string.',
-      {
-        field: 'initialBudget.amount',
-        received: b['amount'],
-      },
+      { field: 'initialBudget.amount', received: budget['amount'], expected: 'decimal string' },
     );
   }
 
   // Validate optional metadata shape (must be a plain object when present).
   if (p['metadata'] !== undefined) {
-    if (
-      p['metadata'] === null ||
-      typeof p['metadata'] !== 'object' ||
-      Array.isArray(p['metadata'])
-    ) {
-      throw new AstroidValidationError(
-        'Agent validation failed: "metadata" must be an object when provided.',
-        { field: 'metadata', received: p['metadata'] },
-      );
-    }
+    assertMetadata(p['metadata']);
   }
 
   // Validate optional Stellar public keys wherever the payload carries one —
@@ -164,27 +325,31 @@ export function validateCreateAgentParams(params: unknown): asserts params is Cr
     assertStellarPublicKey(p['stellarAddress'], 'stellarAddress');
   }
 
-  const metadata = p['metadata'] as Record<string, unknown> | undefined;
-  if (metadata && metadata['stellarAddress'] !== undefined) {
-    assertStellarPublicKey(metadata['stellarAddress'], 'metadata.stellarAddress');
+  // Validate optional free-form fields.
+  if (p['description'] !== undefined) {
+    assertOptionalString(p['description'], 'description');
+  }
+  if (p['role'] !== undefined) {
+    assertAgentRole(p['role'], 'role');
+  }
+  if (p['provider'] !== undefined) {
+    assertOptionalNonEmptyString(p['provider'], 'provider');
+  }
+  if (p['model'] !== undefined) {
+    assertOptionalNonEmptyString(p['model'], 'model');
   }
 
   // Validate optional primaryWalletId (an opaque id, not an address).
   if (p['primaryWalletId'] !== undefined) {
-    if (typeof p['primaryWalletId'] !== 'string' || p['primaryWalletId'].trim() === '') {
-      throw new AstroidValidationError(
-        'Agent validation failed: "primaryWalletId" must be a non-empty string when provided.',
-        { field: 'primaryWalletId', received: p['primaryWalletId'] },
-      );
-    }
+    assertOptionalNonEmptyString(p['primaryWalletId'], 'primaryWalletId');
   }
 }
 
 /**
- * Type guard to check if a payload satisfies CreateAgentParams without throwing.
+ * Type guard to check if a payload satisfies {@link CreateAgentDto} without throwing.
  *
  * @param params The payload to check.
- * @returns True if valid CreateAgentParams, false otherwise.
+ * @returns True if valid `CreateAgentParams`, false otherwise.
  */
 export function isValidCreateAgentParams(params: unknown): params is CreateAgentParams {
   try {
@@ -192,5 +357,119 @@ export function isValidCreateAgentParams(params: unknown): params is CreateAgent
     return true;
   } catch {
     return false;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* UpdateAgentDto                                                              */
+/* -------------------------------------------------------------------------- */
+
+/** Every field an {@link UpdateAgentDto} may carry. */
+const UPDATE_FIELDS = [
+  'name',
+  'description',
+  'role',
+  'provider',
+  'model',
+  'capabilities',
+  'status',
+  'primaryWalletId',
+  'metadata',
+] as const;
+
+/**
+ * Validates an {@link UpdateAgentDto} / `UpdateAgentParams` payload.
+ *
+ * Every field is optional, but a payload must carry at least one of them —
+ * an empty `PATCH` is a guaranteed no-op — and each supplied field must hold a
+ * value the API understands. `null` is accepted for `primaryWalletId` (it
+ * detaches the wallet); every other field rejects `null` and empty values so a
+ * typo cannot silently blank out an agent.
+ *
+ * @param params The agent update parameters to validate.
+ * @throws {AstroidValidationError} If the payload or any of its fields is invalid.
+ *
+ * @example
+ * ```ts
+ * validateUpdateAgentParams({ status: AgentStatus.PAUSED });
+ * validateUpdateAgentParams({ capabilities: ['trade', 'transfer'] });
+ * ```
+ */
+export function validateUpdateAgentParams(params: unknown): asserts params is UpdateAgentParams {
+  const p = requireObjectRoot(params, 'update');
+
+  // A PATCH with no updatable field changes nothing — reject it locally rather
+  // than spend a round trip on a guaranteed no-op.
+  const hasField = UPDATE_FIELDS.some((field) => p[field] !== undefined);
+  if (!hasField) {
+    fail(
+      'Agent validation failed: at least one of ' + `${UPDATE_FIELDS.join(', ')} must be provided.`,
+      { field: '(root)', received: params, expected: `one of: ${UPDATE_FIELDS.join(', ')}` },
+    );
+  }
+
+  if (p['name'] !== undefined) {
+    assertOptionalNonEmptyString(p['name'], 'name');
+  }
+  if (p['description'] !== undefined) {
+    assertOptionalString(p['description'], 'description');
+  }
+  if (p['role'] !== undefined) {
+    assertAgentRole(p['role'], 'role');
+  }
+  if (p['provider'] !== undefined) {
+    assertOptionalNonEmptyString(p['provider'], 'provider');
+  }
+  if (p['model'] !== undefined) {
+    assertOptionalNonEmptyString(p['model'], 'model');
+  }
+  if (p['capabilities'] !== undefined) {
+    assertCapabilities(p['capabilities']);
+  }
+  if (p['status'] !== undefined) {
+    assertAgentStatus(p['status'], 'status');
+  }
+  if (p['primaryWalletId'] !== undefined) {
+    // `null` explicitly detaches the agent's wallet; anything else must be an id.
+    if (p['primaryWalletId'] !== null) {
+      assertOptionalNonEmptyString(p['primaryWalletId'], 'primaryWalletId');
+    }
+  }
+  if (p['metadata'] !== undefined) {
+    assertMetadata(p['metadata']);
+  }
+}
+
+/**
+ * Type guard to check if a payload satisfies {@link UpdateAgentDto} without throwing.
+ *
+ * @param params The payload to check.
+ * @returns True if valid `UpdateAgentParams`, false otherwise.
+ */
+export function isValidUpdateAgentParams(params: unknown): params is UpdateAgentParams {
+  try {
+    validateUpdateAgentParams(params);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Path parameter                                                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Assert that `agentId` can address an agent.
+ *
+ * @throws {AstroidValidationError} When the id is missing, blank or not a string.
+ */
+export function assertValidAgentId(agentId: unknown): asserts agentId is string {
+  if (!isValidAgentId(agentId)) {
+    fail('Agent validation failed: "agentId" is required and must be a non-empty string.', {
+      field: 'agentId',
+      received: agentId,
+      expected: 'string',
+    });
   }
 }
