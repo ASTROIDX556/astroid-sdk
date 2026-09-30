@@ -58,6 +58,46 @@ const budget: Budget = {
 };
 
 describe('BudgetResource', () => {
+  it('create / createBudget posts decimal-string limits to /budgets', async () => {
+    const { client, calls, handler } = makeClient();
+    handler.mockResolvedValue(budget);
+    const resource = new BudgetResource(client);
+
+    const result = await resource.create({ name: 'Q3 Ops', limitAmount: '5000.00' });
+    expect(calls[0]).toEqual({
+      method: 'post',
+      path: '/budgets',
+      body: { name: 'Q3 Ops', limitAmount: '5000.00' },
+    });
+    expect(result).toEqual(budget);
+
+    const alias = await resource.createBudget({ name: 'Q3 Ops', limitAmount: '5000.00' });
+    expect(alias).toEqual(budget);
+  });
+
+  it('update / updateBudget patches decimal-string limits', async () => {
+    const { client, handler } = makeClient();
+    const updated = { ...budget, limitAmount: '7500.00' };
+    handler.mockResolvedValue(updated);
+    const resource = new BudgetResource(client);
+
+    const result = await resource.updateBudget(BUDGET_ID, { limitAmount: '7500.00' });
+    expect(result.limitAmount).toBe('7500.00');
+  });
+
+  it('reset / resetBudget posts to /budgets/{id}/reset', async () => {
+    const { client, calls, handler } = makeClient();
+    handler.mockResolvedValue({ ...budget, spent: '0.00' });
+    const resource = new BudgetResource(client);
+
+    const result = await resource.reset(BUDGET_ID);
+    expect(calls[0]).toEqual({ method: 'post', path: `/budgets/${BUDGET_ID}/reset`, body: undefined });
+    expect(result.spent).toBe('0.00');
+
+    const alias = await resource.resetBudget(BUDGET_ID);
+    expect(alias.spent).toBe('0.00');
+  });
+
   it('getBudget requests /budgets/{id}', async () => {
     const { client, calls, handler } = makeClient();
     handler.mockResolvedValueOnce(budget);
