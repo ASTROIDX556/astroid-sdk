@@ -260,7 +260,7 @@ describe('AgentResource CRUD', () => {
 
       await resource.update('agt_1', { primaryWalletId: null });
 
-      expect(http.patch).toHaveBeenCalledWith('/agents/agt_1', { primaryWalletId: null });
+      expect(http.patch).toHaveBeenCalledWith('/agents/agt_1', { primaryWalletId: null }, undefined);
     });
 
     it.each([
@@ -325,7 +325,7 @@ describe('AgentResource CRUD', () => {
       const result = await resource.deactivate('agt_1');
 
       expect(result).toEqual(deactivated);
-      expect(http.post).toHaveBeenCalledWith('/agents/agt_1/deactivate');
+      expect(http.post).toHaveBeenCalledWith('/agents/agt_1/deactivate', undefined, undefined);
     });
 
     it('percent-encodes slashes in the agent id for deactivate', async () => {
@@ -333,7 +333,7 @@ describe('AgentResource CRUD', () => {
 
       await resource.deactivate('agt/special');
 
-      expect(http.post).toHaveBeenCalledWith('/agents/agt%2Fspecial/deactivate');
+      expect(http.post).toHaveBeenCalledWith('/agents/agt%2Fspecial/deactivate', undefined, undefined);
     });
   });
 

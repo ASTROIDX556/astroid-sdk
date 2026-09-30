@@ -190,13 +190,15 @@ export class PolicyResource extends Resource {
   /**
    * Create a new spending policy.
    *
-   * @param input The policy to create — a {@link PolicyCreateInput}, which is
+   * @param input   The policy to create — a {@link PolicyCreateInput}, which is
    *   also the type `PolicyBuilder#build()` returns.
+   * @param options Extra request options (timeout, signal, headers) forwarded
+   *   to the HTTP client.
    * @throws `ValidationError` when the API rejects the payload.
    */
-  async create(input: PolicyCreateInput): Promise<Policy> {
+  async create(input: PolicyCreateInput, options?: RequestOptionsExtras): Promise<Policy> {
     const payload = assertPolicyCreateInput(input);
-    const res = await this.client.post<Policy>('/policies', payload);
+    const res = await this.client.post<Policy>('/policies', payload, options);
     return res.data;
   }
 

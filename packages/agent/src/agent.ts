@@ -150,6 +150,8 @@ export class AgentResource extends Resource {
    *
    * @param agentId The unique agent ID.
    * @param params Updated agent parameters.
+   * @param options Extra request options (timeout, signal, headers) forwarded
+   *   to the HTTP client.
    * @returns The updated agent entity.
    *
    * @example
@@ -157,10 +159,18 @@ export class AgentResource extends Resource {
    * const updatedAgent = await astroid.agents.update('agt_12345', { status: 'SUSPENDED' });
    * ```
    */
-  async update(agentId: string, params: UpdateAgentParams): Promise<Agent> {
+  async update(
+    agentId: string,
+    params: UpdateAgentParams,
+    options?: RequestOptionsExtras,
+  ): Promise<Agent> {
     assertValidAgentId(agentId);
     validateUpdateAgentParams(params);
-    const res = await this.client.patch<Agent>(`/agents/${encodeURIComponent(agentId)}`, params);
+    const res = await this.client.patch<Agent>(
+      `/agents/${encodeURIComponent(agentId)}`,
+      params,
+      options,
+    );
     return res.data;
   }
 
