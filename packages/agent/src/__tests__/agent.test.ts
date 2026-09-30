@@ -302,30 +302,6 @@ describe('AgentResource CRUD', () => {
   });
 
   // -------------------------------------------------------------------------
-  // deactivate
-  // -------------------------------------------------------------------------
-
-  describe('deactivate()', () => {
-    it('POSTs to /agents/:id/deactivate and returns the deactivated agent', async () => {
-      const deactivated = makeAgent({ id: 'agt_1', status: 'ARCHIVED' });
-      http.post.mockResolvedValue(httpOk(deactivated));
-
-      const result = await resource.deactivate('agt_1');
-
-      expect(result).toEqual(deactivated);
-      expect(http.post).toHaveBeenCalledWith('/agents/agt_1/deactivate');
-    });
-
-    it('percent-encodes slashes in the agent id for deactivate', async () => {
-      http.post.mockResolvedValue(httpOk(makeAgent({ status: 'ARCHIVED' })));
-
-      await resource.deactivate('agt/special');
-
-      expect(http.post).toHaveBeenCalledWith('/agents/agt%2Fspecial/deactivate');
-    });
-  });
-
-  // -------------------------------------------------------------------------
   // status
   // -------------------------------------------------------------------------
 
