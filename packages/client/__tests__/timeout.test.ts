@@ -123,4 +123,60 @@ describe('Client Timeout and AbortSignal Support', () => {
     expect(response.data).toEqual({ data: 'ok' });
     expect(fetchMock).toHaveBeenCalledOnce();
   });
+
+  it('honours a caller-provided signal on a resource API method to cancel in-flight requests', async () => {
+    // A fetch that stays open until its AbortSignal fires, then rejects.
+    const fetchMock = vi.fn().mockImplementation(
+      (_url, init) => new Promise((_, reject) => {
+        const signal = init?.signal as AbortSignal | undefined;
+        if (signal?.aborted) {
+          return reject(new DOMException('Aborted', 'AbortError'));
+        }
+        signal?.addEventListener('abort', () => {
+          reject(new DOMException('Aborted', 'AbortError'));
+        });
+      })
+    );
+
+    const client = new Astroid({
+      apiKey: 'sk_test',
+      baseUrl: 'https://api.test',
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+
+    const controller = new AbortController();
+    const pending = client.wallets.get('w_1', { signal: controller.signal, retryable: false });
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    controller.abort();
+
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('forwards a per-request timeoutMs override from a resource API method', async () => {
+    const fetchMock = vi.fn().mockImplementation(
+      (_url, init) => new Promise((_, reject) => {
+        const signal = init?.signal as AbortSignal | undefined;
+        if (signal?.aborted) {
+          return reject(new DOMException('Aborted', 'AbortError'));
+        }
+        signal?.addEventListener('abort', () => {
+          reject(new DOMException('Aborted', 'AbortError'));
+        });
+      })
+    );
+
+    const client = new Astroid({
+      apiKey: 'sk_test',
+      baseUrl: 'https://api.test',
+      retry: false,
+      timeout: 5000,
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+
+    // Global deadline is 5s; the per-request 25ms override fires first.
+    await expect(client.wallets.get('w_1', { timeoutMs: 25 })).rejects.toBeInstanceOf(
+      AstroidTimeoutError
+    );
+  });
 });

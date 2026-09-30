@@ -30,6 +30,7 @@ import {
   type AstroidClientConfig as CoreClientConfig,
   type Middleware,
   type QueryValue,
+  type RequestOptionsExtras,
   type RetryConfig,
 } from '@astroid/core';
 import type { PaginatedResponse, PaginationParams, ResponseMeta } from '@astroid/types';
@@ -194,8 +195,15 @@ export class AiResource {
    *
    * Set `simulateOnly: true` to force AI Simulation Mode (nothing is created).
    */
-  async requestPayment(intent: PaymentIntent): Promise<PaymentIntentResult> {
-    const res = await this.client.post<PaymentIntentResult>('/ai/request-payment', intent);
+  async requestPayment(
+    intent: PaymentIntent,
+    options?: RequestOptionsExtras,
+  ): Promise<PaymentIntentResult> {
+    const res = await this.client.post<PaymentIntentResult>(
+      '/ai/request-payment',
+      intent,
+      options,
+    );
     return res.data;
   }
 
@@ -203,8 +211,11 @@ export class AiResource {
    * Simulate an intent without creating anything. Convenience wrapper over
    * {@link AiResource.requestPayment} with `simulateOnly` forced on.
    */
-  async simulatePayment(intent: Omit<PaymentIntent, 'simulateOnly'>): Promise<PaymentIntentResult> {
-    return this.requestPayment({ ...intent, simulateOnly: true });
+  async simulatePayment(
+    intent: Omit<PaymentIntent, 'simulateOnly'>,
+    options?: RequestOptionsExtras,
+  ): Promise<PaymentIntentResult> {
+    return this.requestPayment({ ...intent, simulateOnly: true }, options);
   }
 }
 

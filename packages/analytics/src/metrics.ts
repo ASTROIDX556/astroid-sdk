@@ -1,4 +1,4 @@
-import type { HttpClient } from '@astroid/core';
+import type { HttpClient, RequestOptionsExtras } from '@astroid/core';
 import type {
   AnalyticsMetricsResponse,
   AnalyticsOverview,
@@ -35,11 +35,14 @@ export class AnalyticsResource {
    * Accepts optional {@link PaginationParams} (cursor / limit / order) for
    * paging through large metric sets.
    */
-  async getMetrics(params?: AnalyticsQueryParams): Promise<AnalyticsMetricsResponse> {
+  async getMetrics(
+    params?: AnalyticsQueryParams,
+    options?: RequestOptionsExtras,
+  ): Promise<AnalyticsMetricsResponse> {
     const searchParams = toSearchParams(params);
     const query = searchParams.toString();
     const path = query ? `/analytics/metrics?${query}` : '/analytics/metrics';
-    const res = await this.client.get<AnalyticsMetricsResponse>(path);
+    const res = await this.client.get<AnalyticsMetricsResponse>(path, options);
     return res.data;
   }
 
@@ -51,6 +54,7 @@ export class AnalyticsResource {
    */
   async getVolumeSummary(
     timeframeOrParams?: string | AnalyticsQueryParams,
+    options?: RequestOptionsExtras,
   ): Promise<VolumeSummary> {
     const searchParams = new URLSearchParams();
     if (typeof timeframeOrParams === 'string') {
@@ -64,7 +68,7 @@ export class AnalyticsResource {
 
     const query = searchParams.toString();
     const path = query ? `/analytics/summary?${query}` : '/analytics/summary';
-    const res = await this.client.get<VolumeSummary>(path);
+    const res = await this.client.get<VolumeSummary>(path, options);
     return res.data;
   }
 
@@ -73,7 +77,10 @@ export class AnalyticsResource {
    *
    * @param params Optional scoping (startDate, endDate, walletId, agentId).
    */
-  async overview(params?: AnalyticsQueryParams): Promise<AnalyticsOverview> {
+  async overview(
+    params?: AnalyticsQueryParams,
+    options?: RequestOptionsExtras,
+  ): Promise<AnalyticsOverview> {
     const searchParams = new URLSearchParams();
     if (params) {
       if (params.startDate) searchParams.set('startDate', params.startDate);
@@ -85,7 +92,7 @@ export class AnalyticsResource {
 
     const query = searchParams.toString();
     const path = query ? `/analytics/overview?${query}` : '/analytics/overview';
-    const res = await this.client.get<AnalyticsOverview>(path);
+    const res = await this.client.get<AnalyticsOverview>(path, options);
     return res.data;
   }
 }

@@ -32,7 +32,7 @@ describe('AnalyticsResource', () => {
 
     const summary = await resource.getVolumeSummary('month');
 
-    expect(mockGet).toHaveBeenCalledWith('/analytics/summary?timeframe=month');
+    expect(mockGet).toHaveBeenCalledWith('/analytics/summary?timeframe=month', undefined);
     expect(summary.totalVolume).toBe('100');
   });
 
@@ -43,7 +43,7 @@ describe('AnalyticsResource', () => {
 
     await resource.getVolumeSummary({ timeframe: 'day', asset: 'XLM' });
 
-    expect(mockGet).toHaveBeenCalledWith('/analytics/summary?timeframe=day&asset=XLM');
+    expect(mockGet).toHaveBeenCalledWith('/analytics/summary?timeframe=day&asset=XLM', undefined);
   });
 
   it('serializes pagination params on getMetrics', async () => {
@@ -80,6 +80,6 @@ describe('AnalyticsResource', () => {
 
     await resource.getVolumeSummary({ timeframe: 'day', cursor: 'c2', limit: 10, order: 'asc' });
 
-    expect(mockGet).toHaveBeenCalledWith('/analytics/summary?timeframe=day&cursor=c2&limit=10&order=asc');
+    expect(mockGet).toHaveBeenCalledWith('/analytics/summary?timeframe=day&cursor=c2&limit=10&order=asc', undefined);
   });
 });

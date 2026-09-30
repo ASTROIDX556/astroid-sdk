@@ -8,7 +8,7 @@
  * @packageDocumentation
  */
 
-import { Resource } from '@astroid/core';
+import { Resource, type RequestOptionsExtras } from '@astroid/core';
 import type {
   AgentAnalytics,
   AgentMetricsParams,
@@ -118,33 +118,48 @@ export type {
  */
 export class AnalyticsResource extends Resource {
   /** Headline dashboard metrics plus the spending trend. */
-  async overview(query: AnalyticsQuery = {}): Promise<AnalyticsOverview> {
-    return this.getData<AnalyticsOverview>('/analytics/overview', { ...query });
+  async overview(
+    query: AnalyticsQuery = {},
+    options?: RequestOptionsExtras,
+  ): Promise<AnalyticsOverview> {
+    return this.getData<AnalyticsOverview>('/analytics/overview', { ...query }, options);
   }
 
   /** Inflow/outflow/net cashflow over the requested window. */
-  async cashflow(query: AnalyticsQuery = {}): Promise<CashflowReport> {
-    return this.getData<CashflowReport>('/analytics/cashflow', { ...query });
+  async cashflow(
+    query: AnalyticsQuery = {},
+    options?: RequestOptionsExtras,
+  ): Promise<CashflowReport> {
+    return this.getData<CashflowReport>('/analytics/cashflow', { ...query }, options);
   }
 
   /** Spending report (alias of the cashflow endpoint's outflow view). */
-  async spending(query: AnalyticsQuery = {}): Promise<CashflowReport> {
-    return this.getData<CashflowReport>('/analytics/spending', { ...query });
+  async spending(
+    query: AnalyticsQuery = {},
+    options?: RequestOptionsExtras,
+  ): Promise<CashflowReport> {
+    return this.getData<CashflowReport>('/analytics/spending', { ...query }, options);
   }
 
   /** Risk distribution, average score, and trend. */
-  async risk(query: AnalyticsQuery = {}): Promise<RiskReport> {
-    return this.getData<RiskReport>('/analytics/risk', { ...query });
+  async risk(query: AnalyticsQuery = {}, options?: RequestOptionsExtras): Promise<RiskReport> {
+    return this.getData<RiskReport>('/analytics/risk', { ...query }, options);
   }
 
   /** Per-agent spending and risk breakdown. */
-  async agents(query: AnalyticsQuery = {}): Promise<AgentAnalytics> {
-    return this.getData<AgentAnalytics>('/analytics/agents', { ...query });
+  async agents(
+    query: AnalyticsQuery = {},
+    options?: RequestOptionsExtras,
+  ): Promise<AgentAnalytics> {
+    return this.getData<AgentAnalytics>('/analytics/agents', { ...query }, options);
   }
 
   /** Per-budget utilization breakdown. */
-  async budgets(query: AnalyticsQuery = {}): Promise<BudgetAnalytics> {
-    return this.getData<BudgetAnalytics>('/analytics/budgets', { ...query });
+  async budgets(
+    query: AnalyticsQuery = {},
+    options?: RequestOptionsExtras,
+  ): Promise<BudgetAnalytics> {
+    return this.getData<BudgetAnalytics>('/analytics/budgets', { ...query }, options);
   }
 
   /**
@@ -155,8 +170,11 @@ export class AnalyticsResource extends Resource {
    * through large historical sets without loading everything at once. Accepts
    * the shared {@link AnalyticsListParams} filters plus pagination controls.
    */
-  async listAgents(query: AnalyticsListParams = {}): Promise<Paginated<AgentSpendingRow>> {
-    return this.listData<AgentSpendingRow>('/analytics/agents', { ...query });
+  async listAgents(
+    query: AnalyticsListParams = {},
+    options?: RequestOptionsExtras,
+  ): Promise<Paginated<AgentSpendingRow>> {
+    return this.listData<AgentSpendingRow>('/analytics/agents', { ...query }, options);
   }
 
   /**
@@ -165,8 +183,11 @@ export class AnalyticsResource extends Resource {
    * Use when there are many budgets and you want to page through them with
    * `page`/`limit`/`order` rather than fetch every row in a single response.
    */
-  async listBudgets(query: AnalyticsListParams = {}): Promise<Paginated<BudgetUtilizationRow>> {
-    return this.listData<BudgetUtilizationRow>('/analytics/budgets', { ...query });
+  async listBudgets(
+    query: AnalyticsListParams = {},
+    options?: RequestOptionsExtras,
+  ): Promise<Paginated<BudgetUtilizationRow>> {
+    return this.listData<BudgetUtilizationRow>('/analytics/budgets', { ...query }, options);
   }
 
   /**
@@ -226,16 +247,26 @@ export class AnalyticsResource extends Resource {
    * });
    * ```
    */
-  async getAgentMetrics(query: AgentMetricsParams = {}): Promise<AgentMetricsReport> {
-    return this.getData<AgentMetricsReport>('/analytics/agents/metrics', { ...query });
+  async getAgentMetrics(
+    query: AgentMetricsParams = {},
+    options?: RequestOptionsExtras,
+  ): Promise<AgentMetricsReport> {
+    return this.getData<AgentMetricsReport>('/analytics/agents/metrics', { ...query }, options);
   }
 
   /**
    * Aggregated spending summary (total spent, transaction count, trend) over a
    * time window, bucketed by `interval`.
    */
-  async getSpendingSummary(query: SpendingSummaryParams = {}): Promise<SpendingSummaryReport> {
-    return this.getData<SpendingSummaryReport>('/analytics/spending/summary', { ...query });
+  async getSpendingSummary(
+    query: SpendingSummaryParams = {},
+    options?: RequestOptionsExtras,
+  ): Promise<SpendingSummaryReport> {
+    return this.getData<SpendingSummaryReport>(
+      '/analytics/spending/summary',
+      { ...query },
+      options,
+    );
   }
 
   /**
@@ -267,10 +298,14 @@ export class AnalyticsResource extends Resource {
    * console.log(series.points[0]?.metric, series.points[0]?.value);
    * ```
    */
-  async getTimeSeriesData(query: TimeSeriesDataParams = {}): Promise<TimeSeriesDataResponse> {
+  async getTimeSeriesData(
+    query: TimeSeriesDataParams = {},
+    options?: RequestOptionsExtras,
+  ): Promise<TimeSeriesDataResponse> {
     return this.getData<TimeSeriesDataResponse>(
       '/analytics/time-series',
       serializeTimeSeriesDataQuery(query),
+      options,
     );
   }
 }
