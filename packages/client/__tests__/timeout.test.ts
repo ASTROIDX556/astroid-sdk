@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { HttpClient } from '@astroid/core';
 import { AstroidTimeoutError } from '@astroid/core';
-import { Astroid } from '../src/index.js';
+import { Astroid } from '../index.js';
 
 describe('Client Timeout and AbortSignal Support', () => {
   it('throws AstroidTimeoutError when request exceeds timeout option', async () => {
@@ -22,7 +22,7 @@ describe('Client Timeout and AbortSignal Support', () => {
 
   it('supports caller-provided AbortSignal to cancel request immediately', async () => {
     const fetchMock = vi.fn().mockImplementation(
-      (_url, init) => new Promise((_, reject) => {
+      (_url: RequestInfo | URL, init?: RequestInit) => new Promise((_, reject) => {
         const signal = init?.signal;
         if (signal?.aborted) {
           return reject(new Error('Aborted'));
@@ -81,7 +81,7 @@ describe('Client Timeout and AbortSignal Support', () => {
   it('verifies timeout cancellation with mock fetch that respects AbortSignal', async () => {
     // Mock fetch that respects AbortSignal and rejects when aborted
     const fetchMock = vi.fn().mockImplementation(
-      (_url, init) => new Promise((_, reject) => {
+      (_url: RequestInfo | URL, init?: RequestInit) => new Promise((_, reject) => {
         const signal = init?.signal as AbortSignal | undefined;
         if (signal?.aborted) {
           return reject(new DOMException('Aborted', 'AbortError'));

@@ -150,6 +150,31 @@ export const IsoDateTimeSchema = z.string().datetime();
 export const DecimalStringSchema = z.string();
 
 /* -------------------------------------------------------------------------- */
+/* Asset descriptor schemas                                                    */
+/* -------------------------------------------------------------------------- */
+
+/** The native Stellar lumen asset. */
+export const NativeAssetDescriptorSchema = z.object({
+  type: z.literal('native'),
+});
+
+/** A custom issued (trustline) asset: code + issuer. */
+export const IssuedAssetDescriptorSchema = z.object({
+  type: z.literal('issued'),
+  code: z.string().regex(/^[A-Za-z0-9]{1,12}$/, 'Asset code must be 1–12 alphanumeric characters'),
+  issuer: z.string().min(1, 'Issuer is required'),
+});
+
+/** Any Stellar asset in canonical structured form. */
+export const AssetDescriptorSchema = z.discriminatedUnion('type', [
+  NativeAssetDescriptorSchema,
+  IssuedAssetDescriptorSchema,
+]);
+
+/** The TypeScript type inferred from {@link AssetDescriptorSchema}. */
+export type InferredAssetDescriptor = z.infer<typeof AssetDescriptorSchema>;
+
+/* -------------------------------------------------------------------------- */
 /* Core entity schemas                                                         */
 /* -------------------------------------------------------------------------- */
 
@@ -355,6 +380,67 @@ export const PolicyEvaluationResultSchema = z.object({
   evaluatedRules: z.number().int().nonnegative(),
   failedRules: z.number().int().nonnegative(),
   failedRuleNames: z.array(z.string()),
+});
+
+/* -------------------------------------------------------------------------- */
+/* Single-policy simulation schemas                                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The transaction payload evaluated against one specific policy.
+ *
+ * `amount` must be positive: a zero or negative transfer is never a meaningful
+ * pre-flight check, and accepting it would let a malformed payload come back
+ * "allowed" for a transaction that cannot execute.
+ */
+export const PolicySimulationInputSchema = z.object({
+  asset: z.string().min(1, 'Asset is required'),
+  amount: z.union([z.number().positive(), z.string().min(1)]),
+  recipientAddress: z.string().min(1).optional(),
+  senderAddress: z.string().min(1).optional(),
+  memo: z.string().optional(),
+  spentInWindow: z.union([z.number().nonnegative(), z.string().min(1)]).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});
+
+/** A single rule breached by a policy simulation. */
+export const PolicyRuleBreachSchema = z.object({
+  policyId: z.string().min(1),
+  policyName: z.string().min(1).optional(),
+  policyType: PolicyTypeSchema.optional(),
+  rule: z.string().min(1),
+  message: z.string(),
+  limit: z.union([z.number(), z.string()]).optional(),
+  actual: z.union([z.number(), z.string()]).optional(),
+});
+
+/** The detailed outcome of simulating a transaction against a single policy. */
+export const PolicySimulationEvaluationSchema = z.object({
+  policyId: z.string().min(1),
+  allowed: z.boolean(),
+  passed: z.boolean(),
+  violatedRules: z.array(PolicyRuleBreachSchema),
+  riskScore: z.number().min(0).max(1),
+  risk: z.object({
+    score: z.number().min(0).max(1),
+    band: RiskBandSchema,
+    factors: z.array(
+      z.object({
+        factor: z.string(),
+        score: z.number(),
+        description: z.string(),
+      }),
+    ),
+  }),
+  requiredApprovals: z.array(z.string()),
+  budgetImpact: z.array(
+    z.object({
+      budgetId: z.string(),
+      beforeRemaining: z.string(),
+      afterRemaining: z.string(),
+    }),
+  ),
+  explanation: z.string(),
 });
 
 /** Budget entity. */
@@ -663,67 +749,6 @@ export function validateTransferInput(
 ): ValidationResult<z.infer<typeof TransferInputSchema>> {
   return validate(TransferInputSchema, value);
 }
-/* -------------------------------------------------------------------------- */
-/* Single-policy simulation schemas                                            */
-/* -------------------------------------------------------------------------- */
-
-/**
- * The transaction payload evaluated against one specific policy.
- *
- * `amount` must be positive: a zero or negative transfer is never a meaningful
- * pre-flight check, and accepting it would let a malformed payload come back
- * "allowed" for a transaction that cannot execute.
- */
-export const PolicySimulationInputSchema = z.object({
-  asset: z.string().min(1, 'Asset is required'),
-  amount: z.union([z.number().positive(), z.string().min(1)]),
-  recipientAddress: z.string().min(1).optional(),
-  senderAddress: z.string().min(1).optional(),
-  memo: z.string().optional(),
-  spentInWindow: z.union([z.number().nonnegative(), z.string().min(1)]).optional(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
-});
-
-/** A single rule breached by a policy simulation. */
-export const PolicyRuleBreachSchema = z.object({
-  policyId: z.string().min(1),
-  policyName: z.string().min(1).optional(),
-  policyType: PolicyTypeSchema.optional(),
-  rule: z.string().min(1),
-  message: z.string(),
-  limit: z.union([z.number(), z.string()]).optional(),
-  actual: z.union([z.number(), z.string()]).optional(),
-});
-
-/** The detailed outcome of simulating a transaction against a single policy. */
-export const PolicySimulationEvaluationSchema = z.object({
-  policyId: z.string().min(1),
-  allowed: z.boolean(),
-  passed: z.boolean(),
-  violatedRules: z.array(PolicyRuleBreachSchema),
-  riskScore: z.number().min(0).max(1),
-  risk: z.object({
-    score: z.number().min(0).max(1),
-    band: RiskBandSchema,
-    factors: z.array(
-      z.object({
-        factor: z.string(),
-        score: z.number(),
-        description: z.string(),
-      }),
-    ),
-  }),
-  requiredApprovals: z.array(z.string()),
-  budgetImpact: z.array(
-    z.object({
-      budgetId: z.string(),
-      beforeRemaining: z.string(),
-      afterRemaining: z.string(),
-    }),
-  ),
-  explanation: z.string(),
-});
-
 
 /**
  * Validate a single-policy simulation payload

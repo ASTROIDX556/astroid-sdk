@@ -1,5 +1,6 @@
 export * from './enums.js';
 export * from './common.js';
+export * from './asset.js';
 export * from './entities.js';
 export * from './dto.js';
 export * from './policy.js';

@@ -1,4 +1,5 @@
 export * from './builder.js';
+export * from './asset-builder.js';
 export * from './multi-operation.js';
 export * from './feeBump.js';
 export * from './decoder.js';
@@ -11,4 +12,6 @@ export * from './fee-estimation.js';
 export * from './format.js';
 export * from './validate.js';
 export * from './budget-delegation.js';
+export * from './policy-builders.js';
+export * from './policy-submitter.js';
 export { TransactionsResource, TransactionResource, type ProposalListParams } from './resource.js';

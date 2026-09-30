@@ -27,7 +27,7 @@ import type { Transaction as StellarTransaction } from '@stellar/stellar-base';
 
 import { Astroid } from '@astroid/client';
 import type { AgentClient } from '@astroid/agent';
-import { PolicyBuilder, type PolicyDraft } from '@astroid/policy';
+import { PolicyBuilder, PolicyType, type PolicyDraft } from '@astroid/policy';
 import { buildPaymentTransaction, encodeTransaction } from '@astroid/transaction';
 import {
   type Agent,
@@ -365,6 +365,81 @@ describe('agent financial workflow across packages', () => {
     expect(decision.violations[0]?.policyId).toBe('pol_1');
     expect(decision.requiredApprovals).toEqual(['FINANCE_CONTROLLER']);
     expect(decision.risk.band).toBe('CRITICAL');
+  });
+
+  it('dry-runs a single policy before the transaction is signed', async () => {
+    const policy: Policy = await astroid.policies.create({
+      name: 'USDC spend cap',
+      type: PolicyType.MAX_AMOUNT,
+      configuration: { maxAmount: 1000 },
+      priority: 1,
+      enabled: true,
+    });
+
+    // The mocked endpoint enforces the cap it was configured with, so the
+    // decision and the breach list always agree.
+    api.on('POST /policies/:id/simulate', (req) => {
+      const amount = Number((req.body as { amount?: string | number } | undefined)?.amount ?? 0);
+      const overCap = amount > 1000;
+      return {
+        status: 200,
+        body: {
+          success: true,
+          data: policySimulationFixture({
+            allowed: !overCap,
+            violations: overCap
+              ? [
+                  {
+                    policyId: req.params.id ?? policy.id,
+                    policyType: PolicyType.MAX_AMOUNT,
+                    message: 'Amount exceeds policy maximum',
+                    limit: 1000,
+                    actual: amount,
+                  },
+                ]
+              : [],
+            risk: { score: overCap ? 0.92 : 0.08, band: overCap ? 'CRITICAL' : 'LOW', factors: [] },
+            explanation: overCap
+              ? 'Transaction blocked by 1 policy rule.'
+              : 'Transfer is within the cap.',
+          }),
+        },
+      };
+    });
+
+    const denied = await astroid.policies.simulatePolicy(policy.id, {
+      asset: 'USDC',
+      amount: '5000',
+    });
+
+    expect(denied.policyId).toBe(policy.id);
+    expect(denied.allowed).toBe(false);
+    expect(denied.passed).toBe(false);
+    expect(denied.riskScore).toBe(0.92);
+    expect(denied.risk.band).toBe('CRITICAL');
+    expect(denied.violatedRules).toEqual([
+      {
+        policyId: policy.id,
+        policyType: PolicyType.MAX_AMOUNT,
+        rule: 'MAX_AMOUNT',
+        message: 'Amount exceeds policy maximum',
+        limit: 1000,
+        actual: 5000,
+      },
+    ]);
+
+    // The same endpoint, for a transfer that fits the cap.
+    const allowed = await astroid.policies.simulatePolicyAgainst(policy.id, {
+      asset: 'USDC',
+      amount: '250',
+    });
+
+    expect(allowed.allowed).toBe(true);
+    expect(allowed.violatedRules).toEqual([]);
+    expect(allowed.riskScore).toBe(0.08);
+
+    // The per-policy path is used, never the organization-wide one.
+    expect(api.calls()).toContain(`POST /policies/${policy.id}/simulate`);
   });
 
   it('blocks a draw that would breach the budget and allows one that fits', async () => {
