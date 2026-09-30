@@ -69,6 +69,17 @@ describe('matchesPolicyScope — asset scoping', () => {
     expect(matchesPolicyScope(listed, { asset: 'EURC' })).toBe(false);
   });
 
+  it('does not match a pinned-issuer policy for a different issuer', () => {
+    const pinned = policy({ configuration: { allowedAssets: ['USDC:GTRUSTEDISSUER'] } });
+    expect(matchesPolicyScope(pinned, { asset: 'USDC:GTRUSTEDISSUER' })).toBe(true);
+    expect(matchesPolicyScope(pinned, { asset: 'USDC:GOTHERISSUER' })).toBe(false);
+  });
+
+  it('matches a bare-code allowlist entry for any issuer', () => {
+    const listed = policy({ configuration: { allowedAssets: ['USDC'] } });
+    expect(matchesPolicyScope(listed, { asset: 'USDC:GOTHERISSUER' })).toBe(true);
+  });
+
   it('ignores asset constraints when the scope names no asset', () => {
     const listed = policy({ configuration: { allowedAssets: ['XLM'] } });
     expect(matchesPolicyScope(listed, {})).toBe(true);

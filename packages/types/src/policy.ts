@@ -114,6 +114,95 @@ export interface SimulatePolicyRequest {
   spentInWindow?: string;
 }
 
+export interface PolicyRuleSimulationRequest {
+  rule: PolicyRule;
+  transaction: TransactionDetails;
+}
+
+export interface PolicyRuleSimulationResult {
+  allowed: boolean;
+  denied: boolean;
+  triggeredRuleIds: string[];
+}
+
+/* -------------------------------------------------------------------------- */
+/* Policy update simulation (issue #249)                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A dry-run validation of a proposed policy rule change (issue #249).
+ *
+ * The proposed rule is replayed against historical transaction payloads so a
+ * policy update can be tested before it is persisted — without risking
+ * unintended transaction rejections on the Stellar network. Sent to the
+ * `POST /policies/simulate-update` endpoint.
+ */
+export interface PolicyUpdateSimulationRequest {
+  /** The policy whose update is being validated. */
+  policyId: string;
+  /** The proposed replacement rule to validate before persisting. */
+  proposedRule: PolicyRule;
+  /**
+   * Historical transaction payloads to replay against the proposed rule.
+   * At least one transaction is required — simulating against an empty
+   * history proves nothing.
+   */
+  transactions: TransactionDetails[];
+  /** Optional scope narrowing: agent whose context the rule applies to. */
+  agentId?: string;
+  /** Optional scope narrowing: wallet whose context the rule applies to. */
+  walletId?: string;
+  /** Arbitrary caller metadata, echoed back by the API. */
+  metadata?: Record<string, unknown>;
+}
+
+/** The replay of one historical transaction against the proposed rule. */
+export interface PolicyUpdateSimulationOutcome {
+  /** Zero-based index of the historical transaction in the request. */
+  transactionIndex: number;
+  /** Whether the proposed rule permits this historical transaction. */
+  allowed: boolean;
+  /** Names of the proposed rules this transaction complies with. */
+  passedRules: string[];
+  /** The checks this transaction failed under the proposed rule. */
+  violatedConstraints: PolicyRuleEvaluation[];
+}
+
+/** The estimated effect of persisting the proposed policy change. */
+export interface PolicyUpdateSimulationImpact {
+  /** Number of historical transactions evaluated. */
+  evaluatedTransactionCount: number;
+  /** Number of historical transactions the proposed rule would reject. */
+  blockedTransactionCount: number;
+  /** Fraction of evaluated transactions blocked, between `0` and `1`. */
+  blockedRatio: number;
+}
+
+/**
+ * The outcome of a policy update simulation (`PolicyResource.simulatePolicyUpdate`).
+ *
+ * An invalid proposed rule is **not** an error: `valid` is `false` and
+ * `violatedConstraints` / `estimatedImpact` explain exactly which historical
+ * transactions the change would have rejected, so callers can surface a
+ * precise message instead of catching an exception.
+ */
+export interface PolicyUpdateSimulationResult {
+  /** Whether the proposed change is safe: no historical transaction would be blocked. */
+  valid: boolean;
+  /** Alias of {@link PolicyUpdateSimulationResult.valid} using pass/fail terminology. */
+  passed: boolean;
+  /** One outcome per replayed historical transaction, in request order. */
+  outcomes: PolicyUpdateSimulationOutcome[];
+  /** Names of the proposed rules that passed against every historical transaction. */
+  passedRules: string[];
+  /** Every failed check across the replay, in first-failure order. */
+  violatedConstraints: PolicyRuleEvaluation[];
+  /** Aggregate effect of persisting the change. */
+  estimatedImpact: PolicyUpdateSimulationImpact;
+  /** Human-readable summary of the simulation. */
+  explanation: string;
+}
+
 /* -------------------------------------------------------------------------- */
 /* Local evaluation engine                                                     */
 /* -------------------------------------------------------------------------- */
@@ -251,3 +340,95 @@ export interface PolicyEvaluationResult {
   /** Names of the rules that failed, de-duplicated and in first-failure order. */
   failedRuleNames: string[];
 }
+/* -------------------------------------------------------------------------- */
+/* Single-policy simulation (POST /policies/{id}/simulate)                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The transaction payload evaluated against one specific policy.
+ *
+ * Unlike {@link PolicySimulationRequest}, which scopes the evaluation to an
+ * organization (`walletId` / `agentId`) and optionally a set of rules, this
+ * request targets a single policy by id — the policy itself supplies the rules
+ * and the scope. Amounts are decimal strings (or numbers) and are never
+ * re-parsed client-side, so precision is preserved end to end.
+ */
+export interface PolicySimulationInput {
+  /** Asset identifier: `XLM`, `USDC`, or `USDC:G…Issuer`. */
+  asset: string;
+  /** Amount to transfer. Must be a positive finite number or decimal string. */
+  amount: string | number;
+  /** Destination account, required by recipient rules. */
+  recipientAddress?: string;
+  /** Source account the spend is attributed to. */
+  senderAddress?: string;
+  /** Optional transaction memo. */
+  memo?: string;
+  /**
+   * Amount already spent within the active budget window (day/week/month), used
+   * by the rolling-limit rules. Decimal string or number; `0` is valid.
+   */
+  spentInWindow?: string | number;
+  /** Arbitrary caller metadata, echoed back by the API. */
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * A single rule breached by a policy simulation.
+ *
+ * A breach is reported, never thrown: an agent can read `rule` to branch on a
+ * machine-readable reason and `message` to surface a human-readable one.
+ */
+export interface PolicyRuleBreach {
+  /** The policy the breach belongs to; defaults to the simulated policy id. */
+  policyId: string;
+  /** The policy's display name, when the API reported it. */
+  policyName?: string;
+  /** The policy rule type, when the API reported a known type. */
+  policyType?: PolicyType;
+  /**
+   * Machine-readable reason for the breach (a rule name or code, e.g.
+   * `MAX_AMOUNT`). Falls back to the policy type, then `POLICY_RULE`.
+   */
+  rule: string;
+  /** Human-readable explanation of the breach. */
+  message: string;
+  /** The configured limit that was breached, when applicable. */
+  limit?: number | string;
+  /** The actual value that breached the limit, when applicable. */
+  actual?: number | string;
+}
+
+/**
+ * The detailed outcome of simulating a transaction against a single policy
+ * (`PolicyResource.simulatePolicy(policyId, input)`).
+ *
+ * The decision is fail-closed: a denial resolves normally with
+ * `allowed: false` and the breaches listed in `violatedRules`, while a response
+ * that carries no decision at all is rejected as malformed rather than being
+ * reported as an allow.
+ */
+export interface PolicySimulationEvaluation {
+  /** The policy that was simulated. */
+  policyId: string;
+  /** Whether the transaction complies with the policy. */
+  allowed: boolean;
+  /** Alias of {@link PolicySimulationEvaluation.allowed} (pass/fail wording). */
+  passed: boolean;
+  /** The breached rules, in the order the API reported them. */
+  violatedRules: PolicyRuleBreach[];
+  /**
+   * The 0..1 risk score reported by the API, clamped to the `0`–`1` range.
+   * `0` when the API reported no risk assessment.
+   */
+  riskScore: number;
+  /** The full risk assessment: score, band and contributing factors. */
+  risk: PolicyRiskAssessment;
+  /** Roles whose approval is required before the transaction may proceed. */
+  requiredApprovals: string[];
+  /** How the transaction would move each affected budget. */
+  budgetImpact: PolicyBudgetImpact[];
+  /** Human-readable summary of the decision. */
+  explanation: string;
+}
+

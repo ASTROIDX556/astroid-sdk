@@ -200,6 +200,14 @@ export const AgentSchema = z.object({
   deletedAt: IsoDateTimeSchema.nullable().optional(),
 });
 
+/**
+ * The TypeScript type inferred from {@link AgentSchema} (issue #265).
+ *
+ * Compile-time assertion below proves it is structurally identical to the
+ * canonical {@link Agent} interface, so either can be used interchangeably.
+ */
+export type InferredAgent = z.infer<typeof AgentSchema>;
+
 /** Wallet entity. */
 export const WalletSchema = z.object({
   id: z.string(),
@@ -214,6 +222,9 @@ export const WalletSchema = z.object({
   updatedAt: IsoDateTimeSchema,
   deletedAt: IsoDateTimeSchema.nullable().optional(),
 });
+
+/** The TypeScript type inferred from {@link WalletSchema} (issue #265). */
+export type InferredWallet = z.infer<typeof WalletSchema>;
 
 /** Asset balance on a wallet. */
 export const AssetBalanceSchema = z.object({
@@ -279,6 +290,9 @@ export const PolicySchema = z.object({
   updatedAt: IsoDateTimeSchema,
   deletedAt: IsoDateTimeSchema.nullable().optional(),
 });
+
+/** The TypeScript type inferred from {@link PolicySchema} (issue #265). */
+export type InferredPolicy = z.infer<typeof PolicySchema>;
 
 /* -------------------------------------------------------------------------- */
 /* Local policy evaluation schemas                                             */
@@ -362,6 +376,9 @@ export const BudgetSchema = z.object({
   updatedAt: IsoDateTimeSchema,
   deletedAt: IsoDateTimeSchema.nullable().optional(),
 });
+
+/** The TypeScript type inferred from {@link BudgetSchema} (issue #265). */
+export type InferredBudget = z.infer<typeof BudgetSchema>;
 
 /** Budget history entry. */
 export const BudgetHistoryEntrySchema = z.object({
@@ -645,4 +662,85 @@ export function validateTransferInput(
   value: unknown,
 ): ValidationResult<z.infer<typeof TransferInputSchema>> {
   return validate(TransferInputSchema, value);
+}
+/* -------------------------------------------------------------------------- */
+/* Single-policy simulation schemas                                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The transaction payload evaluated against one specific policy.
+ *
+ * `amount` must be positive: a zero or negative transfer is never a meaningful
+ * pre-flight check, and accepting it would let a malformed payload come back
+ * "allowed" for a transaction that cannot execute.
+ */
+export const PolicySimulationInputSchema = z.object({
+  asset: z.string().min(1, 'Asset is required'),
+  amount: z.union([z.number().positive(), z.string().min(1)]),
+  recipientAddress: z.string().min(1).optional(),
+  senderAddress: z.string().min(1).optional(),
+  memo: z.string().optional(),
+  spentInWindow: z.union([z.number().nonnegative(), z.string().min(1)]).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});
+
+/** A single rule breached by a policy simulation. */
+export const PolicyRuleBreachSchema = z.object({
+  policyId: z.string().min(1),
+  policyName: z.string().min(1).optional(),
+  policyType: PolicyTypeSchema.optional(),
+  rule: z.string().min(1),
+  message: z.string(),
+  limit: z.union([z.number(), z.string()]).optional(),
+  actual: z.union([z.number(), z.string()]).optional(),
+});
+
+/** The detailed outcome of simulating a transaction against a single policy. */
+export const PolicySimulationEvaluationSchema = z.object({
+  policyId: z.string().min(1),
+  allowed: z.boolean(),
+  passed: z.boolean(),
+  violatedRules: z.array(PolicyRuleBreachSchema),
+  riskScore: z.number().min(0).max(1),
+  risk: z.object({
+    score: z.number().min(0).max(1),
+    band: RiskBandSchema,
+    factors: z.array(
+      z.object({
+        factor: z.string(),
+        score: z.number(),
+        description: z.string(),
+      }),
+    ),
+  }),
+  requiredApprovals: z.array(z.string()),
+  budgetImpact: z.array(
+    z.object({
+      budgetId: z.string(),
+      beforeRemaining: z.string(),
+      afterRemaining: z.string(),
+    }),
+  ),
+  explanation: z.string(),
+});
+
+
+/**
+ * Validate a single-policy simulation payload
+ * (`PolicyResource.simulatePolicy(policyId, input)` input).
+ */
+export function validatePolicySimulationInput(
+  value: unknown,
+): ValidationResult<z.infer<typeof PolicySimulationInputSchema>> {
+  return validate(PolicySimulationInputSchema, value);
+}
+
+/**
+ * Validate a parsed single-policy simulation result
+ * (`PolicySimulationEvaluation`) — the shape the SDK guarantees its callers.
+ */
+export function validatePolicySimulationEvaluation(
+  value: unknown,
+): ValidationResult<z.infer<typeof PolicySimulationEvaluationSchema>> {
+  return validate(PolicySimulationEvaluationSchema, value);
 }

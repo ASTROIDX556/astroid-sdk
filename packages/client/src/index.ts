@@ -84,21 +84,36 @@ import { createTokenRefreshInterceptor } from './token-refresh.js';
 export interface AstroidClientConfig extends CoreClientConfig {
   /** Maximum number of retries after the first attempt (shorthand for `retry.maxRetries`). */
   retries?: number;
+  /** Maximum number of retries after the first attempt (alias for `retries` / `retry.maxRetries`). */
+  maxRetries?: number;
   /**
    * Minimum (base) backoff delay in ms before the first retry — the delay grows
    * exponentially from here (shorthand for `retry.baseDelayMs`).
    */
   minTimeout?: number;
+  /** Base backoff delay in ms before the first retry (alias for `minTimeout` / `retry.baseDelayMs`). */
+  baseDelay?: number;
+  /** Base backoff delay in ms before the first retry (alias for `minTimeout` / `retry.baseDelayMs`). */
+  baseDelayMs?: number;
   /**
    * Maximum backoff delay in ms for any single retry (shorthand for
    * `retry.maxDelayMs`).
    */
   maxTimeout?: number;
+  /** Maximum backoff delay in ms for any single retry (alias for `maxTimeout` / `retry.maxDelayMs`). */
+  maxDelay?: number;
+  /** Maximum backoff delay in ms for any single retry (alias for `maxTimeout` / `retry.maxDelayMs`). */
+  maxDelayMs?: number;
   /**
    * HTTP statuses that should be retried (shorthand for
    * `retry.retryableStatuses`). Defaults to `[429, 502, 503, 504]`.
    */
   retryableStatuses?: number[];
+  /**
+   * HTTP status codes that should be retried (alias for `retryableStatuses` /
+   * `retry.retryableStatusCodes`). Defaults to `[429, 502, 503, 504]`.
+   */
+  retryableStatusCodes?: number[];
   /**
    * Exponential growth factor applied between retries — the uncapped delay for
    * retry `n` is `retry.baseDelayMs * backoffFactor^(n-1)` (shorthand for
@@ -113,7 +128,7 @@ export interface AstroidClientConfig extends CoreClientConfig {
   jitter?: boolean;
   /**
    * Base retry delay in ms. Legacy alias for {@link AstroidClientConfig.minTimeout}.
-   * @deprecated Prefer `minTimeout`.
+   * @deprecated Prefer `minTimeout` or `baseDelay`.
    */
   retryDelay?: number;
   /** Request/response logging hooks with automatic header redaction. */
@@ -153,6 +168,12 @@ export interface AstroidClientConfig extends CoreClientConfig {
  * addition to the core transport options.
  */
 export type ClientOptions = AstroidClientConfig;
+
+/**
+ * Configuration options interface for {@link AstroidClient} (issue #214).
+ * Alias for {@link AstroidClientConfig}.
+ */
+export type AstroidClientOptions = AstroidClientConfig;
 
 /** The AI-native namespace: express intents, not low-level transfers. */
 export class AiResource {
@@ -285,6 +306,10 @@ export class Astroid {
       accessToken: typeof authConfig.accessToken === 'string' ? authConfig.accessToken : undefined,
       refreshToken: authConfig.refreshToken,
       onTokenUpdate: authConfig.onTokenUpdate,
+      // Issue #237: surface authentication failures (refresh failures,
+      // exhausted refresh tokens, escalated 401s) to the application after
+      // the session manager has cleared the invalid credentials.
+      onAuthFailure: authConfig.onAuthFailure,
     });
 
     this.auth = new AuthResource(this.http, this.sessionManager);
@@ -519,6 +544,7 @@ export class Astroid {
 }
 
 export default Astroid;
+export { Astroid as AstroidClient };
 
 /**
  * Normalise the flat retry shorthand options
@@ -533,23 +559,32 @@ export default Astroid;
 function normalizeConfig(config: AstroidClientConfig): CoreClientConfig {
   const {
     retries,
+    maxRetries,
     retryDelay,
     minTimeout,
+    baseDelay,
+    baseDelayMs: customBaseDelayMs,
     maxTimeout,
+    maxDelay,
+    maxDelayMs: customMaxDelayMs,
     backoffFactor,
     retryableStatuses,
+    retryableStatusCodes,
     jitter,
     retry,
     ...rest
   } = config;
 
   const shorthand: Partial<RetryConfig> = {};
-  if (retries !== undefined) shorthand.maxRetries = retries;
-  const baseDelayMs = minTimeout ?? retryDelay;
-  if (baseDelayMs !== undefined) shorthand.baseDelayMs = baseDelayMs;
-  if (maxTimeout !== undefined) shorthand.maxDelayMs = maxTimeout;
+  const resolvedRetries = retries ?? maxRetries;
+  if (resolvedRetries !== undefined) shorthand.maxRetries = resolvedRetries;
+  const resolvedBaseDelay = minTimeout ?? baseDelay ?? customBaseDelayMs ?? retryDelay;
+  if (resolvedBaseDelay !== undefined) shorthand.baseDelayMs = resolvedBaseDelay;
+  const resolvedMaxDelay = maxTimeout ?? maxDelay ?? customMaxDelayMs;
+  if (resolvedMaxDelay !== undefined) shorthand.maxDelayMs = resolvedMaxDelay;
   if (backoffFactor !== undefined) shorthand.backoffFactor = backoffFactor;
-  if (retryableStatuses !== undefined) shorthand.retryableStatuses = retryableStatuses;
+  const resolvedStatuses = retryableStatuses ?? retryableStatusCodes;
+  if (resolvedStatuses !== undefined) shorthand.retryableStatuses = resolvedStatuses;
   if (jitter !== undefined) shorthand.jitter = jitter;
 
   // Nothing to merge, or retries explicitly disabled: leave the config as-is.
@@ -573,6 +608,7 @@ export {
   getTokenExpiration,
   type TokenStorage,
   type SessionManagerConfig,
+  type AuthFailureCallback,
 } from '@astroid/auth';
 export { WalletResource, type WalletListParams } from '@astroid/wallet';
 export { AgentResource, type AgentListParams, type AgentCursorListParams } from '@astroid/agent';
@@ -595,6 +631,7 @@ export {
   backoffDelay,
   isRetryableStatus,
   parseRetryAfter,
+  sleep,
   DEFAULT_RETRYABLE_STATUSES,
   DEFAULT_TIMEOUT_MS,
   AstroidTimeoutError,
@@ -632,6 +669,7 @@ export {
   InternalServerError,
   ServerError,
   isAstroidError,
+  isTimeoutError,
 } from '@astroid/errors';
 export {
   InsufficientFundsError,

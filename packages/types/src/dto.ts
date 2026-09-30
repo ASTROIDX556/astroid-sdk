@@ -284,6 +284,32 @@ export interface AuthTokens {
   tokenType: 'Bearer';
 }
 
+/**
+ * Why a session's credentials were invalidated (issue #237):
+ *
+ * - `'refresh_failed'` — the refresh endpoint rejected the refresh token.
+ * - `'refresh_token_expired'` — no usable refresh token was stored.
+ * - `'unauthorized_401'` — a `401 Unauthorized` was escalated to the caller.
+ */
+export type AuthFailureReason =
+  | 'refresh_failed'
+  | 'refresh_token_expired'
+  | 'unauthorized_401';
+
+/**
+ * Emitted when authentication fails and the session's stored credentials are
+ * cleared. Lets applications (and long-lived agents) react to session loss —
+ * e.g. re-authenticate, rotate credentials, or alert an operator.
+ */
+export interface AuthFailureEvent {
+  /** Why the credentials were cleared. */
+  reason: AuthFailureReason;
+  /** The error that caused the invalidation. */
+  error: unknown;
+  /** ISO-8601 timestamp of when the failure was handled. */
+  timestamp: string;
+}
+
 export interface AuthSession {
   user: User;
   organization: Organization;

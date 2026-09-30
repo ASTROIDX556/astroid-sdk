@@ -57,15 +57,28 @@ export type PolicyMatcher = (
 /* Asset matching helpers                                                      */
 /* -------------------------------------------------------------------------- */
 
-/** The asset code portion of an identifier (`USDC:G…` → `USDC`). */
-function assetCode(asset: string): string {
-  return asset.split(':')[0]?.trim().toUpperCase() ?? '';
+/** Split an asset identifier into its code and optional issuer (upper-cased). */
+function parseAsset(asset: string): { code: string; issuer?: string } {
+  const [code = '', issuer] = asset.split(':');
+  return {
+    code: code.trim().toUpperCase(),
+    ...(issuer !== undefined ? { issuer: issuer.trim().toUpperCase() } : {}),
+  };
 }
 
-/** Case-insensitive asset matching: exact, or by code when issuers differ. */
+/**
+ * Case-insensitive asset matching that honours a pinned issuer.
+ *
+ * A code-only rule (`USDC`) matches any issuer of that code; a rule that pins
+ * an issuer (`USDC:G…`) requires the exact same issuer, so a policy scoped to
+ * one trustline can never be satisfied by a different (or malicious) issuer.
+ */
 function assetMatches(configured: string, txAsset: string): boolean {
-  if (configured.trim().toUpperCase() === txAsset.trim().toUpperCase()) return true;
-  return assetCode(configured) === assetCode(txAsset);
+  const wanted = parseAsset(configured);
+  const actual = parseAsset(txAsset);
+  if (wanted.code === '' || wanted.code !== actual.code) return false;
+  if (wanted.issuer === undefined) return true;
+  return actual.issuer === wanted.issuer;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -123,7 +136,10 @@ export function matchesPolicyScope(
           (entry): entry is string => typeof entry === 'string' && entry.trim().length > 0,
         )
       : [];
-    if (allowed.length > 0 && !allowed.some((entry) => assetMatches(entry, scope.asset as string))) {
+    if (
+      allowed.length > 0 &&
+      !allowed.some((entry) => assetMatches(entry, scope.asset as string))
+    ) {
       return false;
     }
   }
