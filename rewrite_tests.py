@@ -1,29 +1,23 @@
-import { renderHook, waitFor } from '@testing-library/react';
+content = """import { renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { useCreateAgent, useUpdateAgent, useDeleteAgent } from '../hooks/useAgents.js';
-import { createMockClient, createWrapper, AGENT_A } from './test-utils.js';
-import type { CreateAgentParams } from '@astroid/types';
-const CREATE_PARAMS: CreateAgentParams = { name: 'New Agent', capabilities: [], initialBudget: { currency: 'USD', amount: '100.00' } };
+import { createMockClient, createWrapper, AGENT_A, CREATE_PARAMS } from './test-utils.js';
 import type { UpdateAgentParams } from '@astroid/types';
 
 describe('useCreateAgent', () => {
   it('calls agents.create with the correct params', async () => {
     const client = createMockClient();
-    client.agents.update = vi.fn(async () => AGENT_A);
-    client.agents.delete = vi.fn(async () => undefined);
     const { Wrapper } = createWrapper(client);
     const { result } = renderHook(() => useCreateAgent(), { wrapper: Wrapper });
 
     result.current.mutate(CREATE_PARAMS);
 
-    await waitFor(() => { if (result.current.isError) console.error(result.current.error); expect(result.current.isSuccess).toBe(true); });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(client.agents.create).toHaveBeenCalledWith(CREATE_PARAMS);
   });
 
   it('invalidates agent queries on success', async () => {
     const client = createMockClient();
-    client.agents.update = vi.fn(async () => AGENT_A);
-    client.agents.delete = vi.fn(async () => undefined);
     const { queryClient, Wrapper } = createWrapper(client);
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
 
@@ -43,8 +37,6 @@ describe('useCreateAgent', () => {
 describe('useUpdateAgent', () => {
   it('calls agents.update with the correct id and params', async () => {
     const client = createMockClient();
-    client.agents.update = vi.fn(async () => AGENT_A);
-    client.agents.delete = vi.fn(async () => undefined);
     const { Wrapper } = createWrapper(client);
     const { result } = renderHook(() => useUpdateAgent(), { wrapper: Wrapper });
 
@@ -57,8 +49,6 @@ describe('useUpdateAgent', () => {
 
   it('invalidates agent queries on success', async () => {
     const client = createMockClient();
-    client.agents.update = vi.fn(async () => AGENT_A);
-    client.agents.delete = vi.fn(async () => undefined);
     const { queryClient, Wrapper } = createWrapper(client);
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
 
@@ -78,8 +68,6 @@ describe('useUpdateAgent', () => {
 describe('useDeleteAgent', () => {
   it('calls agents.delete with the correct id', async () => {
     const client = createMockClient();
-    client.agents.update = vi.fn(async () => AGENT_A);
-    client.agents.delete = vi.fn(async () => undefined);
     const { Wrapper } = createWrapper(client);
     const { result } = renderHook(() => useDeleteAgent(), { wrapper: Wrapper });
 
@@ -91,8 +79,6 @@ describe('useDeleteAgent', () => {
 
   it('invalidates agent queries on success', async () => {
     const client = createMockClient();
-    client.agents.update = vi.fn(async () => AGENT_A);
-    client.agents.delete = vi.fn(async () => undefined);
     const { queryClient, Wrapper } = createWrapper(client);
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
 
@@ -108,3 +94,8 @@ describe('useDeleteAgent', () => {
     );
   });
 });
+"""
+
+with open('packages/react/src/__tests__/use-agent-mutations.test.tsx', 'w') as f:
+    f.write(content)
+

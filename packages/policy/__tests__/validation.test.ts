@@ -3,10 +3,23 @@ import { ValidationError } from '@astroid/errors';
 import { HttpClient } from '@astroid/core';
 import { PolicyResource } from '../src/index.js';
 
+/**
+ * A fetch that always rejects immediately.
+ *
+ * These tests only assert which errors are (not) thrown by the resource's
+ * input validation, so the transport must never reach the network: a real
+ * request to `api.example.test` intermittently hangs and trips vitest's 5s
+ * per-test timeout, making the suite flaky.
+ */
+const offlineFetch = (async () => {
+  throw new TypeError('Failed to fetch');
+}) as unknown as typeof fetch;
+
 function getResource() {
   const http = new HttpClient({
     apiKey: 'sk_test',
     baseUrl: 'https://api.example.test',
+    fetch: offlineFetch,
   });
   return new PolicyResource(http);
 }
