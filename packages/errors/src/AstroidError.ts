@@ -27,6 +27,7 @@ export {
   RateLimitError,
   ApiRateLimitError,
   NetworkError,
+  AstroidTimeoutError,
   InternalServerError,
   ServerError,
   type AstroidErrorOptions,

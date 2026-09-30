@@ -52,6 +52,31 @@ export interface AnalyticsListParams extends AnalyticsQueryParams, PaginationPar
   sort?: string;
 }
 
+/**
+ * Cursor-paginated analytics list query — the keyset counterpart to
+ * {@link AnalyticsListParams}.
+ *
+ * Instead of a 1-based `page`, the caller passes back the opaque `cursor` from
+ * the previous response's `meta.nextCursor`. Use this shape for the append-only
+ * historical collections (metric rows, audit events), where offset pagination
+ * can skip or duplicate entries as new rows land between requests. `limit` and
+ * `order` behave identically to the offset form.
+ *
+ * @example
+ * ```ts
+ * let cursor: string | undefined;
+ * do {
+ *   const page = await astroid.analytics.listAgentsByCursor({ limit: 100, cursor });
+ *   // ...
+ *   cursor = page.nextCursor ?? undefined;
+ * } while (cursor);
+ * ```
+ */
+export interface AnalyticsCursorParams extends AnalyticsQueryParams {
+  /** Field to sort the rows by. */
+  sort?: string;
+}
+
 /** A single (timestamp, value) point in a chart-ready time series. */
 export interface TimeSeriesPoint {
   date: string;
@@ -258,10 +283,7 @@ export interface TransactionVolumeReport {
 /* -------------------------------------------------------------------------- */
 
 /** The metric families the analytics service can aggregate over time. */
-export type TimeSeriesMetric =
-  | 'transaction_volume'
-  | 'fee_expenditure'
-  | 'agent_execution_count';
+export type TimeSeriesMetric = 'transaction_volume' | 'fee_expenditure' | 'agent_execution_count';
 
 /**
  * Query DTO for `GET /analytics/time-series`.

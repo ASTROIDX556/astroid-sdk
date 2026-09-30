@@ -141,8 +141,7 @@ export class SessionManager {
     this.apiKeyHeader = config.apiKeyHeader ?? 'x-api-key';
     // Infer the mode when not explicit: an API key without bearer tokens means
     // key-based auth, otherwise default to the JWT flow.
-    this.authMode =
-      config.mode ?? (config.apiKey && !config.accessToken ? 'apiKey' : 'jwt');
+    this.authMode = config.mode ?? (config.apiKey && !config.accessToken ? 'apiKey' : 'jwt');
     this.onTokenUpdate = config.onTokenUpdate;
     this.onAuthFailure = config.onAuthFailure;
   }
@@ -353,10 +352,10 @@ export class SessionManager {
     refreshFn: (refreshToken: string) => Promise<AuthTokens>,
   ): Promise<AuthTokens> {
     if (this.authMode === 'apiKey') {
-      throw new AuthenticationError(
-        'API key authentication does not support token refresh',
-        { code: 'API_KEY_MODE', status: 401 },
-      );
+      throw new AuthenticationError('API key authentication does not support token refresh', {
+        code: 'API_KEY_MODE',
+        status: 401,
+      });
     }
 
     if (this.activeRefreshPromise) {

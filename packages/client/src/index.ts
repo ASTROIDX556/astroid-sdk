@@ -343,9 +343,7 @@ export class Astroid {
       return res.data;
     };
 
-    this.use(
-      createSessionMiddleware(this.sessionManager, refreshTokens),
-    );
+    this.use(createSessionMiddleware(this.sessionManager, refreshTokens));
 
     const tokenRefresh = createTokenRefreshInterceptor({
       sessionManager: this.sessionManager,
@@ -371,7 +369,9 @@ export class Astroid {
     // X-Astroid-Correlation-ID header and fires onRequest/onResponse hooks.
     // Static tracing headers from the config are honoured as defaults and are
     // overridden by per-request options.
-    this.http.use(createCorrelationMiddleware(clientConfig?.telemetry, clientConfig?.tracingHeaders));
+    this.http.use(
+      createCorrelationMiddleware(clientConfig?.telemetry, clientConfig?.tracingHeaders),
+    );
 
     // Request/response logging with header redaction (opt-in via config).
     if (clientConfig?.logging) {
@@ -481,9 +481,7 @@ export class Astroid {
    * empty cursors and invalid `order` values are dropped — while every other
    * key passes through untouched.
    */
-  buildQuery(
-    params: PaginationParams & Record<string, QueryValue>,
-  ): Record<string, QueryValue> {
+  buildQuery(params: PaginationParams & Record<string, QueryValue>): Record<string, QueryValue> {
     const { cursor, limit, order, page, ...rest } = params;
     return {
       ...rest,
@@ -525,7 +523,9 @@ export class Astroid {
    *
    * Returns `null` when the header is missing, empty, or malformed — never throws.
    */
-  getNextCursor(headers: Headers | Record<string, string | string[] | null | undefined> | null | undefined): string | null {
+  getNextCursor(
+    headers: Headers | Record<string, string | string[] | null | undefined> | null | undefined,
+  ): string | null {
     return extractNextCursor(headers);
   }
 
@@ -534,14 +534,18 @@ export class Astroid {
    *
    * Returns `null` when the header is missing, empty, or malformed — never throws.
    */
-  getPrevCursor(headers: Headers | Record<string, string | string[] | null | undefined> | null | undefined): string | null {
+  getPrevCursor(
+    headers: Headers | Record<string, string | string[] | null | undefined> | null | undefined,
+  ): string | null {
     return extractPrevCursor(headers);
   }
 
   /**
    * Extract both `next_cursor` / `prev_cursor` cursors from response headers.
    */
-  getPaginationCursors(headers: Headers | Record<string, string | string[] | null | undefined> | null | undefined): {
+  getPaginationCursors(
+    headers: Headers | Record<string, string | string[] | null | undefined> | null | undefined,
+  ): {
     nextCursor: string | null;
     prevCursor: string | null;
   } {
@@ -651,10 +655,7 @@ export {
 // Retry policy helpers from the modular `retry` entry point. `createRetryMiddleware`
 // and `retryMiddleware` are already re-exported above; these add the pieces the
 // retry module owns directly.
-export {
-  computeRetryDelay,
-  type RetryMiddlewareConfig,
-} from './retry.js';
+export { computeRetryDelay, type RetryMiddlewareConfig } from './retry.js';
 export {
   createRateLimiterMiddleware,
   rateLimiterMiddleware,

@@ -8,7 +8,14 @@
  */
 
 import { ApiErrorCode, type ApiError } from '@astroid/types';
-export { errorClassForStatus, statusCodeToCode, mapStatusToError, errorFromStatus, extractApiError, type ErrorEnvelopeInput } from './mapper.js';
+export {
+  errorClassForStatus,
+  statusCodeToCode,
+  mapStatusToError,
+  errorFromStatus,
+  extractApiError,
+  type ErrorEnvelopeInput,
+} from './mapper.js';
 import { extractApiError, mapStatusToError } from './mapper.js';
 
 export {

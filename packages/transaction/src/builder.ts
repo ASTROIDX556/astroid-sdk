@@ -25,11 +25,7 @@ import {
 import type { FeeBumpTransaction, Transaction, xdr } from '@stellar/stellar-base';
 import { ValidationError } from '@astroid/errors';
 
-import {
-  MAX_OPERATIONS,
-  MAX_TOTAL_FEE_STROOPS,
-  MIN_BASE_FEE_STROOPS,
-} from './validator.js';
+import { MAX_OPERATIONS, MAX_TOTAL_FEE_STROOPS, MIN_BASE_FEE_STROOPS } from './validator.js';
 import {
   assertValidMemoHash,
   assertValidMemoText,
@@ -142,10 +138,9 @@ function assertPassphrase(networkPassphrase: string): void {
 function assertFeeWithinBounds(fee: string | number): number {
   const numericFee = typeof fee === 'number' ? fee : Number(fee);
   if (!Number.isFinite(numericFee) || !Number.isInteger(numericFee) || numericFee < 0) {
-    throw new ValidationError(
-      'fee must be a non-negative integer number of stroops.',
-      { code: 'INVALID_FEE' },
-    );
+    throw new ValidationError('fee must be a non-negative integer number of stroops.', {
+      code: 'INVALID_FEE',
+    });
   }
   if (numericFee < MIN_BASE_FEE_STROOPS) {
     throw new ValidationError(

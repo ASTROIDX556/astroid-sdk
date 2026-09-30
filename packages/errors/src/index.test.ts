@@ -38,7 +38,9 @@ describe('@astroid/errors', () => {
 
     it('maps FORBIDDEN to ForbiddenError and AuthorizationError', () => {
       expect(errorClassForCode('FORBIDDEN')).toBe(ForbiddenError);
-      expect(new (errorClassForCode('FORBIDDEN'))('x', { code: 'FORBIDDEN' })).toBeInstanceOf(AuthorizationError);
+      expect(new (errorClassForCode('FORBIDDEN'))('x', { code: 'FORBIDDEN' })).toBeInstanceOf(
+        AuthorizationError,
+      );
     });
 
     it('maps validation codes to ValidationError', () => {
@@ -397,15 +399,21 @@ describe('@astroid/errors', () => {
     });
 
     it('sets name to the subclass name', () => {
-      expect(new AuthenticationError('a', { code: 'AUTHENTICATION_ERROR' }).name).toBe('AuthenticationError');
+      expect(new AuthenticationError('a', { code: 'AUTHENTICATION_ERROR' }).name).toBe(
+        'AuthenticationError',
+      );
       expect(new ForbiddenError('f', { code: 'FORBIDDEN' }).name).toBe('ForbiddenError');
       expect(new RateLimitError('r', { code: 'RATE_LIMITED' }).name).toBe('RateLimitError');
       expect(new PolicyViolationError('p', { code: 'POLICY_VIOLATION' }).name).toBe(
         'PolicyViolationError',
       );
       expect(new NotFoundError('n', { code: 'NOT_FOUND' }).name).toBe('NotFoundError');
-      expect(new InsufficientFundsError('i', { code: 'INSUFFICIENT_FUNDS' }).name).toBe('InsufficientFundsError');
-      expect(new InternalServerError('s', { code: 'INTERNAL_ERROR' }).name).toBe('InternalServerError');
+      expect(new InsufficientFundsError('i', { code: 'INSUFFICIENT_FUNDS' }).name).toBe(
+        'InsufficientFundsError',
+      );
+      expect(new InternalServerError('s', { code: 'INTERNAL_ERROR' }).name).toBe(
+        'InternalServerError',
+      );
       expect(new ServerError('s', { code: 'INTERNAL_ERROR' }).name).toBe('InternalServerError');
     });
   });
@@ -479,7 +487,9 @@ describe('@astroid/errors', () => {
     );
     expect(new NotFoundError('nf', { code: 'NOT_FOUND' }).name).toBe('NotFoundError');
     expect(new ValidationError('val', { code: 'VALIDATION_ERROR' }).name).toBe('ValidationError');
-    expect(new InternalServerError('srv', { code: 'INTERNAL_ERROR' }).name).toBe('InternalServerError');
+    expect(new InternalServerError('srv', { code: 'INTERNAL_ERROR' }).name).toBe(
+      'InternalServerError',
+    );
     expect(new ServerError('srv', { code: 'INTERNAL_ERROR' }).name).toBe('InternalServerError');
   });
 });

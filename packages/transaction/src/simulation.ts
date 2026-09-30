@@ -529,8 +529,7 @@ export async function simulateTransaction(
         const reportedFee = parsed.feeBumpSuggestion?.suggestedFee;
         remote = {
           performed: true,
-          success:
-            parsed.status === undefined ? true : parsed.status !== 'failed',
+          success: parsed.status === undefined ? true : parsed.status !== 'failed',
           status: parsed.status,
           diagnostics: parsed.diagnostics,
           resourceUsage: parsed.resourceUsage,
@@ -554,11 +553,7 @@ export async function simulateTransaction(
         // swallowed either, even when the backend kept `success: true`: at the
         // bid it carries, the transaction would be rejected, so it is not
         // viable as built.
-        if (
-          remote.success &&
-          reportedFee !== undefined &&
-          reportedFee > baseFee
-        ) {
+        if (remote.success && reportedFee !== undefined && reportedFee > baseFee) {
           remote.success = false;
           remote.errorCode = 'FEE_BUMP_REQUIRED';
           remote.errorMessage =

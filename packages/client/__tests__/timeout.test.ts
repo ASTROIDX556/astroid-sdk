@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { HttpClient } from '@astroid/core';
 import { AstroidTimeoutError } from '@astroid/core';
-import { Astroid } from '../index.js';
+import { Astroid } from '../src/index.js';
 
 describe('Client Timeout and AbortSignal Support', () => {
   it('throws AstroidTimeoutError when request exceeds timeout option', async () => {

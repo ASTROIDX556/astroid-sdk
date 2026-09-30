@@ -47,7 +47,9 @@ describe('errorClassForStatus (issue #271 / #279)', () => {
 
   it('maps 403 to ForbiddenError (and matches AuthorizationError)', () => {
     expect(errorClassForStatus(403)).toBe(ForbiddenError);
-    expect(new (errorClassForStatus(403))('x', { code: 'FORBIDDEN' })).toBeInstanceOf(ForbiddenError);
+    expect(new (errorClassForStatus(403))('x', { code: 'FORBIDDEN' })).toBeInstanceOf(
+      ForbiddenError,
+    );
   });
 
   it('maps 404 to NotFoundError', () => {
@@ -214,7 +216,9 @@ describe('mapStatusToError (issue #279)', () => {
 
   it('merges body details with context details (context wins)', () => {
     const err = mapStatusToError(422, 'bad', {
-      body: { error: { code: 'VALIDATION_ERROR', message: 'bad', details: { fields: { a: ['x'] } } } },
+      body: {
+        error: { code: 'VALIDATION_ERROR', message: 'bad', details: { fields: { a: ['x'] } } },
+      },
       details: { fields: { a: ['y'] } },
     });
     expect(err.details).toEqual({ fields: { a: ['y'] } });
@@ -289,8 +293,12 @@ describe('specialized error classes (issue #271 / #279)', () => {
   });
 
   it('exposes statusCode on every constructed subclass', () => {
-    expect(new ValidationError('v', { code: 'VALIDATION_ERROR', statusCode: 422 }).statusCode).toBe(422);
-    expect(new AuthenticationError('a', { code: 'AUTHENTICATION_ERROR' }).statusCode).toBeUndefined();
+    expect(new ValidationError('v', { code: 'VALIDATION_ERROR', statusCode: 422 }).statusCode).toBe(
+      422,
+    );
+    expect(
+      new AuthenticationError('a', { code: 'AUTHENTICATION_ERROR' }).statusCode,
+    ).toBeUndefined();
   });
 
   it('defaults statusCode to status when only status is provided', () => {
