@@ -67,12 +67,8 @@ describe('createCorrelationMiddleware', () => {
     // both are fresh UUID v4s when the caller supplies neither.
     expect(prepared.headers[CORRELATION_ID_HEADER]).toMatch(UUID_V4_RE);
     expect(prepared.headers[REQUEST_ID_HEADER]).toMatch(UUID_V4_RE);
-    expect(prepared.headers[REQUEST_ID_HEADER]).not.toBe(
-      prepared.headers[CORRELATION_ID_HEADER],
-    );
-    expect(prepared.options.context?._correlationId).toBe(
-      prepared.headers[CORRELATION_ID_HEADER],
-    );
+    expect(prepared.headers[REQUEST_ID_HEADER]).not.toBe(prepared.headers[CORRELATION_ID_HEADER]);
+    expect(prepared.options.context?._correlationId).toBe(prepared.headers[CORRELATION_ID_HEADER]);
   });
 
   it('uses the caller-supplied correlation ID when provided', async () => {

@@ -119,9 +119,9 @@ describe('type guards (issue #240)', () => {
 
     it('isValidationError matches only ValidationError', () => {
       expect(isValidationError(new ValidationError('v', { code: 'VALIDATION_ERROR' }))).toBe(true);
-      expect(isValidationError(new AuthenticationError('a', { code: 'AUTHENTICATION_ERROR' }))).toBe(
-        false,
-      );
+      expect(
+        isValidationError(new AuthenticationError('a', { code: 'AUTHENTICATION_ERROR' })),
+      ).toBe(false);
     });
 
     it('isNotFoundError matches only NotFoundError', () => {
@@ -135,9 +135,9 @@ describe('type guards (issue #240)', () => {
     });
 
     it('isPolicyViolationError matches only PolicyViolationError', () => {
-      expect(isPolicyViolationError(new PolicyViolationError('p', { code: 'POLICY_VIOLATION' }))).toBe(
-        true,
-      );
+      expect(
+        isPolicyViolationError(new PolicyViolationError('p', { code: 'POLICY_VIOLATION' })),
+      ).toBe(true);
       // A spending-limit rejection is still a policy violation, not a budget one.
       expect(
         isPolicyViolationError(new PolicyViolationError('p', { code: 'RISK_THRESHOLD_EXCEEDED' })),
@@ -162,7 +162,9 @@ describe('type guards (issue #240)', () => {
       // Server outages and transport failures are retryable too, but are not
       // rate limits — callers back off differently for each.
       expect(isRateLimitError(new NetworkError('n', { code: 'NETWORK_ERROR' }))).toBe(false);
-      expect(isRateLimitError(new InternalServerError('s', { code: 'INTERNAL_ERROR' }))).toBe(false);
+      expect(isRateLimitError(new InternalServerError('s', { code: 'INTERNAL_ERROR' }))).toBe(
+        false,
+      );
     });
 
     it('isNetworkError matches only NetworkError', () => {

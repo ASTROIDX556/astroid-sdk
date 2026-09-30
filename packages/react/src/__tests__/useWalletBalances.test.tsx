@@ -217,10 +217,9 @@ describe('useWalletBalances — polling (issue #252)', () => {
     vi.useFakeTimers();
     try {
       const client = createMockClient();
-      const { result } = renderHook(
-        () => useWalletBalances('wal_abc123', { pollingInterval: 0 }),
-        { wrapper: createWrapper(client) },
-      );
+      const { result } = renderHook(() => useWalletBalances('wal_abc123', { pollingInterval: 0 }), {
+        wrapper: createWrapper(client),
+      });
 
       await vi.advanceTimersByTimeAsync(60_000);
 

@@ -241,7 +241,9 @@ export class AnalyticsResource extends Resource {
   /**
    * Transaction volume and counts over a time window, bucketed by `interval`.
    */
-  async getTransactionVolume(query: TransactionVolumeParams = {}): Promise<TransactionVolumeReport> {
+  async getTransactionVolume(
+    query: TransactionVolumeParams = {},
+  ): Promise<TransactionVolumeReport> {
     return this.getData<TransactionVolumeReport>('/analytics/volume', { ...query });
   }
 

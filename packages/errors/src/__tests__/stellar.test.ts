@@ -46,7 +46,11 @@ describe('extractStellarResultCodes (issue #253)', () => {
     const codes = extractStellarResultCodes({
       extras: { result_codes: { transaction: 'tx_malformed' } },
     });
-    expect(codes).toEqual({ transaction: 'tx_malformed', operation: undefined, operations: undefined });
+    expect(codes).toEqual({
+      transaction: 'tx_malformed',
+      operation: undefined,
+      operations: undefined,
+    });
   });
 
   it('extracts flat result_code / stellarCode shapes', () => {
@@ -135,10 +139,7 @@ describe('mapStellarError (issue #253)', () => {
   });
 
   it('builds StellarAuthError from op_bad_auth', () => {
-    const err = mapStellarError(
-      { extras: { result_codes: { operations: ['op_bad_auth'] } } },
-      {},
-    );
+    const err = mapStellarError({ extras: { result_codes: { operations: ['op_bad_auth'] } } }, {});
     expect(err).toBeInstanceOf(StellarAuthError);
     expect(err.status).toBe(401);
   });
@@ -155,19 +156,13 @@ describe('mapStellarError (issue #253)', () => {
   });
 
   it('builds StellarMalformedError from tx_malformed', () => {
-    const err = mapStellarError(
-      { extras: { result_codes: { transaction: 'tx_malformed' } } },
-      {},
-    );
+    const err = mapStellarError({ extras: { result_codes: { transaction: 'tx_malformed' } } }, {});
     expect(err).toBeInstanceOf(StellarMalformedError);
     expect(err.status).toBe(400);
   });
 
   it('builds a StellarNetworkError with raw codes for unmapped failures', () => {
-    const err = mapStellarError(
-      { extras: { result_codes: { transaction: 'tx_failed' } } },
-      {},
-    );
+    const err = mapStellarError({ extras: { result_codes: { transaction: 'tx_failed' } } }, {});
     expect(err).toBeInstanceOf(StellarNetworkError);
     const snErr = err as StellarNetworkError;
     expect(snErr.stellarCode).toBe('tx_failed');

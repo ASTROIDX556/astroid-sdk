@@ -101,10 +101,9 @@ describe('useAgentWalletBalance', () => {
 
   it('respects the enabled option', () => {
     const client = createMockClient();
-    const { result } = renderHook(
-      () => useAgentWalletBalance('wal_agent123', { enabled: false }),
-      { wrapper: createWrapper(client) },
-    );
+    const { result } = renderHook(() => useAgentWalletBalance('wal_agent123', { enabled: false }), {
+      wrapper: createWrapper(client),
+    });
 
     expect(result.current.isFetching).toBe(false);
     expect(balanceMock(client)).not.toHaveBeenCalled();

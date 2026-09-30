@@ -7,21 +7,12 @@ import {
 } from '@tanstack/react-query';
 import { queryKeys, useAstroidClient } from '../hooks.js';
 import type { BudgetListParams } from '@astroid/client';
-import type {
-  Budget,
-  CreateBudgetInput,
-  Paginated,
-  UpdateBudgetInput,
-} from '@astroid/types';
+import type { Budget, CreateBudgetInput, Paginated, UpdateBudgetInput } from '@astroid/types';
 
 // `useBudget` / `useBudgetUtilization` live in their own module (issue #74);
 // re-exported here so the long-standing `use-budgets.ts` import path keeps
 // working for existing consumers.
-export {
-  useBudget,
-  useBudgetUtilization,
-  type UseBudgetQueryOptions,
-} from './use-budget.js';
+export { useBudget, useBudgetUtilization, type UseBudgetQueryOptions } from './use-budget.js';
 
 /**
  * Fetch a paginated list of budgets.

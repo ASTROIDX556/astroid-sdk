@@ -36,10 +36,12 @@ function renderInProviders(
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
-  const client = options.client ?? new Astroid({
-    apiKey: 'sk_test_hooks',
-    baseUrl: 'https://api.test',
-  });
+  const client =
+    options.client ??
+    new Astroid({
+      apiKey: 'sk_test_hooks',
+      baseUrl: 'https://api.test',
+    });
 
   act(() => {
     root.render(
@@ -252,7 +254,9 @@ describe('useSimulatePolicy', () => {
       status: 400,
       details: { fields: { amount: ['must be a positive decimal'] } },
     });
-    (client.policies.simulatePolicy as ReturnType<typeof vi.fn>).mockRejectedValueOnce(validationError);
+    (client.policies.simulatePolicy as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      validationError,
+    );
     const { result } = renderHook(() => useSimulatePolicy(), { wrapper: createWrapper(client) });
     const onError = vi.fn();
 
