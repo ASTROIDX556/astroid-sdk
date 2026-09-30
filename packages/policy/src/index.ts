@@ -10,6 +10,8 @@ import type {
 import { simulatePolicy as evaluatePolicyRules } from './simulator.js';
 import type { PolicySimulationReport, SimulatedTransaction } from './simulator.js';
 import { simulatePolicy } from './simulate-policy.js';
+import { ValidationError } from '@astroid/errors';
+import { PolicyCreateInputSchema, PolicyUpdateInputSchema } from './schemas.js';
 
 /**
  * The client-side (offline) policy engine. `evaluatePolicyRules` is the pure
@@ -150,6 +152,16 @@ export class PolicyResource extends Resource {
    * @throws `ValidationError` when the API rejects the payload.
    */
   async create(input: PolicyCreateInput): Promise<Policy> {
+    const validation = PolicyCreateInputSchema.safeParse(input);
+    if (!validation.success) {
+      throw new ValidationError('Validation failed for PolicyCreateInput', {
+        code: 'VALIDATION_ERROR',
+        details: {
+          fields: validation.error.flatten().fieldErrors,
+        },
+      });
+    }
+
     const res = await this.client.post<Policy>('/policies', input);
     return res.data;
   }
@@ -182,6 +194,16 @@ export class PolicyResource extends Resource {
    * @throws      `NotFoundError` when no policy has that id.
    */
   async update(id: string, input: PolicyUpdateInput): Promise<Policy> {
+    const validation = PolicyUpdateInputSchema.safeParse(input);
+    if (!validation.success) {
+      throw new ValidationError('Validation failed for PolicyUpdateInput', {
+        code: 'VALIDATION_ERROR',
+        details: {
+          fields: validation.error.flatten().fieldErrors,
+        },
+      });
+    }
+
     const res = await this.client.patch<Policy>(`/policies/${encodeURIComponent(id)}`, input);
     return res.data;
   }
