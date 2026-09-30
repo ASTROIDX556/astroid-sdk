@@ -2,6 +2,8 @@ import { Resource } from '@astroid/core';
 import type {
   Paginated,
   Policy,
+  PolicySimulationEvaluation,
+  PolicySimulationInput,
   PolicySimulationRequest,
   PolicySimulationResult,
   PolicyType,
@@ -16,6 +18,13 @@ import { simulatePolicy as evaluatePolicyRules } from './simulator.js';
 import type { PolicySimulationReport, SimulatedTransaction } from './simulator.js';
 import { simulatePolicy } from './simulate-policy.js';
 import { simulatePolicyUpdate } from './simulate-policy-update.js';
+import { simulatePolicyEvaluation } from './simulation.js';
+import { 
+  assertPolicyCreateInput, 
+  assertPolicySimulationRequest,
+  PolicyUpdateInputSchema
+} from './schemas.js';
+import { ValidationError } from '@astroid/errors';
 
 /**
  * The client-side (offline) policy engine. `evaluatePolicyRules` is the pure
@@ -51,6 +60,22 @@ export {
   POLICY_SIMULATE_UPDATE_PATH,
   type PolicyUpdateSimulationHttpClient,
 } from './simulate-policy-update.js';
+
+/**
+ * Single-policy simulation helper — a dry-run against one policy by id
+ * (`POST /policies/{id}/simulate`), plus the local payload validation and the
+ * defensive response parser that back it.
+ */
+export {
+  simulatePolicyEvaluation,
+  toPolicySimulationEvaluation,
+  validatePolicySimulationInput,
+  policySimulationPath,
+  isValidPolicySimulationAmount,
+  isValidPolicySpentInWindow,
+  riskBandForScore,
+  POLICY_SIMULATE_BY_ID_PATH,
+} from './simulation.js';
 
 /** Offline policy-engine types and helpers (see {@link evaluatePolicyRules}). */
 export {
@@ -108,6 +133,9 @@ export type {
   PolicyConfiguration,
   PolicySimulationRequest,
   PolicySimulationResult,
+  PolicySimulationInput,
+  PolicySimulationEvaluation,
+  PolicyRuleBreach,
   PolicyViolation,
   PolicyViolationDetail,
   PolicyRiskAssessment,
@@ -172,7 +200,8 @@ export class PolicyResource extends Resource {
    * @throws `ValidationError` when the API rejects the payload.
    */
   async create(input: PolicyCreateInput): Promise<Policy> {
-    const res = await this.client.post<Policy>('/policies', input);
+    const payload = assertPolicyCreateInput(input);
+    const res = await this.client.post<Policy>('/policies', payload);
     return res.data;
   }
 
@@ -204,6 +233,16 @@ export class PolicyResource extends Resource {
    * @throws      `NotFoundError` when no policy has that id.
    */
   async update(id: string, input: PolicyUpdateInput): Promise<Policy> {
+    const validation = PolicyUpdateInputSchema.safeParse(input);
+    if (!validation.success) {
+      throw new ValidationError('Validation failed for PolicyUpdateInput', {
+        code: 'VALIDATION_ERROR',
+        details: {
+          fields: validation.error.flatten().fieldErrors,
+        },
+      });
+    }
+
     const res = await this.client.patch<Policy>(`/policies/${encodeURIComponent(id)}`, input);
     return res.data;
   }
@@ -317,18 +356,27 @@ export class PolicyResource extends Resource {
     await this.delete(id);
   }
   /**
-   * Simulate a proposed transaction against the organization's policy rules on
-   * the server, **without committing it**.
+   * Simulate a proposed transaction against policy rules on the server,
+   * **without committing it**.
    *
-   * The request combines the transaction payload (`asset`, `amount`,
-   * `recipientAddress`, …) with the rules to evaluate: pass `policyIds` to check
-   * specific policies, or `walletId` / `agentId` to evaluate every enabled policy
-   * in scope. The endpoint returns a {@link PolicySimulationResult} describing
-   * whether the transaction is allowed, which rules were breached, any required
-   * approvals, the risk assessment and the budget impact.
+   * Three forms are supported:
+   *
+   * - **Organization-wide** — `simulatePolicy(request)` posts the transaction
+   *   payload plus the rules to evaluate (`policyIds`, or `walletId` / `agentId`
+   *   to cover every enabled policy in scope) to `/policies/simulate` and
+   *   resolves with a {@link PolicySimulationResult}.
+   * - **Per policy** — `simulatePolicy(policyId, input)` dry-runs the payload
+   *   against one policy via `/policies/{id}/simulate` and resolves with a
+   *   {@link PolicySimulationEvaluation} (decision, violated rules, risk score).
+   *   Equivalent to {@link PolicyResource.simulatePolicyAgainst}.
+   * - **Rule evaluation** — `simulatePolicy(rule, transaction)` replays a
+   *   proposed policy rule against a target transaction payload via
+   *   `/policies/simulate-rule` and resolves with a
+   *   {@link PolicyRuleSimulationResult} (the allow/deny verdict for that rule).
    *
    * A blocked transaction is **not** an error — `allowed` is `false` and
-   * `violations` lists the breaches. Only a transport/API failure rejects.
+   * `violations` / `violatedRules` lists the breaches. Only a transport/API
+   * failure, or a response carrying no decision at all, rejects.
    *
    * @param input The transaction payload plus the policy rules to evaluate against.
    * @returns     The dry-run decision and its supporting detail.
@@ -336,6 +384,7 @@ export class PolicyResource extends Resource {
    *
    * @example
    * ```ts
+   * // Every policy in scope for a wallet:
    * const result = await astroid.policies.simulatePolicy({
    *   walletId: 'w_1',
    *   asset: 'USDC',
@@ -346,9 +395,20 @@ export class PolicyResource extends Resource {
    * if (!result.allowed) {
    *   throw new Error(result.explanation);
    * }
+   *
+   * // Just one policy, before signing:
+   * const evaluation = await astroid.policies.simulatePolicy('pol_1', {
+   *   asset: 'USDC',
+   *   amount: '250',
+   *   recipientAddress: 'GABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUVW',
+   * });
    * ```
    */
   async simulatePolicy(input: PolicySimulationRequest): Promise<PolicySimulationResult>;
+  async simulatePolicy(
+    policyId: string,
+    input: PolicySimulationInput,
+  ): Promise<PolicySimulationEvaluation>;
   /**
    * Simulate a proposed policy rule against a target transaction payload.
    *
@@ -361,17 +421,38 @@ export class PolicyResource extends Resource {
     transaction: TransactionDetails,
   ): Promise<PolicyRuleSimulationResult>;
   async simulatePolicy(
-    arg1: PolicySimulationRequest | PolicyRule,
-    arg2?: TransactionDetails,
-  ): Promise<PolicySimulationResult | PolicyRuleSimulationResult> {
-    if (arg2) {
+    policyOrRequest: string | PolicySimulationRequest | PolicyRule,
+    input?: PolicySimulationInput | TransactionDetails,
+  ): Promise<PolicySimulationResult | PolicySimulationEvaluation | PolicyRuleSimulationResult> {
+    if (typeof policyOrRequest === 'string') {
+      return this.simulatePolicyAgainst(policyOrRequest, input as PolicySimulationInput);
+    }
+    if (input) {
       const res = await this.client.post<PolicyRuleSimulationResult>('/policies/simulate-rule', {
-        rule: arg1,
-        transaction: arg2,
+        rule: policyOrRequest,
+        transaction: input,
       });
       return res.data;
     }
-    return simulatePolicy(this.client, arg1 as PolicySimulationRequest);
+    return simulatePolicy(
+      this.client,
+      assertPolicySimulationRequest(policyOrRequest) as PolicySimulationRequest,
+    );
+  }
+
+  /**
+   * Simulate a proposed transaction against a **single** policy, without
+   * committing it.
+   *
+   * @param policyId The policy to evaluate the transaction against.
+   * @param input    The proposed transaction payload.
+   * @returns        The decision, violated rules, risk score and budget impact.
+   */
+  async simulatePolicyAgainst(
+    policyId: string,
+    input: PolicySimulationInput,
+  ): Promise<PolicySimulationEvaluation> {
+    return simulatePolicyEvaluation(this.client, policyId, input);
   }
 
   /**
@@ -414,10 +495,13 @@ export class PolicyResource extends Resource {
   }
 
   /**
-   * Perform a pre-flight server-side policy simulation.
+   * Perform a pre-flight server-side policy simulation against every policy in
+   * scope.
    *
    * @deprecated Use {@link PolicyResource.simulatePolicy} instead; behaviour is
-   * identical.
+   * identical. This alias only covers the request-object form — the per-policy
+   * overload is available on {@link PolicyResource.simulatePolicy} and
+   * {@link PolicyResource.simulatePolicyAgainst}.
    */
   async simulate(input: PolicySimulationRequest): Promise<PolicySimulationResult> {
     return this.simulatePolicy(input);

@@ -36,6 +36,8 @@ import {
   assertValidPositiveAmount,
   assertValidStellarPublicKey,
 } from './validate.js';
+import { bumpFee } from './feeBump.js';
+import type { FeeBumpOptions } from './feeBump.js';
 
 /* -------------------------------------------------------------------------- */
 /* Public types                                                                */
@@ -94,6 +96,12 @@ export interface PaymentTransactionOptions extends BuildTransactionOptions {
   asset: string;
   /** Amount to send (decimal string or number). */
   amount: string | number;
+}
+
+/** Options for an autonomous agent transfer, optionally wrapped in a fee bump. */
+export interface AgentTransferTransactionOptions extends PaymentTransactionOptions {
+  /** Sponsor the transaction fee with a Stellar fee-bump envelope. */
+  feeBump?: Pick<FeeBumpOptions, 'feeSource' | 'baseFee' | 'feeBufferPercentage'>;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -355,6 +363,28 @@ export function buildPaymentTransaction(options: PaymentTransactionOptions): Tra
       amount: String(amount),
     }),
   ]);
+}
+
+/**
+ * Build an agent payment transaction, optionally wrapping it in a fee bump.
+ * The `source` account sequence is managed by Stellar's `TransactionBuilder`;
+ * when `feeBump` is supplied, the existing fee-bump validator enforces the
+ * sponsor and network constraints.
+ *
+ * @param options Transfer details and optional fee sponsorship.
+ * @returns The unsigned payment transaction or fee-bump envelope.
+ */
+export function buildAgentTransferTransaction(
+  options: AgentTransferTransactionOptions,
+): Transaction | FeeBumpTransaction {
+  const transaction = buildPaymentTransaction(options);
+  if (!options.feeBump) return transaction;
+
+  return bumpFee({
+    ...options.feeBump,
+    transaction,
+    networkPassphrase: options.networkPassphrase,
+  }).transaction;
 }
 
 /**

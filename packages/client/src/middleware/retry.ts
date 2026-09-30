@@ -126,6 +126,9 @@ export interface RetryMiddlewareConfig extends RetryMiddlewareOptions {
    */
   retryableStatusCodes?: number[];
 
+  /** Alias for retryableStatusCodes. */
+  retryableStatuses?: number[];
+
   /**
    * Called before each retry sleep so callers can log, trace, or emit metrics.
    *
@@ -142,6 +145,12 @@ export interface RetryMiddlewareConfig extends RetryMiddlewareOptions {
    * (all other `4xx` client errors are never retried).
    */
   shouldRetryStatus?: (status: number) => boolean;
+
+  /**
+   * Apply full jitter to each backoff delay. Default `true`.
+   * @default true
+   */
+  jitter?: boolean;
 
   /**
    * When `true`, all HTTP methods are treated as retryable by this middleware

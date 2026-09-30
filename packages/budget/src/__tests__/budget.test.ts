@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Budget, BudgetUtilization } from '@astroid/types';
+import { ValidationError } from '@astroid/errors';
 
 import {
   BudgetClient,
@@ -10,6 +11,13 @@ import {
   toBudgetQuery,
   type BudgetHttpClient,
 } from '../budget.js';
+import {
+  calculateBudgetTotals,
+  calculateBudgetUtilizationPercentage,
+  calculateTotalAllocated,
+  calculateTotalRemaining,
+  calculateTotalSpent,
+} from '../helpers.js';
 
 /* -------------------------------------------------------------------------- */
 /* Mock transport                                                              */
@@ -175,6 +183,29 @@ describe('BudgetClient', () => {
     expect(res.violations.length).toBeGreaterThan(0);
   });
 
+  it('createBudget() aliases create() with decimal-string limits', async () => {
+    const budget = makeBudget({ limitAmount: '5000.00' });
+    http.post.mockResolvedValue(budget);
+    const result = await client.createBudget({ name: 'Q3 Ops', limitAmount: '5000.00' });
+    expect(http.post).toHaveBeenCalledWith('/v1/budgets', {
+      name: 'Q3 Ops',
+      limitAmount: '5000.00',
+    });
+    expect(result.limitAmount).toBe('5000.00');
+  });
+
+  it('reset() / resetBudget() POSTs to the reset sub-resource', async () => {
+    http.post.mockResolvedValue(makeBudget({ spent: '0' }));
+    const result = await client.reset('bud_1');
+    expect(http.post).toHaveBeenCalledWith('/v1/budgets/bud_1/reset');
+    expect(result.spent).toBe('0');
+
+    http.post.mockResolvedValue(makeBudget({ spent: '0' }));
+    const alias = await client.resetBudget('bud_1');
+    expect(http.post).toHaveBeenCalledWith('/v1/budgets/bud_1/reset');
+    expect(alias.spent).toBe('0');
+  });
+
   it('update() PATCHes the budget', async () => {
     http.patch.mockResolvedValue(makeBudget({ name: 'Renamed' }));
     const result = await client.update('bud_1', { name: 'Renamed' });
@@ -187,6 +218,35 @@ describe('BudgetClient', () => {
     const result = await client.updateBudget('bud_1', { limitAmount: '7500.00' });
     expect(http.patch).toHaveBeenCalledWith('/v1/budgets/bud_1', { limitAmount: '7500.00' });
     expect(result.limitAmount).toBe('7500.00');
+  });
+
+  it('batchUpdateBudgets() patches multiple budgets in one request', async () => {
+    const updated = [makeBudget({ name: 'Ops' }), makeBudget({ id: 'bud_2', enabled: false })];
+    const updates = [
+      { budgetId: 'bud_1', input: { limitAmount: '1200' } },
+      { budgetId: 'bud_2', input: { enabled: false } },
+    ];
+    http.patch.mockResolvedValue(updated);
+
+    const result = await client.batchUpdateBudgets(updates);
+
+    expect(http.patch).toHaveBeenCalledWith('/v1/budgets/batch', { updates });
+    expect(result).toBe(updated);
+  });
+
+  it('batchUpdateBudgets() returns an empty result without a request for an empty batch', async () => {
+    await expect(client.batchUpdateBudgets([])).resolves.toEqual([]);
+    expect(http.patch).not.toHaveBeenCalled();
+  });
+
+  it('batchUpdateBudgets() rejects duplicate budget ids with a structured validation error', async () => {
+    await expect(
+      client.batchUpdateBudgets([
+        { budgetId: 'bud_1', input: { name: 'First' } },
+        { budgetId: 'bud_1', input: { name: 'Second' } },
+      ]),
+    ).rejects.toBeInstanceOf(ValidationError);
+    expect(http.patch).not.toHaveBeenCalled();
   });
 
   it('delete() DELETEs the budget', async () => {
@@ -450,5 +510,46 @@ describe('allocation helpers', () => {
     expect(status.utilization).toBe(0);
     expect(status.percent).toBe(0);
     expect(status.state).toBe('healthy');
+  });
+});
+
+describe('budget aggregation helpers', () => {
+  it('aggregates parent and child budgets using exact decimal totals', () => {
+    const budgets = [
+      makeBudget({ id: 'parent', limitAmount: '1000.10', spent: '250.05' }),
+      makeBudget({ id: 'child-1', parentBudgetId: 'parent', limitAmount: '200.20', spent: '50.05' }),
+      makeBudget({ id: 'child-2', parentBudgetId: 'parent', limitAmount: '300', spent: '49.9' }),
+    ];
+
+    expect(calculateBudgetTotals(budgets)).toEqual({
+      totalAllocated: '1500.3',
+      totalSpent: '350',
+      totalRemaining: '1150.3',
+      utilizationPercentage: 23.33,
+    });
+    expect(calculateTotalAllocated(budgets)).toBe('1500.3');
+    expect(calculateTotalSpent(budgets)).toBe('350');
+    expect(calculateTotalRemaining(budgets)).toBe('1150.3');
+    expect(calculateBudgetUtilizationPercentage(budgets)).toBe(23.33);
+  });
+
+  it('returns zero totals for an empty collection', () => {
+    expect(calculateBudgetTotals([])).toEqual({
+      totalAllocated: '0',
+      totalSpent: '0',
+      totalRemaining: '0',
+      utilizationPercentage: 0,
+    });
+  });
+
+  it('clamps overspent budget balances while retaining utilization above 100 percent', () => {
+    const budget = makeBudget({ limitAmount: '100', spent: '125', remaining: '-25' });
+
+    expect(calculateBudgetTotals([budget])).toEqual({
+      totalAllocated: '100',
+      totalSpent: '125',
+      totalRemaining: '0',
+      utilizationPercentage: 125,
+    });
   });
 });

@@ -8,7 +8,7 @@
  * @module
  */
 
-import { AstroidError } from './base.js';
+import { AstroidError, type AstroidErrorOptions } from './base.js';
 
 /** 401 — missing/invalid credentials, expired token, or invalid API key. */
 export class AuthenticationError extends AstroidError {}
@@ -76,6 +76,28 @@ export class ApiRateLimitError extends RateLimitError {}
 export class NetworkError extends AstroidError {
   override get isRetryable(): boolean {
     return true;
+  }
+}
+
+/**
+ * The caller-configured request deadline elapsed before the server responded.
+ *
+ * Derived from {@link NetworkError} so it is part of the core error hierarchy.
+ * Like every transport failure it is retryable — no response was ever received.
+ */
+export class AstroidTimeoutError extends NetworkError {
+  /** The deadline (in ms) that was exceeded, when known. */
+  readonly timeoutMs: number | undefined;
+
+  constructor(timeoutOrMessage: number | string, options?: AstroidErrorOptions) {
+    const isDeadline = typeof timeoutOrMessage === 'number';
+    super(
+      isDeadline ? `Astroid request timed out after ${timeoutOrMessage}ms.` : timeoutOrMessage,
+      { code: 'REQUEST_TIMEOUT', ...(options ?? {}) },
+    );
+    const detailTimeout =
+      typeof options?.details?.timeoutMs === 'number' ? options.details.timeoutMs : undefined;
+    this.timeoutMs = isDeadline ? timeoutOrMessage : detailTimeout;
   }
 }
 

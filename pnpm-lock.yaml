@@ -447,6 +447,9 @@ importers:
       '@astroid/errors':
         specifier: workspace:*
         version: link:../errors
+      '@astroid/policy':
+        specifier: workspace:*
+        version: link:../policy
       '@astroid/types':
         specifier: workspace:*
         version: link:../types
