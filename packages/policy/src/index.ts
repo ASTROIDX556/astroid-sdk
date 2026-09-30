@@ -19,7 +19,12 @@ import type { PolicySimulationReport, SimulatedTransaction } from './simulator.j
 import { simulatePolicy } from './simulate-policy.js';
 import { simulatePolicyUpdate } from './simulate-policy-update.js';
 import { simulatePolicyEvaluation } from './simulation.js';
-import { assertPolicyCreateInput, assertPolicySimulationRequest } from './schemas.js';
+import { 
+  assertPolicyCreateInput, 
+  assertPolicySimulationRequest,
+  PolicyUpdateInputSchema
+} from './schemas.js';
+import { ValidationError } from '@astroid/errors';
 
 /**
  * The client-side (offline) policy engine. `evaluatePolicyRules` is the pure

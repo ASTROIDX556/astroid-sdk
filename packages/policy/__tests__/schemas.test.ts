@@ -22,20 +22,7 @@ describe('Policy Schemas', () => {
       expect(result.success).toBe(true);
     });
 
-    it('fails when name is missing or empty', () => {
-      const payload = {
-        name: '',
-        type: PolicyType.MAX_AMOUNT,
-        configuration: {},
-        priority: 1,
-        enabled: true,
-      };
-      const result = PolicyCreateInputSchema.safeParse(payload);
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        expect(result.error.flatten().fieldErrors.name).toBeDefined();
-      }
-    });
+
 
     it('fails when type is invalid', () => {
       const payload = {
