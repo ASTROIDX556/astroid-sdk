@@ -15,9 +15,8 @@ import { useAgent, useAgents, useCreateAgent } from '../index.js';
 
 describe('agent hook signatures', () => {
   it('matches the documented TanStack Query types', () => {
-    const agentsHook: (
-      params?: PaginationParams,
-    ) => UseQueryResult<Paginated<Agent>, Error> = useAgents;
+    const agentsHook: (params?: PaginationParams) => UseQueryResult<Paginated<Agent>, Error> =
+      useAgents;
     const agentHook: (id: string | undefined) => UseQueryResult<Agent, Error> = useAgent;
     const createAgentHook: () => UseMutationResult<Agent, Error, CreateAgentParams> =
       useCreateAgent;

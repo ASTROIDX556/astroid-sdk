@@ -62,7 +62,8 @@ function renderInProviders(
   const root = createRoot(container);
   const client = options.client ?? new Astroid({ apiKey: 'sk_test', baseUrl: 'https://api.test' });
   const queryClient =
-    options.queryClient ?? new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    options.queryClient ??
+    new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   act(() => {
     root.render(
       createElement(
@@ -86,7 +87,14 @@ describe('usePolicies', () => {
     const client = new Astroid({ apiKey: 'sk_test', baseUrl: 'https://api.test' });
     const page: Paginated<Policy> = {
       data: [POLICY],
-      meta: { page: 1, limit: 20, total: 1, totalPages: 1, hasNextPage: false, hasPreviousPage: false },
+      meta: {
+        page: 1,
+        limit: 20,
+        total: 1,
+        totalPages: 1,
+        hasNextPage: false,
+        hasPreviousPage: false,
+      },
     };
     const listSpy = vi.spyOn(client.policies, 'list').mockResolvedValue(page);
     let result: Paginated<Policy> | undefined;
@@ -116,7 +124,9 @@ describe('usePolicies', () => {
     const client = new Astroid({ apiKey: 'sk_test', baseUrl: 'https://api.test' });
     vi.spyOn(client.policies, 'create').mockResolvedValue(POLICY);
     vi.spyOn(client.policies, 'update').mockResolvedValue(POLICY);
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
     let create: ReturnType<typeof useCreatePolicy> | undefined;
     let update: ReturnType<typeof useUpdatePolicy> | undefined;
@@ -147,7 +157,14 @@ describe('useTransactions', () => {
     const client = new Astroid({ apiKey: 'sk_test', baseUrl: 'https://api.test' });
     const page: Paginated<Transaction> = {
       data: [TX],
-      meta: { page: 1, limit: 20, total: 1, totalPages: 1, hasNextPage: false, hasPreviousPage: false },
+      meta: {
+        page: 1,
+        limit: 20,
+        total: 1,
+        totalPages: 1,
+        hasNextPage: false,
+        hasPreviousPage: false,
+      },
     };
     vi.spyOn(client.transactions, 'list').mockResolvedValue(page);
     let result: Paginated<Transaction> | undefined;
@@ -171,7 +188,9 @@ describe('useTransactions', () => {
   it('useCreateTransaction invalidates the transaction domain', async () => {
     const client = new Astroid({ apiKey: 'sk_test', baseUrl: 'https://api.test' });
     vi.spyOn(client.transactions, 'create').mockResolvedValue(TX);
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
     let mutation: ReturnType<typeof useCreateTransaction> | undefined;
     function TestComponent() {
@@ -180,7 +199,12 @@ describe('useTransactions', () => {
     }
     const { unmount } = renderInProviders(createElement(TestComponent), { client, queryClient });
     await act(async () => {
-      await mutation!.mutateAsync({ walletId: 'wal_1', asset: 'USDC', amount: '10', recipientAddress: 'GABC' });
+      await mutation!.mutateAsync({
+        walletId: 'wal_1',
+        asset: 'USDC',
+        amount: '10',
+        recipientAddress: 'GABC',
+      });
     });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.transactions.all });
     unmount();

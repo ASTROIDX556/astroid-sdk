@@ -75,7 +75,11 @@ function fromScaled(value: bigint, scale: number, preserve = false): DecimalStri
 /** Sum a list of decimal amounts, preserving the inputs' fractional scale. */
 function decSum(values: DecimalString[]): DecimalString {
   const scale = Math.max(0, ...values.map((v) => parseParts(v).frac.length));
-  return fromScaled(values.reduce((acc, v) => acc + toScaled(v, scale), 0n), scale, true);
+  return fromScaled(
+    values.reduce((acc, v) => acc + toScaled(v, scale), 0n),
+    scale,
+    true,
+  );
 }
 
 /** Subtract `b` from `a`, preserving the inputs' fractional scale. */

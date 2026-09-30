@@ -309,9 +309,7 @@ describe('BudgetClient', () => {
   it('getBudgetUtilization() propagates transport errors', async () => {
     http.get.mockRejectedValue(new Error('utilization unavailable'));
 
-    await expect(client.getBudgetUtilization('bud_1')).rejects.toThrow(
-      'utilization unavailable',
-    );
+    await expect(client.getBudgetUtilization('bud_1')).rejects.toThrow('utilization unavailable');
   });
 
   it('propagates a failed request as a rejection', async () => {
@@ -432,7 +430,9 @@ describe('BudgetClient', () => {
     });
     expect(result).toBe(updated);
 
-    const aliasResult = await client.updateThresholdAlert('bud_1', 'alt_1', { thresholdPercent: 90 });
+    const aliasResult = await client.updateThresholdAlert('bud_1', 'alt_1', {
+      thresholdPercent: 90,
+    });
     expect(aliasResult).toBe(updated);
   });
 

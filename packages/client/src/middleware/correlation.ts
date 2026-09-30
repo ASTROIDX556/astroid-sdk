@@ -210,9 +210,7 @@ export function createCorrelationMiddleware(
       // includes any static tracing value not overridden) → options.correlationId
       // → a freshly generated UUID v4.
       const suppliedRequestId =
-        req.options.requestId ??
-        callerHeaders[REQUEST_ID_HEADER] ??
-        req.options.correlationId;
+        req.options.requestId ?? callerHeaders[REQUEST_ID_HEADER] ?? req.options.correlationId;
       const requestId = suppliedRequestId ?? generateCorrelationId();
 
       // ---- Resolve the correlation ID (end-to-end trace) -------------------

@@ -130,7 +130,9 @@ export function budgetFixture(overrides: Partial<Budget> = {}): Budget {
   };
 }
 
-export function budgetUtilizationFixture(overrides: Partial<BudgetUtilization> = {}): BudgetUtilization {
+export function budgetUtilizationFixture(
+  overrides: Partial<BudgetUtilization> = {},
+): BudgetUtilization {
   return {
     budgetId: 'bdg_1',
     period: BudgetPeriod.DAILY,

@@ -142,9 +142,7 @@ export async function* paginateAll<TItem>(
  * );
  * ```
  */
-export async function collectPaginated<TItem>(
-  iterable: AsyncIterable<TItem>,
-): Promise<TItem[]> {
+export async function collectPaginated<TItem>(iterable: AsyncIterable<TItem>): Promise<TItem[]> {
   const out: TItem[] = [];
   for await (const item of iterable) out.push(item);
   return out;

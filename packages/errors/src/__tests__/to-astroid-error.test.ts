@@ -40,7 +40,11 @@ function jsonResponse(
 }
 
 /** Build a response whose body is arbitrary (often non-JSON) text. */
-function textResponse(body: string, status: number, headers: Record<string, string> = {}): Response {
+function textResponse(
+  body: string,
+  status: number,
+  headers: Record<string, string> = {},
+): Response {
   return new Response(body, { status, headers });
 }
 
@@ -162,7 +166,9 @@ describe('toAstroidError', () => {
 
   describe('Retry-After handling', () => {
     it('exposes delta-seconds from the header as retryAfter', async () => {
-      const err = await toAstroidError(new Response(null, { status: 429, headers: { 'retry-after': '30' } }));
+      const err = await toAstroidError(
+        new Response(null, { status: 429, headers: { 'retry-after': '30' } }),
+      );
 
       expect(err).toBeInstanceOf(RateLimitError);
       expect((err as RateLimitError).retryAfter).toBe(30);
@@ -303,7 +309,9 @@ describe('toAstroidError', () => {
 
     it('honours an explicit body even when the response body says otherwise', async () => {
       const res = jsonResponse({ error: { code: 'NOT_FOUND', message: 'from response' } }, 404);
-      const err = await toAstroidError(res, { error: { code: 'CONFLICT', message: 'from argument' } });
+      const err = await toAstroidError(res, {
+        error: { code: 'CONFLICT', message: 'from argument' },
+      });
 
       expect(err).toBeInstanceOf(ConflictError);
       expect(err.message).toBe('from argument');
@@ -323,9 +331,9 @@ describe('toAstroidError', () => {
   /* ---------------------------------------------------------------- */
 
   it('resolves rather than throwing, and always returns a typed error', async () => {
-    await expect(
-      toAstroidError(new Response(null, { status: 500 })),
-    ).resolves.toBeInstanceOf(AstroidError);
+    await expect(toAstroidError(new Response(null, { status: 500 }))).resolves.toBeInstanceOf(
+      AstroidError,
+    );
   });
 
   it('always produces a usable stack trace and message', async () => {

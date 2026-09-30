@@ -109,7 +109,11 @@ describe('AgentResource CRUD', () => {
       const { AstroidValidationError } = await import('../errors.js');
 
       await expect(
-        resource.create({ name: '', capabilities: [], initialBudget: { currency: '', amount: '' } }),
+        resource.create({
+          name: '',
+          capabilities: [],
+          initialBudget: { currency: '', amount: '' },
+        }),
       ).rejects.toBeInstanceOf(AstroidValidationError);
 
       // Client should not have been called — validation is pre-flight

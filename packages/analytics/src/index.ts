@@ -14,12 +14,14 @@ import type {
   AgentMetricsParams,
   AgentMetricsReport,
   AgentSpendingRow,
+  AnalyticsCursorParams,
   AnalyticsListParams,
   AnalyticsOverview,
   AnalyticsQuery,
   BudgetAnalytics,
   BudgetUtilizationRow,
   CashflowReport,
+  CursorPaginated,
   Paginated,
   RiskReport,
   SpendingSummaryParams,
@@ -93,6 +95,10 @@ export type {
   AgentMetricsParams,
   AgentMetricsReport,
   AgentMetricsRow,
+  AnalyticsCursorParams,
+  AnalyticsListParams,
+  CursorPaginated,
+  PaginationMeta,
   SpendingSummaryParams,
   SpendingSummaryReport,
   TransactionVolumeParams,
@@ -163,6 +169,45 @@ export class AnalyticsResource extends Resource {
     return this.listData<BudgetUtilizationRow>('/analytics/budgets', { ...query });
   }
 
+  /**
+   * Cursor-paginated (keyset) per-agent performance rows.
+   *
+   * The keyset counterpart to {@link AnalyticsResource.listAgents}: instead of
+   * `page`, pass back the `nextCursor` from the previous page. Prefer this over
+   * offset paging for long historical windows, where rows are appended
+   * continuously and a 1-based page number can skip or duplicate entries as the
+   * result set shifts between requests.
+   *
+   * Stops when `hasMore` is `false` or `nextCursor` is `null`.
+   *
+   * @example
+   * ```ts
+   * let cursor: string | undefined;
+   * do {
+   *   const page = await astroid.analytics.listAgentsByCursor({ limit: 100, cursor });
+   *   for (const row of page.items) console.log(row.agentId, row.totalSpent);
+   *   cursor = page.nextCursor ?? undefined;
+   * } while (cursor);
+   * ```
+   */
+  async listAgentsByCursor(
+    query: AnalyticsCursorParams = {},
+  ): Promise<CursorPaginated<AgentSpendingRow>> {
+    return this.listCursorData<AgentSpendingRow>('/analytics/agents', { ...query });
+  }
+
+  /**
+   * Cursor-paginated (keyset) per-budget utilization rows.
+   *
+   * The keyset counterpart to {@link AnalyticsResource.listBudgets}; see
+   * {@link AnalyticsResource.listAgentsByCursor} for the paging loop.
+   */
+  async listBudgetsByCursor(
+    query: AnalyticsCursorParams = {},
+  ): Promise<CursorPaginated<BudgetUtilizationRow>> {
+    return this.listCursorData<BudgetUtilizationRow>('/analytics/budgets', { ...query });
+  }
+
   /* ------------------------- metrics aggregation ------------------------- */
 
   /**
@@ -196,7 +241,9 @@ export class AnalyticsResource extends Resource {
   /**
    * Transaction volume and counts over a time window, bucketed by `interval`.
    */
-  async getTransactionVolume(query: TransactionVolumeParams = {}): Promise<TransactionVolumeReport> {
+  async getTransactionVolume(
+    query: TransactionVolumeParams = {},
+  ): Promise<TransactionVolumeReport> {
     return this.getData<TransactionVolumeReport>('/analytics/volume', { ...query });
   }
 

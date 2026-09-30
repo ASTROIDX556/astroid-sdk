@@ -46,11 +46,7 @@ import { parseAsset } from './builder.js';
 /* -------------------------------------------------------------------------- */
 
 /** Known Stellar network passphrases accepted by the builders. */
-const KNOWN_PASSPHRASES = new Set<string>([
-  Networks.PUBLIC,
-  Networks.TESTNET,
-  Networks.FUTURENET,
-]);
+const KNOWN_PASSPHRASES = new Set<string>([Networks.PUBLIC, Networks.TESTNET, Networks.FUTURENET]);
 
 /** Options common to every budget delegation transaction. */
 export interface BudgetDelegationBaseOptions {
@@ -215,9 +211,7 @@ function createBuilder(options: BudgetDelegationBaseOptions): TransactionBuilder
  * });
  * ```
  */
-export function buildBudgetDelegationTransaction(
-  options: BudgetDelegationOptions,
-): Transaction {
+export function buildBudgetDelegationTransaction(options: BudgetDelegationOptions): Transaction {
   const { budgetAuthority, delegatee, asset, amount, budgetId, expirationTimestamp } = options;
 
   // Validate all inputs
@@ -301,9 +295,7 @@ export function buildBudgetDelegationTransaction(
  * });
  * ```
  */
-export function buildBudgetPaymentTransaction(
-  options: BudgetPaymentOptions,
-): Transaction {
+export function buildBudgetPaymentTransaction(options: BudgetPaymentOptions): Transaction {
   const { destination, asset, amount, budgetId, policyId } = options;
 
   // Validate inputs
@@ -370,9 +362,7 @@ export function buildBudgetPaymentTransaction(
  * });
  * ```
  */
-export function buildBudgetRevocationTransaction(
-  options: BudgetRevocationOptions,
-): Transaction {
+export function buildBudgetRevocationTransaction(options: BudgetRevocationOptions): Transaction {
   const { budgetAuthority, delegatee, budgetId } = options;
 
   // Validate inputs

@@ -3,13 +3,13 @@ import { AuthenticationError } from '@astroid/errors';
 import { HttpClient } from '@astroid/core';
 import {
   SessionManager,
-  createSessionMiddleware,
   parseJwt,
   getTokenExpiration,
   isTokenExpired,
   type AuthFailureEvent,
   type TokenStorage,
 } from '../src/session.js';
+import { createSessionMiddleware, wireSessionToHttpClient } from '../src/auth.js';
 import { AuthResource } from '../src/index.js';
 
 function createTestJwt(expInSeconds: number): string {
@@ -231,6 +231,39 @@ describe('Session Management & Token Refresh', () => {
       expect(refreshFn).not.toHaveBeenCalled();
       expect(session.getAccessToken()).toBeUndefined();
       expect(session.getRefreshToken()).toBeUndefined();
+    });
+
+    it('should trigger onSessionExpired callback when refresh token fails', async () => {
+      const onSessionExpired = vi.fn();
+      const session = new SessionManager({
+        accessToken: expiredAccessToken,
+        refreshToken: validRefreshToken,
+        onSessionExpired,
+      });
+
+      const refreshFn = vi.fn().mockRejectedValue(
+        new AuthenticationError('Invalid refresh token', {
+          code: 'TOKEN_EXPIRED',
+          status: 401,
+        })
+      );
+
+      await expect(session.refreshSession(refreshFn)).rejects.toThrow(AuthenticationError);
+      expect(onSessionExpired).toHaveBeenCalledTimes(1);
+    });
+
+    it('should trigger onSessionExpired callback when refresh token is missing or expired', async () => {
+      const onSessionExpired = vi.fn();
+      const session = new SessionManager({
+        accessToken: expiredAccessToken,
+        refreshToken: expiredRefreshToken,
+        onSessionExpired,
+      });
+
+      const refreshFn = vi.fn();
+
+      await expect(session.refreshSession(refreshFn)).rejects.toThrow(AuthenticationError);
+      expect(onSessionExpired).toHaveBeenCalledTimes(1);
     });
   });
 
