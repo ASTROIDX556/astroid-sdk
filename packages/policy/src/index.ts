@@ -19,7 +19,12 @@ import type { PolicySimulationReport, SimulatedTransaction } from './simulator.j
 import { simulatePolicy } from './simulate-policy.js';
 import { simulatePolicyUpdate } from './simulate-policy-update.js';
 import { simulatePolicyEvaluation } from './simulation.js';
-import { assertPolicyCreateInput, assertPolicySimulationRequest } from './schemas.js';
+import { 
+  assertPolicyCreateInput, 
+  assertPolicySimulationRequest,
+  PolicyUpdateInputSchema
+} from './schemas.js';
+import { ValidationError } from '@astroid/errors';
 
 /**
  * The client-side (offline) policy engine. `evaluatePolicyRules` is the pure
@@ -228,6 +233,16 @@ export class PolicyResource extends Resource {
    * @throws      `NotFoundError` when no policy has that id.
    */
   async update(id: string, input: PolicyUpdateInput): Promise<Policy> {
+    const validation = PolicyUpdateInputSchema.safeParse(input);
+    if (!validation.success) {
+      throw new ValidationError('Validation failed for PolicyUpdateInput', {
+        code: 'VALIDATION_ERROR',
+        details: {
+          fields: validation.error.flatten().fieldErrors,
+        },
+      });
+    }
+
     const res = await this.client.patch<Policy>(`/policies/${encodeURIComponent(id)}`, input);
     return res.data;
   }
