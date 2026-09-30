@@ -11,7 +11,7 @@ import { DEFAULT_TIMEOUT_MS } from '../index.js';
 
 /** A fetch that never settles until its AbortSignal fires. */
 function hangingFetch(): typeof fetch {
-  return (async (_url: string | URL, init?: RequestInit) => {
+  return (async (_url: unknown, init?: { signal?: AbortSignal }) => {
     const signal = init?.signal as AbortSignal | undefined;
     return new Promise<never>((_resolve, reject) => {
       if (signal?.aborted) {
