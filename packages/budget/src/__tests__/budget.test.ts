@@ -175,6 +175,29 @@ describe('BudgetClient', () => {
     expect(res.violations.length).toBeGreaterThan(0);
   });
 
+  it('createBudget() aliases create() with decimal-string limits', async () => {
+    const budget = makeBudget({ limitAmount: '5000.00' });
+    http.post.mockResolvedValue(budget);
+    const result = await client.createBudget({ name: 'Q3 Ops', limitAmount: '5000.00' });
+    expect(http.post).toHaveBeenCalledWith('/v1/budgets', {
+      name: 'Q3 Ops',
+      limitAmount: '5000.00',
+    });
+    expect(result.limitAmount).toBe('5000.00');
+  });
+
+  it('reset() / resetBudget() POSTs to the reset sub-resource', async () => {
+    http.post.mockResolvedValue(makeBudget({ spent: '0' }));
+    const result = await client.reset('bud_1');
+    expect(http.post).toHaveBeenCalledWith('/v1/budgets/bud_1/reset');
+    expect(result.spent).toBe('0');
+
+    http.post.mockResolvedValue(makeBudget({ spent: '0' }));
+    const alias = await client.resetBudget('bud_1');
+    expect(http.post).toHaveBeenCalledWith('/v1/budgets/bud_1/reset');
+    expect(alias.spent).toBe('0');
+  });
+
   it('update() PATCHes the budget', async () => {
     http.patch.mockResolvedValue(makeBudget({ name: 'Renamed' }));
     const result = await client.update('bud_1', { name: 'Renamed' });

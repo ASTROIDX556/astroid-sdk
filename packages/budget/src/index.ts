@@ -98,34 +98,138 @@ export interface BudgetListParams extends PaginationParams {
  * you); {@link BudgetResource.history} returns the audit trail.
  */
 export class BudgetResource extends Resource {
-  /** Create a new budget. */
+  /**
+   * Create a new budget.
+   *
+   * Budget amounts are decimal strings (e.g. `"5000.00"`) so values never
+   * round-trip through IEEE-754 floats.
+   *
+   * @param input The budget to create (name + decimal-string `limitAmount`).
+   * @returns The created {@link Budget}.
+   *
+   * @example
+   * ```ts
+   * const budget = await asteroid.budgets.create({ name: 'Q3 Ops', limitAmount: '5000.00' });
+   * ```
+   */
   async create(input: CreateBudgetInput): Promise<Budget> {
     const res = await this.client.post<Budget>('/budgets', input);
     return res.data;
   }
 
-  /** Fetch a single budget by id. */
+  /**
+   * Create a new budget (`createBudget` spelling).
+   *
+   * Identical to {@link BudgetResource.create}; provided so callers using the
+   * `createBudget` / `getBudget` / `listBudgets` / `updateBudget` /
+   * `getBudgetUtilization` / `resetBudget` naming don't need to guess.
+   *
+   * @param input The budget to create (name + decimal-string `limitAmount`).
+   * @returns The created {@link Budget}.
+   *
+   * @example
+   * ```ts
+   * const budget = await asteroid.budgets.createBudget({ name: 'Q3 Ops', limitAmount: '5000.00' });
+   * ```
+   */
+  async createBudget(input: CreateBudgetInput): Promise<Budget> {
+    return this.create(input);
+  }
+
+  /**
+   * Fetch a single budget by id.
+   *
+   * @param budgetId The budget id.
+   * @returns The {@link Budget}.
+   *
+   * @example
+   * ```ts
+   * const budget = await asteroid.budgets.get('bud_1');
+   * ```
+   */
   async get(budgetId: string): Promise<Budget> {
     return this.getData<Budget>(`/budgets/${encodeURIComponent(budgetId)}`);
   }
 
-  /** List budgets, with optional period/scope filters and pagination. */
+  /**
+   * List budgets, with optional period/scope filters and pagination.
+   *
+   * @param params Optional period/scope filters and pagination.
+   * @returns A paginated list of {@link Budget} records.
+   *
+   * @example
+   * ```ts
+   * const { data } = await asteroid.budgets.list({ period: 'MONTHLY', limit: 25 });
+   * ```
+   */
   async list(params: BudgetListParams = {}): Promise<Paginated<Budget>> {
     return this.listData<Budget>('/budgets', { ...params });
   }
 
-  /** Iterate every budget across all pages. */
+  /**
+   * Iterate every budget across all pages.
+   *
+   * @param params Optional period/scope filters and pagination.
+   *
+   * @example
+   * ```ts
+   * for await (const b of asteroid.budgets.iterate({ enabled: true })) {
+   *   console.log(b.id, b.limitAmount);
+   * }
+   * ```
+   */
   iterate(params: BudgetListParams = {}): AsyncGenerator<Budget, void, void> {
     return this.iterateData<Budget>('/budgets', { ...params });
   }
 
-  /** Update a budget's limit, period, rollover, or enabled state. */
+  /**
+   * Update a budget's limit, period, rollover, or enabled state.
+   *
+   * Spending limits are decimal strings (e.g. `"7500.00"`).
+   *
+   * @param budgetId The budget to update.
+   * @param input The mutable budget fields.
+   * @returns The updated {@link Budget}.
+   *
+   * @example
+   * ```ts
+   * const updated = await asteroid.budgets.update('bud_1', { limitAmount: '7500.00' });
+   * ```
+   */
   async update(budgetId: string, input: UpdateBudgetInput): Promise<Budget> {
     const res = await this.client.patch<Budget>(`/budgets/${encodeURIComponent(budgetId)}`, input);
     return res.data;
   }
 
-  /** Permanently delete a budget. */
+  /**
+   * Update a budget's limit, period, rollover, or enabled state
+   * (`updateBudget` spelling).
+   *
+   * Identical to {@link BudgetResource.update}.
+   *
+   * @param budgetId The budget to update.
+   * @param input The mutable budget fields (decimal-string limits).
+   * @returns The updated {@link Budget}.
+   *
+   * @example
+   * ```ts
+   * const updated = await asteroid.budgets.updateBudget('bud_1', { limitAmount: '7500.00' });
+   * ```
+   */
+  async updateBudget(budgetId: string, input: UpdateBudgetInput): Promise<Budget> {
+    return this.update(budgetId, input);
+  }
+
+  /**
+   * Permanently delete a budget.
+   *
+   * @param budgetId The budget to delete.
+   *
+   * @example
+   * ```ts
+   * await asteroid.budgets.delete('bud_1');
+   * ```
+   */
   async delete(budgetId: string): Promise<void> {
     await this.client.delete<void>(`/budgets/${encodeURIComponent(budgetId)}`);
   }
@@ -134,6 +238,15 @@ export class BudgetResource extends Resource {
    * Record a draw against a budget, returning the updated budget. Amounts are
    * decimal strings; the API rejects a draw that would exceed the remaining
    * balance unless the budget permits overage.
+   *
+   * @param budgetId The budget to draw from.
+   * @param input The decimal-string `amount` plus optional `transactionId` / `reason`.
+   * @returns The updated {@link Budget}.
+   *
+   * @example
+   * ```ts
+   * const updated = await asteroid.budgets.consume('bud_1', { amount: '25.00' });
+   * ```
    */
   async consume(budgetId: string, input: ConsumeBudgetInput): Promise<Budget> {
     const res = await this.client.post<Budget>(
@@ -143,13 +256,51 @@ export class BudgetResource extends Resource {
     return res.data;
   }
 
-  /** Reset a budget's consumption for the current period back to zero. */
+  /**
+   * Reset a budget's consumption for the current period back to zero.
+   *
+   * @param budgetId The budget to reset.
+   * @returns The reset {@link Budget}.
+   *
+   * @example
+   * ```ts
+   * const reset = await asteroid.budgets.reset('bud_1');
+   * ```
+   */
   async reset(budgetId: string): Promise<Budget> {
     const res = await this.client.post<Budget>(`/budgets/${encodeURIComponent(budgetId)}/reset`);
     return res.data;
   }
 
-  /** The budget's consumption history (one entry per draw). */
+  /**
+   * Reset a budget's consumption (`resetBudget` spelling).
+   *
+   * Identical to {@link BudgetResource.reset}.
+   *
+   * @param budgetId The budget to reset.
+   * @returns The reset {@link Budget}.
+   *
+   * @example
+   * ```ts
+   * const reset = await asteroid.budgets.resetBudget('bud_1');
+   * ```
+   */
+  async resetBudget(budgetId: string): Promise<Budget> {
+    return this.reset(budgetId);
+  }
+
+  /**
+   * The budget's consumption history (one entry per draw).
+   *
+   * @param budgetId The budget whose history to page.
+   * @param params Optional pagination.
+   * @returns A paginated list of {@link BudgetHistoryEntry} records.
+   *
+   * @example
+   * ```ts
+   * const { data } = await asteroid.budgets.history('bud_1', { limit: 25 });
+   * ```
+   */
   async history(
     budgetId: string,
     params: PaginationParams = {},
@@ -164,6 +315,14 @@ export class BudgetResource extends Resource {
    *
    * This is the fully-qualified alias of {@link BudgetResource.get} exposed for
    * callers who prefer a `getBudget`-style resource API; behaviour is identical.
+   *
+   * @param budgetId The budget id.
+   * @returns The {@link Budget}.
+   *
+   * @example
+   * ```ts
+   * const budget = await asteroid.budgets.getBudget('bud_1');
+   * ```
    */
   async getBudget(budgetId: string): Promise<Budget> {
     return this.getData<Budget>(`/budgets/${encodeURIComponent(budgetId)}`);
@@ -174,6 +333,14 @@ export class BudgetResource extends Resource {
    *
    * This is the fully-qualified alias of {@link BudgetResource.list} exposed for
    * callers who prefer a `listBudgets`-style resource API; behaviour is identical.
+   *
+   * @param params Optional period/scope filters and pagination.
+   * @returns A paginated list of {@link Budget} records.
+   *
+   * @example
+   * ```ts
+   * const { data } = await asteroid.budgets.listBudgets({ agentId: 'agt_1', limit: 25 });
+   * ```
    */
   async listBudgets(params: BudgetListParams = {}): Promise<Paginated<Budget>> {
     return this.listData<Budget>('/budgets', { ...params });
@@ -189,6 +356,15 @@ export class BudgetResource extends Resource {
    * @param budgetId The budget to simulate against.
    * @param input    The prospective draw (`asset` + `amount`).
    * @returns        Whether the draw would be allowed and, if not, why.
+   *
+   * @example
+   * ```ts
+   * const result = await asteroid.budgets.simulateBudgetCheck('bud_1', {
+   *   asset: 'USDC',
+   *   amount: '25.00',
+   * });
+   * if (!result.allowed) throw new Error(result.restriction ?? 'blocked');
+   * ```
    */
   async simulateBudgetCheck(
     budgetId: string,
@@ -278,6 +454,12 @@ export class BudgetResource extends Resource {
    * @param budgetId The budget to inspect.
    * @returns        Limit, spending, headroom, and the 0..1 utilization ratio
    *                 for the active window (see {@link BudgetUtilization}).
+   *
+   * @example
+   * ```ts
+   * const u = await asteroid.budgets.utilization('bud_1');
+   * if (u.percent >= 80) console.warn(`budget ${u.percent}% consumed`);
+   * ```
    */
   async utilization(budgetId: string): Promise<BudgetUtilization> {
     return this.getData<BudgetUtilization>(`/budgets/${encodeURIComponent(budgetId)}/utilization`);
@@ -293,6 +475,12 @@ export class BudgetResource extends Resource {
    * @param budgetId The budget to inspect.
    * @returns        Limit, spending, headroom, and the 0..1 utilization ratio
    *                 for the active window (see {@link BudgetUtilization}).
+   *
+   * @example
+   * ```ts
+   * const u = await asteroid.budgets.getBudgetUtilization('bud_1');
+   * if (u.state === 'critical' || u.state === 'exhausted') pauseAgent();
+   * ```
    */
   async getBudgetUtilization(budgetId: string): Promise<BudgetUtilization> {
     return this.utilization(budgetId);

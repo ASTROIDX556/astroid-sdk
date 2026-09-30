@@ -5,7 +5,19 @@
  * simulate whether a prospective draw would breach their allocation before
  * committing to it, and exposes a per-budget utilization snapshot.
  *
+ * Monetary amounts are decimal strings (see `DecimalString`) so values never
+ * round-trip through IEEE-754 floats.
+ *
  * @module
+ *
+ * @example
+ * ```ts
+ * import type { BudgetUtilization } from '@astroid/types';
+ *
+ * function isOverBudget(u: BudgetUtilization): boolean {
+ *   return u.state === 'exhausted' || Number(u.spent) >= Number(u.limit);
+ * }
+ * ```
  */
 
 import type { DecimalString, IsoDateTime } from './entities.js';
@@ -62,7 +74,14 @@ export interface BudgetAllocationStatus {
   wouldExceed?: boolean;
 }
 
-/** A utilization snapshot for a single budget. */
+/** A utilization snapshot for a single budget.
+ *
+ * @example
+ * ```ts
+ * const u: BudgetUtilization = await budgets.getBudgetUtilization('bud_1');
+ * if (u.state === 'critical' || u.state === 'exhausted') pauseAgent();
+ * ```
+ */
 export interface BudgetUtilization {
   budgetId: string;
   period: BudgetPeriod;

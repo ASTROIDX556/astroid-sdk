@@ -121,6 +121,19 @@ export interface SimulatePolicyInput {
 /* Budget                                                                       */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Payload for `budgets.createBudget` / `budgets.create`.
+ *
+ * Monetary amounts should be decimal strings (e.g. `"5000.00"`) so values
+ * never round-trip through IEEE-754 floats; numbers are accepted for
+ * convenience and serialized as decimals.
+ *
+ * @example
+ * ```ts
+ * const input: CreateBudgetInput = { name: 'Q3 Ops', limitAmount: '5000.00' };
+ * const budget = await budgets.createBudget(input);
+ * ```
+ */
 export interface CreateBudgetInput {
   name: string;
   limitAmount: number | string;
@@ -132,6 +145,14 @@ export interface CreateBudgetInput {
   enabled?: boolean;
 }
 
+/**
+ * Payload for `budgets.updateBudget` / `budgets.update`.
+ *
+ * @example
+ * ```ts
+ * const updated = await budgets.updateBudget('bud_1', { limitAmount: '7500.00' });
+ * ```
+ */
 export interface UpdateBudgetInput {
   name?: string;
   limitAmount?: number | string;
@@ -140,6 +161,14 @@ export interface UpdateBudgetInput {
   enabled?: boolean;
 }
 
+/**
+ * Payload for `budgets.consume`.
+ *
+ * @example
+ * ```ts
+ * const updated = await budgets.consume('bud_1', { amount: '25.00' });
+ * ```
+ */
 export interface ConsumeBudgetInput {
   amount: number | string;
   transactionId?: string;
