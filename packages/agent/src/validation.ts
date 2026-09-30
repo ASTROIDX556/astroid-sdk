@@ -26,6 +26,7 @@
 import {
   isAgentRole,
   isAgentStatus,
+  type AgentMetadata,
   type CreateAgentParams,
   type UpdateAgentParams,
 } from '@astroid/types';
@@ -37,13 +38,14 @@ import { AstroidValidationError } from './errors.js';
 /* -------------------------------------------------------------------------- */
 
 /**
- * Stellar public key format: `G` followed by 55 base-32 characters.
+ * Agent payload Stellar address format: `G` followed by 51 base-32 characters
+ * (52 characters total), as required by the agent API contract.
  *
  * This is a syntax check (prefix, length and alphabet); the CRC16 checksum is
  * verified server-side. It matches the check used by `@astroid/policy`'s
  * policy builder so client-side validation is consistent across packages.
  */
-const STELLAR_PUBLIC_KEY_PATTERN = /^G[A-Z2-7]{55}$/;
+const STELLAR_PUBLIC_KEY_PATTERN = /^G[A-Z2-7]{51}$/;
 
 /**
  * Non-negative decimal amount, e.g. `"0"`, `"500"` or `"1000.00"`.
@@ -78,6 +80,32 @@ export function isValidStellarPublicKey(value: unknown): value is string {
 }
 
 /**
+ * Assert that `value` is a format-valid Stellar public key (`G…`).
+ *
+ * The public companion of {@link isValidStellarPublicKey}, for callers that
+ * prefer a thrown, field-addressed error over a boolean branch. Mirrors
+ * `assertValidStellarPublicKey` in `@astroid/transaction` so both packages
+ * report the same failure shape.
+ *
+ * @param value The value to validate.
+ * @param field The field name reported in the error details (default `stellarAddress`).
+ * @throws {AstroidValidationError} When `value` is not a Stellar public key.
+ *
+ * @example
+ * ```ts
+ * assertValidStellarPublicKey(wallet.stellarAddress, 'wallet.stellarAddress');
+ * ```
+ */
+export function assertValidStellarPublicKey(value: unknown, field = 'stellarAddress'): void {
+  if (!isValidStellarPublicKey(value)) {
+    fail(
+      `Agent validation failed: "${field}" must be a valid Stellar public key starting with "G" and 52 characters long.`,
+      { field, received: value, expected: 'Stellar public key (G…)' },
+    );
+  }
+}
+
+/**
  * Whether `value` is a syntactically valid, non-negative decimal amount string.
  *
  * @param value The value to check.
@@ -91,6 +119,27 @@ export function isValidStellarPublicKey(value: unknown): value is string {
  */
 export function isValidAmountString(value: unknown): value is string {
   return typeof value === 'string' && DECIMAL_AMOUNT_PATTERN.test(value.trim());
+}
+
+/**
+ * Assert that `value` is a non-negative decimal amount string.
+ *
+ * Guards the classic misconfiguration the issue calls out — a negative initial
+ * budget cap — plus the values `Number()` silently accepts (`"1e3"`, `"0x10"`,
+ * `""`) that the Astroid API rejects.
+ *
+ * @param value The value to validate.
+ * @param field The field name reported in the error details (default `amount`).
+ * @throws {AstroidValidationError} When `value` is not a non-negative decimal string.
+ */
+export function assertValidAmountString(value: unknown, field = 'amount'): void {
+  if (!isValidAmountString(value)) {
+    fail(`Agent validation failed: "${field}" must be a non-negative decimal amount string.`, {
+      field,
+      received: value,
+      expected: 'decimal string',
+    });
+  }
 }
 
 /**
@@ -173,16 +222,6 @@ function assertOptionalNonEmptyString(value: unknown, field: string): void {
   }
 }
 
-/** Require a present, non-blank Stellar public key. */
-function assertStellarPublicKey(value: unknown, field: string): void {
-  if (!isValidStellarPublicKey(value)) {
-    fail(
-      `Agent validation failed: "${field}" must be a valid Stellar public key (G…, 56 characters).`,
-      { field, received: value, expected: 'Stellar public key (G…)' },
-    );
-  }
-}
-
 /** Require a present, non-empty array of non-blank strings. */
 function assertCapabilities(value: unknown, field = 'capabilities'): void {
   if (!Array.isArray(value) || value.length === 0) {
@@ -226,17 +265,36 @@ function assertAgentRole(value: unknown, field: string): void {
 }
 
 /**
- * Validate the free-form `metadata` bag: a plain object, with the two
- * conventionally typed keys checked. Unknown keys are passed through untouched
- * because the backend stores metadata as JSONB.
+ * Validate the free-form `metadata` bag of an agent payload.
+ *
+ * `metadata` is stored as JSONB, so unknown keys pass through untouched; the
+ * keys the SDK types are checked when present — `team` and `externalId` must be
+ * non-blank strings, `tags` an array of non-blank strings, and
+ * `stellarAddress` a format-valid Stellar public key.
+ *
+ * Exported so consumers can validate their own metadata objects before handing
+ * them to a resource method (or writing them into a query cache).
+ *
+ * @param value The metadata value to validate.
+ * @param field The field name reported in the error details (default `metadata`).
+ * @throws {AstroidValidationError} When the metadata is malformed.
  */
-function assertMetadata(value: unknown, field = 'metadata'): Record<string, unknown> {
+export function validateAgentMetadata(
+  value: unknown,
+  field = 'metadata',
+): asserts value is AgentMetadata {
   if (!isPlainObject(value)) {
     fail(`Agent validation failed: "${field}" must be an object when provided.`, {
       field,
       received: value,
       expected: 'object',
     });
+  }
+
+  for (const key of ['team', 'externalId'] as const) {
+    if (value[key] !== undefined) {
+      assertOptionalNonEmptyString(value[key], `${field}.${key}`);
+    }
   }
 
   if (value['tags'] !== undefined) {
@@ -251,10 +309,24 @@ function assertMetadata(value: unknown, field = 'metadata'): Record<string, unkn
   }
 
   if (value['stellarAddress'] !== undefined) {
-    assertStellarPublicKey(value['stellarAddress'], `${field}.stellarAddress`);
+    assertValidStellarPublicKey(value['stellarAddress'], `${field}.stellarAddress`);
   }
+}
 
-  return value;
+/**
+ * Non-throwing type guard for agent metadata — the boolean companion of
+ * {@link validateAgentMetadata}.
+ *
+ * @param value The value to check.
+ * @returns     `true` when `value` is a valid agent metadata object.
+ */
+export function isValidAgentMetadata(value: unknown): value is AgentMetadata {
+  try {
+    validateAgentMetadata(value);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -302,19 +374,13 @@ export function validateCreateAgentParams(params: unknown): asserts params is Cr
   }
 
   requireNonEmptyString(budget['currency'], 'initialBudget.currency');
-  requireNonEmptyString(budget['amount'], 'initialBudget.amount');
-
-  // Validate amount format / bounds (must be a valid non-negative decimal string)
-  if (!isValidAmountString(budget['amount'])) {
-    fail(
-      'Agent validation failed: "initialBudget.amount" must be a valid non-negative number string.',
-      { field: 'initialBudget.amount', received: budget['amount'], expected: 'decimal string' },
-    );
-  }
+  // Amounts are decimal strings over the wire: a blank, negative, exponential
+  // or non-numeric cap is rejected here rather than by the API's 422.
+  assertValidAmountString(budget['amount'], 'initialBudget.amount');
 
   // Validate optional metadata shape (must be a plain object when present).
   if (p['metadata'] !== undefined) {
-    assertMetadata(p['metadata']);
+    validateAgentMetadata(p['metadata']);
   }
 
   // Validate optional Stellar public keys wherever the payload carries one —
@@ -322,7 +388,7 @@ export function validateCreateAgentParams(params: unknown): asserts params is Cr
   // key. Only validate when present: the fields are optional, but a malformed
   // address must never reach the API.
   if (p['stellarAddress'] !== undefined) {
-    assertStellarPublicKey(p['stellarAddress'], 'stellarAddress');
+    assertValidStellarPublicKey(p['stellarAddress'], 'stellarAddress');
   }
 
   // Validate optional free-form fields.
@@ -436,7 +502,7 @@ export function validateUpdateAgentParams(params: unknown): asserts params is Up
     }
   }
   if (p['metadata'] !== undefined) {
-    assertMetadata(p['metadata']);
+    validateAgentMetadata(p['metadata']);
   }
 }
 

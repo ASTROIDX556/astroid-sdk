@@ -48,7 +48,11 @@ export interface MockApi {
   /** Register a handler with full control over the raw response envelope. */
   on(route: string, handler: RouteHandler): MockApi;
   /** Register a handler replying `200 { success: true, data }`. */
-  json(route: string, data: unknown, init?: { status?: number; headers?: Record<string, string> }): MockApi;
+  json(
+    route: string,
+    data: unknown,
+    init?: { status?: number; headers?: Record<string, string> },
+  ): MockApi;
   /** Register a handler replying with an error envelope. */
   fail(
     route: string,
@@ -100,7 +104,8 @@ export function createMockApi(options: MockApiOptions = {}): MockApi {
   const requests: MockRequest[] = [];
 
   const fetchMock = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    const rawUrl =
+      typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
     const url = new URL(rawUrl, options.origin ?? 'https://api.astroid.test');
 
     const headers: Record<string, string> = {};

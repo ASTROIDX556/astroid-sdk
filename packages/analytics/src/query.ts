@@ -9,7 +9,7 @@
  * @module
  */
 
-import type { Timeframe } from '@astroid/types';
+import type { PaginationParams, Timeframe } from '@astroid/types';
 
 /* -------------------------------------------------------------------------- */
 /* Public types                                                                */
@@ -37,8 +37,15 @@ export type TimeWindowPreset =
   | 'previous_quarter'
   | 'previous_year';
 
-/** Configuration options for building analytics queries. */
-export interface AnalyticsQueryOptions {
+/**
+ * Configuration options for building analytics queries.
+ *
+ * The pagination controls are inherited from the monorepo-wide
+ * {@link PaginationParams} (`page`, `cursor`, `limit`, `order`) rather than
+ * redeclared, so an options object built here stays assignable to
+ * `AnalyticsListParams` and every other paginated resource DTO.
+ */
+export interface AnalyticsQueryOptions extends PaginationParams {
   /** Inclusive start of the reporting window (ISO-8601). */
   startDate?: string;
   /** Exclusive end of the reporting window (ISO-8601). */
@@ -61,12 +68,6 @@ export interface AnalyticsQueryOptions {
   sort?: string;
   /** Group results by the specified dimension. */
   groupBy?: AnalyticsGroupBy;
-  /** Page number for paginated results (1-indexed). */
-  page?: number;
-  /** Number of items per page. */
-  limit?: number;
-  /** Sort order: 'asc' or 'desc'. */
-  order?: 'asc' | 'desc';
 }
 
 /** Error thrown when analytics query parameters fail validation. */
@@ -101,6 +102,7 @@ const VALID_GROUP_BY: readonly AnalyticsGroupBy[] = [
  * - `timeframe` is not one of the supported values
  * - `groupBy` is not one of the supported values
  * - `page` or `limit` are not positive integers
+ * - `cursor` is an empty string
  * - `order` is not 'asc' or 'desc'
  *
  * @throws {AnalyticsQueryError}
@@ -157,6 +159,12 @@ export function validateAnalyticsQuery(params: AnalyticsQueryOptions): void {
   if (params.order !== undefined && !['asc', 'desc'].includes(params.order)) {
     throw new AnalyticsQueryError('order must be either "asc" or "desc"');
   }
+
+  // An empty cursor is rejected rather than silently sent as `cursor=`, which
+  // the API would reject with an opaque error. `undefined` means "first page".
+  if (params.cursor !== undefined && params.cursor.length === 0) {
+    throw new AnalyticsQueryError('cursor must be a non-empty string');
+  }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -198,6 +206,9 @@ export function buildAnalyticsQuery(params: AnalyticsQueryOptions): URLSearchPar
   if (params.agentId !== undefined) searchParams.set('agentId', params.agentId);
   if (params.sort !== undefined) searchParams.set('sort', params.sort);
   if (params.groupBy !== undefined) searchParams.set('groupBy', params.groupBy);
+  // Standard pagination arguments, shared with every other resource package.
+  // `cursor` (keyset) and `page` (offset) are both forwarded when supplied.
+  if (params.cursor !== undefined) searchParams.set('cursor', params.cursor);
   if (params.page !== undefined) searchParams.set('page', String(params.page));
   if (params.limit !== undefined) searchParams.set('limit', String(params.limit));
   if (params.order !== undefined) searchParams.set('order', params.order);

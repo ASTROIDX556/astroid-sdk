@@ -196,7 +196,13 @@ describe('#272 — retry behaviour', () => {
 
   it('does not retry a non-transient 400', async () => {
     const fetchMock = vi.fn(async () => errorResponse(400, 'VALIDATION_ERROR', 'bad input'));
-    const client = new Astroid({ ...BASE, fetch: fetchMock, retries: 3, minTimeout: 1, maxTimeout: 5 });
+    const client = new Astroid({
+      ...BASE,
+      fetch: fetchMock,
+      retries: 3,
+      minTimeout: 1,
+      maxTimeout: 5,
+    });
 
     await expect(client.wallets.get('w')).rejects.toBeDefined();
     expect(fetchMock).toHaveBeenCalledTimes(1);

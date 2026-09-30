@@ -190,12 +190,8 @@ export class AgentResource extends Resource {
    * console.log(deactivated.status); // 'ARCHIVED'
    * ```
    */
-  async deactivate(agentId: string, options?: RequestOptionsExtras): Promise<Agent> {
-    const res = await this.client.post<Agent>(
-      `/agents/${encodeURIComponent(agentId)}/deactivate`,
-      undefined,
-      options,
-    );
+  async deactivate(agentId: string): Promise<Agent> {
+    const res = await this.client.post<Agent>(`/agents/${encodeURIComponent(agentId)}/deactivate`);
     return res.data;
   }
 

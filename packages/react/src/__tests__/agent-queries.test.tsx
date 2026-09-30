@@ -19,12 +19,7 @@ import { describe, expect, it, type vi } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { useAgent, useAgents } from '../hooks.js';
 import { queryKeys } from '../hooks.js';
-import {
-  createMockClient,
-  createWrapper,
-  AGENT_A,
-  AGENT_PAGE,
-} from './test-utils.js';
+import { createMockClient, createWrapper, AGENT_A, AGENT_PAGE } from './test-utils.js';
 import type { Agent, Paginated } from '@astroid/types';
 
 describe('useAgents', () => {
@@ -66,13 +61,9 @@ describe('useAgents', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    const cached = queryClient.getQueryData<Paginated<Agent>>(
-      queryKeys.agents.list({ page: 1 }),
-    );
+    const cached = queryClient.getQueryData<Paginated<Agent>>(queryKeys.agents.list({ page: 1 }));
     expect(cached).toEqual(AGENT_PAGE);
-    expect(queryClient.getQueryState(queryKeys.agents.list({ page: 1 }))?.status).toBe(
-      'success',
-    );
+    expect(queryClient.getQueryState(queryKeys.agents.list({ page: 1 }))?.status).toBe('success');
   });
 
   it('surfaces client errors in the query error state', async () => {
@@ -132,16 +123,12 @@ describe('useAgent', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    expect(
-      queryClient.getQueryData<Agent>(queryKeys.agents.detail('agent_001')),
-    ).toEqual(AGENT_A);
+    expect(queryClient.getQueryData<Agent>(queryKeys.agents.detail('agent_001'))).toEqual(AGENT_A);
   });
 
   it('surfaces client errors in the query error state', async () => {
     const client = createMockClient();
-    (client.agents.get as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
-      new Error('Not found'),
-    );
+    (client.agents.get as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('Not found'));
     const { Wrapper } = createWrapper(client);
 
     const { result } = renderHook(() => useAgent('agent_404'), { wrapper: Wrapper });

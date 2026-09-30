@@ -284,7 +284,12 @@ export async function estimateFee(
       );
       operationCount = decoded.operations.length;
       const envelopeFee = Number(decoded.fee);
-      if (baseFee === undefined && Number.isFinite(envelopeFee) && envelopeFee > 0 && operationCount > 0) {
+      if (
+        baseFee === undefined &&
+        Number.isFinite(envelopeFee) &&
+        envelopeFee > 0 &&
+        operationCount > 0
+      ) {
         baseFee = Math.ceil(envelopeFee / operationCount);
       }
     } catch (error) {

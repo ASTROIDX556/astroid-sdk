@@ -93,13 +93,13 @@ describe('resolveTimeRange', () => {
   });
 
   it('falls back to from/to and maps granularity to timeframe', () => {
-    expect(
-      resolveTimeRange({ from: '2026-01-01', to: '2026-01-31', granularity: 'week' }),
-    ).toEqual({
-      startDate: '2026-01-01T00:00:00.000Z',
-      endDate: '2026-01-31T00:00:00.000Z',
-      timeframe: 'week',
-    });
+    expect(resolveTimeRange({ from: '2026-01-01', to: '2026-01-31', granularity: 'week' })).toEqual(
+      {
+        startDate: '2026-01-01T00:00:00.000Z',
+        endDate: '2026-01-31T00:00:00.000Z',
+        timeframe: 'week',
+      },
+    );
   });
 
   it('returns an empty object for an empty filter', () => {

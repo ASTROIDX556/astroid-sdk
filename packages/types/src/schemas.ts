@@ -22,6 +22,8 @@
 
 import { z } from 'zod';
 
+import type { AgentInitialBudget, AgentMetadata, CreateAgentDto, UpdateAgentDto } from './agent.js';
+
 /* -------------------------------------------------------------------------- */
 /* Enum schemas                                                                */
 /* -------------------------------------------------------------------------- */
@@ -626,6 +628,226 @@ export const SimulatePolicyInputSchema = z.object({
 });
 
 /* -------------------------------------------------------------------------- */
+/* Agent DTO schemas (issue #215)                                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Agent payload Stellar address format: `G` followed by 51 base-32 characters
+ * (52 total), as required by the agent API contract.
+ *
+ * The same shape check `@astroid/agent`'s `validateCreateAgentParams` and
+ * `@astroid/transaction`'s `isValidStellarPublicKey` apply, so an address
+ * accepted at one SDK boundary is accepted at the others. The base-32 alphabet
+ * excludes `0`, `1`, `8` and `9`, which are not valid StrKey characters.
+ */
+export const STELLAR_PUBLIC_KEY_PATTERN = /^G[A-Z2-7]{51}$/;
+
+/**
+ * Non-negative decimal amount, e.g. `"0"`, `"500"` or `"1000.00"`.
+ *
+ * Deliberately stricter than `Number(value)`, which happily accepts
+ * `"Infinity"`, `"0x10"`, `"1e3"` and `""` — all of which the Astroid API
+ * rejects. Amounts travel as decimal strings (to preserve precision), so a
+ * negative budget cap is a client-side error rather than a server `422`.
+ */
+const NON_NEGATIVE_DECIMAL_PATTERN = /^\d+(?:\.\d+)?$/;
+
+/** Whether `value` is a string carrying at least one non-whitespace character. */
+function isNonBlankString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim() !== '';
+}
+
+/**
+ * A Stellar public key (`G…`, 52 characters).
+ *
+ * This is a syntax check (prefix, length and base-32 alphabet); the CRC16
+ * checksum is verified server-side.
+ */
+export const StellarPublicKeySchema = z
+  .string()
+  .refine((value) => STELLAR_PUBLIC_KEY_PATTERN.test(value.trim()), {
+    message: 'Expected a Stellar public key starting with "G" and 52 characters long',
+  });
+
+/** A non-negative decimal amount string (e.g. `"1000.00"`). */
+export const DecimalAmountStringSchema = z
+  .string()
+  .refine((value) => NON_NEGATIVE_DECIMAL_PATTERN.test(value.trim()), {
+    message: 'Expected a non-negative decimal amount string (e.g. "1000.00")',
+  });
+
+/**
+ * Agent metadata ({@link AgentMetadata}).
+ *
+ * The backend stores metadata as JSONB, so unknown keys are permitted; the keys
+ * the SDK types are validated when present — `team` and `externalId` must be
+ * non-blank strings, `tags` an array of non-blank strings, and
+ * `stellarAddress` a format-valid Stellar public key.
+ */
+export const AgentMetadataSchema: z.ZodType<AgentMetadata> = z
+  .record(z.string(), z.unknown())
+  .superRefine((value, ctx) => {
+    for (const key of ['team', 'externalId'] as const) {
+      if (value[key] !== undefined && !isNonBlankString(value[key])) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [key],
+          message: `Expected "${key}" to be a non-blank string when provided`,
+        });
+      }
+    }
+
+    const tags = value['tags'];
+    if (tags !== undefined && (!Array.isArray(tags) || !tags.every(isNonBlankString))) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['tags'],
+        message: 'Expected "tags" to be an array of non-blank strings',
+      });
+    }
+
+    const stellarAddress = value['stellarAddress'];
+    if (stellarAddress !== undefined && !StellarPublicKeySchema.safeParse(stellarAddress).success) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['stellarAddress'],
+        message: 'Expected "stellarAddress" to be a Stellar public key (G…, 52 characters)',
+      });
+    }
+  });
+
+/** The initial budget allocated to an agent at creation time. */
+export const AgentInitialBudgetSchema: z.ZodType<AgentInitialBudget> = z.object({
+  currency: z
+    .string()
+    .refine(isNonBlankString, { message: 'Expected "initialBudget.currency" to be non-blank' }),
+  amount: DecimalAmountStringSchema,
+});
+
+/**
+ * Strict schema for {@link CreateAgentDto} — the `POST /v1/agents` payload.
+ *
+ * `name`, `capabilities` (at least one entry, every entry non-blank) and
+ * `initialBudget` are required; optional fields are validated whenever they are
+ * supplied, so a misconfiguration is caught locally instead of as a server
+ * `422`. `@astroid/agent`'s `validateCreateAgentParams` applies the same rules
+ * before the request is dispatched, and additionally validates the
+ * conventional top-level `stellarAddress` key untyped callers may send.
+ */
+export const CreateAgentDtoSchema: z.ZodType<CreateAgentDto> = z.object({
+  name: z.string().refine(isNonBlankString, { message: 'Agent name is required' }),
+  capabilities: z
+    .array(
+      z
+        .string()
+        .refine(isNonBlankString, { message: 'Agent capabilities must be non-blank strings' }),
+    )
+    .min(1, 'At least one agent capability is required'),
+  initialBudget: AgentInitialBudgetSchema,
+  description: z.string().optional(),
+  role: AgentRoleSchema.optional(),
+  provider: z
+    .string()
+    .refine(isNonBlankString, { message: 'Expected "provider" to be a non-blank string' })
+    .optional(),
+  model: z
+    .string()
+    .refine(isNonBlankString, { message: 'Expected "model" to be a non-blank string' })
+    .optional(),
+  primaryWalletId: z
+    .string()
+    .refine(isNonBlankString, { message: 'Expected "primaryWalletId" to be a non-blank string' })
+    .optional(),
+  metadata: AgentMetadataSchema.optional(),
+});
+
+/** Every field an {@link UpdateAgentDto} payload may carry. */
+export const UPDATE_AGENT_DTO_FIELDS = Object.freeze([
+  'name',
+  'description',
+  'role',
+  'provider',
+  'model',
+  'capabilities',
+  'status',
+  'primaryWalletId',
+  'metadata',
+] as const);
+
+/**
+ * Strict schema for {@link UpdateAgentDto} — the `PATCH /v1/agents/:id` payload.
+ *
+ * Every field is optional, but at least one must be present: an empty `PATCH` is
+ * a guaranteed no-op, so it is rejected locally instead of costing a round trip.
+ * `primaryWalletId` also accepts `null` (which detaches the agent's wallet);
+ * every other field rejects `null` so a typo cannot blank out an agent.
+ */
+export const UpdateAgentDtoSchema: z.ZodType<UpdateAgentDto> = z
+  .object({
+    name: z
+      .string()
+      .refine(isNonBlankString, { message: 'Expected "name" to be a non-blank string' })
+      .optional(),
+    description: z.string().optional(),
+    role: AgentRoleSchema.optional(),
+    provider: z
+      .string()
+      .refine(isNonBlankString, { message: 'Expected "provider" to be a non-blank string' })
+      .optional(),
+    model: z
+      .string()
+      .refine(isNonBlankString, { message: 'Expected "model" to be a non-blank string' })
+      .optional(),
+    capabilities: z
+      .array(
+        z
+          .string()
+          .refine(isNonBlankString, { message: 'Agent capabilities must be non-blank strings' }),
+      )
+      .min(1, 'At least one agent capability is required')
+      .optional(),
+    status: AgentStatusSchema.optional(),
+    primaryWalletId: z
+      .string()
+      .refine(isNonBlankString, { message: 'Expected "primaryWalletId" to be a non-blank string' })
+      .nullable()
+      .optional(),
+    metadata: AgentMetadataSchema.optional(),
+  })
+  .refine((value) => UPDATE_AGENT_DTO_FIELDS.some((field) => value[field] !== undefined), {
+    message: `At least one of ${UPDATE_AGENT_DTO_FIELDS.join(', ')} must be provided`,
+  });
+
+/**
+ * Non-throwing type guard for {@link CreateAgentDto}.
+ *
+ * @param value The payload to check.
+ * @returns     `true` when `value` is a valid agent creation payload.
+ *
+ * @example
+ * ```ts
+ * isValidCreateAgentDto({
+ *   name: 'Bot',
+ *   capabilities: ['trade'],
+ *   initialBudget: { currency: 'USDC', amount: '100' },
+ * }); // true
+ * ```
+ */
+export function isValidCreateAgentDto(value: unknown): value is CreateAgentDto {
+  return CreateAgentDtoSchema.safeParse(value).success;
+}
+
+/**
+ * Non-throwing type guard for {@link UpdateAgentDto}.
+ *
+ * @param value The payload to check.
+ * @returns     `true` when `value` is a valid agent update payload.
+ */
+export function isValidUpdateAgentDto(value: unknown): value is UpdateAgentDto {
+  return UpdateAgentDtoSchema.safeParse(value).success;
+}
+
+/* -------------------------------------------------------------------------- */
 /* Validation helpers                                                          */
 /* -------------------------------------------------------------------------- */
 
@@ -727,6 +949,28 @@ export function validateCreateAgentInput(
   value: unknown,
 ): ValidationResult<z.infer<typeof CreateAgentInputSchema>> {
   return validate(CreateAgentInputSchema, value);
+}
+
+/**
+ * Validate a `CreateAgentDto` payload (`POST /v1/agents`).
+ *
+ * Returns a discriminated result rather than throwing, so a form or CLI can map
+ * `result.error.issues` onto its own fields:
+ *
+ * ```ts
+ * const result = validateCreateAgentDto(payload);
+ * if (!result.success) {
+ *   console.error(result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`));
+ * }
+ * ```
+ */
+export function validateCreateAgentDto(value: unknown): ValidationResult<CreateAgentDto> {
+  return validate(CreateAgentDtoSchema, value);
+}
+
+/** Validate an `UpdateAgentDto` payload (`PATCH /v1/agents/:id`). */
+export function validateUpdateAgentDto(value: unknown): ValidationResult<UpdateAgentDto> {
+  return validate(UpdateAgentDtoSchema, value);
 }
 
 /** Validate a CreatePolicyInput payload. */

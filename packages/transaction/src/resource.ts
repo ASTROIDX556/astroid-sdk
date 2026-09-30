@@ -68,19 +68,12 @@ export class TransactionsResource extends Resource {
    * Delegates to the backend `/transactions/estimate-fee` endpoint, which
    * combines live network fee data with the organization's own configuration.
    */
-  async estimateFee(
-    input: {
-      transactionXdr?: string;
-      operationCount?: number;
-      network?: string;
-    },
-    options?: RequestOptionsExtras,
-  ): Promise<TransactionFeeEstimate> {
-    const res = await this.client.post<TransactionFeeEstimate>(
-      '/transactions/estimate-fee',
-      input,
-      options,
-    );
+  async estimateFee(input: {
+    transactionXdr?: string;
+    operationCount?: number;
+    network?: string;
+  }): Promise<TransactionFeeEstimate> {
+    const res = await this.client.post<TransactionFeeEstimate>('/transactions/estimate-fee', input);
     return res.data;
   }
 

@@ -25,10 +25,7 @@ function paymentOp(options: PaymentTransactionOptions) {
   const tx = buildPaymentTransaction(options);
   // `TransactionBuilder.fromXDR` is typed as `Transaction | FeeBumpTransaction`;
   // a payment transaction is always the former, so narrow it here.
-  const decoded = TransactionBuilder.fromXDR(
-    tx.toXDR(),
-    options.networkPassphrase,
-  ) as Transaction;
+  const decoded = TransactionBuilder.fromXDR(tx.toXDR(), options.networkPassphrase) as Transaction;
   const op = decoded.operations[0];
   if (!op || op.type !== 'payment') throw new Error('expected a single payment operation');
   return { tx, decoded, op };
@@ -119,9 +116,7 @@ describe('buildPaymentTransaction — input validation', () => {
     expect(() => buildPaymentTransaction({ ...valid(), amount: '0' })).toThrowError(
       ValidationError,
     );
-    expect(() => buildPaymentTransaction({ ...valid(), amount: -5 })).toThrowError(
-      ValidationError,
-    );
+    expect(() => buildPaymentTransaction({ ...valid(), amount: -5 })).toThrowError(ValidationError);
   });
 
   it('throws for a non-native asset without an issuer', () => {

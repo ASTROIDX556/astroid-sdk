@@ -59,21 +59,23 @@ export function createMockClient() {
     agents: {
       list: vi.fn(async (): Promise<Paginated<Agent>> => AGENT_PAGE),
       get: vi.fn(async (): Promise<Agent> => AGENT_A),
-      create: vi.fn(async (params: CreateAgentParams): Promise<Agent> => ({
-        ...AGENT_A,
-        id: 'agent_created',
-        name: params.name,
-        capabilities: params.capabilities,
-        description: params.description ?? null,
-        role: (params.role ?? 'CUSTOM') as Agent['role'],
-        status: 'ACTIVE' as Agent['status'],
-        provider: params.provider ?? null,
-        model: params.model ?? null,
-        primaryWalletId: params.primaryWalletId ?? null,
-        metadata: params.metadata ?? {},
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      })),
+      create: vi.fn(
+        async (params: CreateAgentParams): Promise<Agent> => ({
+          ...AGENT_A,
+          id: 'agent_created',
+          name: params.name,
+          capabilities: params.capabilities,
+          description: params.description ?? null,
+          role: (params.role ?? 'CUSTOM') as Agent['role'],
+          status: 'ACTIVE' as Agent['status'],
+          provider: params.provider ?? null,
+          model: params.model ?? null,
+          primaryWalletId: params.primaryWalletId ?? null,
+          metadata: params.metadata ?? {},
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }),
+      ),
     },
   } as unknown as Astroid;
 }
