@@ -6,12 +6,12 @@ import {
   NetworkError,
   isAstroidError,
   isTimeoutError,
-} from '../src/index.js';
-import { DEFAULT_TIMEOUT_MS } from '../src/index.js';
+} from '../index.js';
+import { DEFAULT_TIMEOUT_MS } from '../index.js';
 
 /** A fetch that never settles until its AbortSignal fires. */
 function hangingFetch(): typeof fetch {
-  return (async (_url, init) => {
+  return (async (_url: string | URL, init?: RequestInit) => {
     const signal = init?.signal as AbortSignal | undefined;
     return new Promise<never>((_resolve, reject) => {
       if (signal?.aborted) {
