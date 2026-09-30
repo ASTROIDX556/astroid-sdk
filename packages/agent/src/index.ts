@@ -28,8 +28,13 @@ export {
   isValidUpdateAgentParams,
   // Shared primitive guards
   isValidStellarPublicKey,
+  assertValidStellarPublicKey,
   isValidAmountString,
+  assertValidAmountString,
   isValidAgentId,
   assertValidAgentId,
+  // Metadata guards
+  validateAgentMetadata,
+  isValidAgentMetadata,
 } from './validation.js';
 export { AgentClient } from './client.js';
