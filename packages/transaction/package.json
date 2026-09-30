@@ -29,6 +29,7 @@
   "dependencies": {
     "@astroid/core": "workspace:*",
     "@astroid/errors": "workspace:*",
+    "@astroid/policy": "workspace:*",
     "@astroid/types": "workspace:*",
     "@stellar/stellar-base": "^15.0.0"
   },
