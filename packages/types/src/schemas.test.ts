@@ -26,6 +26,10 @@ import {
   PolicyConfigurationSchema,
   PolicySetSchema,
   TransactionDetailsSchema,
+  PolicySimulationInputSchema,
+  PolicySimulationEvaluationSchema,
+  validatePolicySimulationInput,
+  validatePolicySimulationEvaluation,
   validatePolicySet,
   validateTransactionDetails,
   type InferredAgent,
@@ -848,5 +852,127 @@ describe('policy evaluation validators', () => {
       requiredSignatures: 2,
     });
     expect(result.success).toBe(true);
+  });
+});
+
+describe('PolicySimulationInputSchema', () => {
+  it('accepts a decimal-string or numeric amount with the optional fields', () => {
+    for (const amount of ['750', '0.01', 1, 250.5]) {
+      const result = PolicySimulationInputSchema.safeParse({
+        asset: 'USDC',
+        amount,
+        recipientAddress: 'GDESTINATION',
+        senderAddress: 'GSOURCE',
+        memo: 'payout',
+        spentInWindow: '0',
+        metadata: { runId: 'run_1' },
+      });
+      expect(result.success).toBe(true);
+    }
+  });
+
+  it('rejects a missing or blank asset', () => {
+    expect(PolicySimulationInputSchema.safeParse({ amount: '10' }).success).toBe(false);
+    expect(PolicySimulationInputSchema.safeParse({ asset: '', amount: '10' }).success).toBe(false);
+  });
+
+  it('rejects a non-positive amount', () => {
+    for (const amount of [0, -1, -0.5]) {
+      expect(PolicySimulationInputSchema.safeParse({ asset: 'XLM', amount }).success).toBe(false);
+    }
+  });
+
+  it('rejects a negative spentInWindow but accepts zero', () => {
+    expect(PolicySimulationInputSchema.safeParse({ asset: 'XLM', amount: '1', spentInWindow: -1 }).success).toBe(false);
+    expect(PolicySimulationInputSchema.safeParse({ asset: 'XLM', amount: '1', spentInWindow: 0 }).success).toBe(true);
+  });
+
+  it('validatePolicySimulationInput reports success and typed data', () => {
+    const result = validatePolicySimulationInput({ asset: 'USDC', amount: '10' });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.asset).toBe('USDC');
+  });
+
+  it('validatePolicySimulationInput surfaces structured failures', () => {
+    const result = validatePolicySimulationInput({ asset: 'USDC', amount: 0 });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('PolicySimulationEvaluationSchema', () => {
+  const evaluation = {
+    policyId: 'pol_1',
+    allowed: false,
+    passed: false,
+    violatedRules: [
+      {
+        policyId: 'pol_1',
+        policyName: 'Max 500 USDC',
+        policyType: 'MAX_AMOUNT',
+        rule: 'MAX_AMOUNT',
+        message: 'Transfer amount 750 exceeds the maximum allowed limit of 500 USDC.',
+        limit: 500,
+        actual: '750',
+      },
+    ],
+    riskScore: 0.82,
+    risk: {
+      score: 0.82,
+      band: 'HIGH',
+      factors: [{ factor: 'unusual_amount', score: 0.4, description: 'Above the rolling average.' }],
+    },
+    requiredApprovals: ['owner'],
+    budgetImpact: [
+      { budgetId: 'bdg_1', beforeRemaining: '1000.00', afterRemaining: '250.00' },
+    ],
+    explanation: 'Transfer is blocked by 1 active policy.',
+  };
+
+  it('accepts a parsed evaluation with breaches, risk and budget impact', () => {
+    const result = PolicySimulationEvaluationSchema.safeParse(evaluation);
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects an out-of-range risk score', () => {
+    expect(
+      PolicySimulationEvaluationSchema.safeParse({ ...evaluation, riskScore: 82 }).success,
+    ).toBe(false);
+    expect(
+      PolicySimulationEvaluationSchema.safeParse({ ...evaluation, risk: { ...evaluation.risk, score: -0.1 } })
+        .success,
+    ).toBe(false);
+  });
+
+  it('rejects an unknown policy type and risk band', () => {
+    expect(
+      PolicySimulationEvaluationSchema.safeParse({
+        ...evaluation,
+        violatedRules: [{ ...evaluation.violatedRules[0], policyType: 'NOT_A_TYPE' }],
+      }).success,
+    ).toBe(false);
+    expect(
+      PolicySimulationEvaluationSchema.safeParse({
+        ...evaluation,
+        risk: { ...evaluation.risk, band: 'SEVERE' },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects a breach without a rule name or a decision without a policy id', () => {
+    const { rule: _rule, ...breachWithoutRule } = evaluation.violatedRules[0]!;
+    expect(
+      PolicySimulationEvaluationSchema.safeParse({
+        ...evaluation,
+        violatedRules: [breachWithoutRule],
+      }).success,
+    ).toBe(false);
+    expect(
+      PolicySimulationEvaluationSchema.safeParse({ ...evaluation, policyId: '' }).success,
+    ).toBe(false);
+  });
+
+  it('validatePolicySimulationEvaluation accepts a parsed evaluation and rejects a denial', () => {
+    expect(validatePolicySimulationEvaluation(evaluation).success).toBe(true);
+    expect(validatePolicySimulationEvaluation({ allowed: false }).success).toBe(false);
   });
 });

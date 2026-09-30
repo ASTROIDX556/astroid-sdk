@@ -25,6 +25,7 @@ import {
   InternalServerError,
   type AstroidErrorOptions,
 } from '@astroid/errors';
+import { parseRetryAfter } from '@astroid/core';
 import type { ApiError } from '@astroid/types';
 
 /* -------------------------------------------------------------------------- */
@@ -293,6 +294,9 @@ export async function parseErrorResponse(
   const status = response.status;
   const requestId = response.headers.get('x-request-id') ?? undefined;
   const contentType = response.headers.get('content-type');
+  const retryAfterSeconds = parseRetryAfter(response.headers.get('retry-after'));
+  const retryAfterDetails =
+    retryAfterSeconds !== undefined ? { retryAfter: retryAfterSeconds } : undefined;
 
   // If no pre-read body, read it ourselves (safe — won't throw)
   const text = bodyText ?? (await safeBodyText(response));
@@ -300,7 +304,10 @@ export async function parseErrorResponse(
   // If body is empty or not JSON, fall back to a status-based error
   if (!text || !isJsonContentType(contentType)) {
     return {
-      error: buildStatusError(status, `Request failed with status ${status}`, { requestId }),
+      error: buildStatusError(status, `Request failed with status ${status}`, {
+        requestId,
+        details: retryAfterDetails,
+      }),
       parsed: false,
     };
   }
@@ -308,7 +315,10 @@ export async function parseErrorResponse(
   const body = safeJsonParse(text);
   if (body === undefined) {
     return {
-      error: buildStatusError(status, `Request failed with status ${status}`, { requestId }),
+      error: buildStatusError(status, `Request failed with status ${status}`, {
+        requestId,
+        details: retryAfterDetails,
+      }),
       parsed: false,
     };
   }
@@ -318,6 +328,11 @@ export async function parseErrorResponse(
   if (stellar) {
     const horizonStatus = HORIZON_STATUS_MAP[stellar.stellarCode] ?? status;
     const message = extractMessage(body) ?? `Stellar transaction failed: ${stellar.stellarCode}`;
+    const rawDetails = extractDetails(body);
+    const details =
+      retryAfterDetails && (!rawDetails || !('retryAfter' in rawDetails))
+        ? { ...rawDetails, ...retryAfterDetails }
+        : rawDetails;
     return {
       error: new StellarHorizonError(message, {
         code: stellar.stellarCode,
@@ -325,7 +340,7 @@ export async function parseErrorResponse(
         requestId,
         stellarCode: stellar.stellarCode,
         operationCode: stellar.operationCode,
-        details: extractDetails(body),
+        details,
       }),
       parsed: true,
     };
@@ -335,11 +350,15 @@ export async function parseErrorResponse(
   const apiError = extractApiError(body);
   if (apiError) {
     const fieldErrors = extractFieldErrors(body);
-    const details = fieldErrors ? { fields: fieldErrors } : apiError.details;
+    const rawDetails = fieldErrors ? { fields: fieldErrors } : apiError.details;
+    const details =
+      retryAfterDetails && (!rawDetails || !('retryAfter' in rawDetails))
+        ? { ...rawDetails, ...retryAfterDetails }
+        : rawDetails;
     const error = buildTypedError(apiError.code, apiError.message, {
       status,
       requestId,
-      details: Object.keys(details ?? {}).length > 0 ? details : undefined,
+      details: details && Object.keys(details).length > 0 ? details : undefined,
     });
     return { error, parsed: true };
   }
@@ -348,12 +367,16 @@ export async function parseErrorResponse(
   const fieldErrors = extractFieldErrors(body);
   if (fieldErrors) {
     const message = extractMessage(body) ?? 'Validation failed';
+    const details: Record<string, unknown> = {
+      fields: fieldErrors,
+      ...(retryAfterDetails ?? {}),
+    };
     return {
       error: new ValidationError(message, {
         code: 'VALIDATION_ERROR',
         status,
         requestId,
-        details: { fields: fieldErrors },
+        details,
       }),
       parsed: true,
     };
@@ -362,7 +385,11 @@ export async function parseErrorResponse(
   // 4. Unrecognised body shape — wrap as a generic error
   const message = extractMessage(body) ?? `Request failed with status ${status}`;
   return {
-    error: buildStatusError(status, message, { requestId, cause: body }),
+    error: buildStatusError(status, message, {
+      requestId,
+      cause: body,
+      details: retryAfterDetails,
+    }),
     parsed: true,
   };
 }
@@ -528,12 +555,13 @@ function buildTypedError(
 function buildStatusError(
   status: number,
   message: string,
-  context: { requestId?: string; cause?: unknown },
+  context: { requestId?: string; cause?: unknown; details?: Record<string, unknown> },
 ): AstroidError {
   return buildTypedError(codeForStatus(status), message, {
     status,
     requestId: context.requestId,
     cause: context.cause,
+    details: context.details,
   });
 }
 
