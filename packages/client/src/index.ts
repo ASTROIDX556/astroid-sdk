@@ -76,7 +76,7 @@ import { createTokenRefreshInterceptor } from './token-refresh.js';
  * Configuration accepted by `new Astroid({ ... })`.
  *
  * Extends the core client config with shorthand retry options
- * (`retries` / `minTimeout` / `maxTimeout` / `backoffFactor` /
+ * (`retries` / `minTimeout` / `maxTimeout` / `backoffFactor` (`factor`) /
  * `retryableStatuses` / `jitter`) for convenience. Each is merged into the
  * `retry` block, so the full {@link RetryConfig} remains available for advanced
  * use.
@@ -121,6 +121,12 @@ export interface AstroidClientConfig extends CoreClientConfig {
    * values above `2` to back off more aggressively.
    */
   backoffFactor?: number;
+  /**
+   * Exponential growth factor applied between retries (alias for
+   * {@link AstroidClientConfig.backoffFactor} / `retry.backoffFactor`).
+   * Defaults to `2`.
+   */
+  factor?: number;
   /**
    * Apply full jitter to each backoff delay (shorthand for `retry.jitter`).
    * Default `true`; set to `false` for deterministic delays.
@@ -548,7 +554,7 @@ export { Astroid as AstroidClient };
 
 /**
  * Normalise the flat retry shorthand options
- * (`retries` / `minTimeout` / `maxTimeout` / `backoffFactor` /
+ * (`retries` / `minTimeout` / `maxTimeout` / `backoffFactor` (`factor`) /
  * `retryableStatuses` / `jitter`) into a single core `retry` block, merging
  * with any explicit `retry` object.
  *
@@ -568,6 +574,7 @@ function normalizeConfig(config: AstroidClientConfig): CoreClientConfig {
     maxDelay,
     maxDelayMs: customMaxDelayMs,
     backoffFactor,
+    factor,
     retryableStatuses,
     retryableStatusCodes,
     jitter,
@@ -582,7 +589,8 @@ function normalizeConfig(config: AstroidClientConfig): CoreClientConfig {
   if (resolvedBaseDelay !== undefined) shorthand.baseDelayMs = resolvedBaseDelay;
   const resolvedMaxDelay = maxTimeout ?? maxDelay ?? customMaxDelayMs;
   if (resolvedMaxDelay !== undefined) shorthand.maxDelayMs = resolvedMaxDelay;
-  if (backoffFactor !== undefined) shorthand.backoffFactor = backoffFactor;
+  const resolvedBackoffFactor = backoffFactor ?? factor;
+  if (resolvedBackoffFactor !== undefined) shorthand.backoffFactor = resolvedBackoffFactor;
   const resolvedStatuses = retryableStatuses ?? retryableStatusCodes;
   if (resolvedStatuses !== undefined) shorthand.retryableStatuses = resolvedStatuses;
   if (jitter !== undefined) shorthand.jitter = jitter;
