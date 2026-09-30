@@ -148,6 +148,8 @@ export class BudgetResource extends Resource {
    * Fetch a single budget by id.
    *
    * @param budgetId The budget id.
+   * @param options Extra request options (timeout, signal, headers) forwarded
+   *   to the HTTP client.
    * @returns The {@link Budget}.
    *
    * @example
@@ -155,8 +157,8 @@ export class BudgetResource extends Resource {
    * const budget = await asteroid.budgets.get('bud_1');
    * ```
    */
-  async get(budgetId: string): Promise<Budget> {
-    return this.getData<Budget>(`/budgets/${encodeURIComponent(budgetId)}`);
+  async get(budgetId: string, options?: RequestOptionsExtras): Promise<Budget> {
+    return this.getData<Budget>(`/budgets/${encodeURIComponent(budgetId)}`, undefined, options);
   }
 
   /**

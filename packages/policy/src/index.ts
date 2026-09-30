@@ -19,10 +19,10 @@ import type { PolicySimulationReport, SimulatedTransaction } from './simulator.j
 import { simulatePolicy } from './simulate-policy.js';
 import { simulatePolicyUpdate } from './simulate-policy-update.js';
 import { simulatePolicyEvaluation } from './simulation.js';
-import { 
-  assertPolicyCreateInput, 
+import {
+  assertPolicyCreateInput,
   assertPolicySimulationRequest,
-  PolicyUpdateInputSchema
+  PolicyUpdateInputSchema,
 } from './schemas.js';
 import { ValidationError } from '@astroid/errors';
 
@@ -233,11 +233,17 @@ export class PolicyResource extends Resource {
   /**
    * Update an existing policy.
    *
-   * @param id    The policy id.
-   * @param input The fields to change — a {@link PolicyUpdateInput}.
+   * @param id      The policy id.
+   * @param input   The fields to change — a {@link PolicyUpdateInput}.
+   * @param options Extra request options (timeout, signal, headers) forwarded
+   *   to the HTTP client.
    * @throws      `NotFoundError` when no policy has that id.
    */
-  async update(id: string, input: PolicyUpdateInput): Promise<Policy> {
+  async update(
+    id: string,
+    input: PolicyUpdateInput,
+    options?: RequestOptionsExtras,
+  ): Promise<Policy> {
     const validation = PolicyUpdateInputSchema.safeParse(input);
     if (!validation.success) {
       throw new ValidationError('Validation failed for PolicyUpdateInput', {
@@ -248,7 +254,11 @@ export class PolicyResource extends Resource {
       });
     }
 
-    const res = await this.client.patch<Policy>(`/policies/${encodeURIComponent(id)}`, input);
+    const res = await this.client.patch<Policy>(
+      `/policies/${encodeURIComponent(id)}`,
+      input,
+      options,
+    );
     return res.data;
   }
 
@@ -332,9 +342,11 @@ export class PolicyResource extends Resource {
    *
    * Identical to {@link PolicyResource.update}.
    *
-   * @param id    The policy id.
-   * @param input The fields to change — a {@link PolicyUpdateInput}.
-   * @returns     The updated policy record.
+   * @param id      The policy id.
+   * @param input   The fields to change — a {@link PolicyUpdateInput}.
+   * @param options Extra request options (timeout, signal, headers) forwarded
+   *   to the HTTP client.
+   * @returns       The updated policy record.
    * @throws      `NotFoundError` when no policy has that id, `ValidationError`
    *              when the API rejects the patch.
    *

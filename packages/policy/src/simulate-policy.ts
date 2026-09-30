@@ -86,6 +86,6 @@ export async function simulatePolicy(
     });
   }
 
-  const res = await client.post<PolicySimulationResult>(POLICY_SIMULATE_PATH, input);
+  const res = await client.post<PolicySimulationResult>(POLICY_SIMULATE_PATH, input, options);
   return res.data;
 }
