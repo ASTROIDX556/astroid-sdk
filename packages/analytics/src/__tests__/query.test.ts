@@ -569,3 +569,47 @@ describe('Convenience endpoint builders', () => {
     expect(path).toContain('limit=100');
   });
 });
+
+describe('cursor pagination in query options', () => {
+  const window = {
+    startDate: '2026-01-01T00:00:00.000Z',
+    endDate: '2026-02-01T00:00:00.000Z',
+  };
+
+  it('buildAnalyticsQuery forwards the opaque cursor', () => {
+    const params = buildAnalyticsQuery({ ...window, cursor: 'cur_abc', limit: 25 });
+    expect(params.get('cursor')).toBe('cur_abc');
+    expect(params.get('limit')).toBe('25');
+  });
+
+  it('buildAnalyticsQuery omits cursor when it is not supplied', () => {
+    const params = buildAnalyticsQuery(window);
+    expect(params.has('cursor')).toBe(false);
+  });
+
+  it('buildAnalyticsQuery forwards cursor alongside offset page', () => {
+    const params = buildAnalyticsQuery({ ...window, page: 2, cursor: 'cur_abc' });
+    expect(params.get('page')).toBe('2');
+    expect(params.get('cursor')).toBe('cur_abc');
+  });
+
+  it('buildAnalyticsPath includes the cursor in the path', () => {
+    const path = buildAnalyticsPath({ ...window, cursor: 'cur_abc' }, '/analytics/agents');
+    expect(path).toContain('cursor=cur_abc');
+  });
+
+  it('buildListAgentsQuery and buildListBudgetsQuery forward the cursor', () => {
+    expect(buildListAgentsQuery({ ...window, cursor: 'cur_a' })).toContain('cursor=cur_a');
+    expect(buildListBudgetsQuery({ ...window, cursor: 'cur_b' })).toContain('cursor=cur_b');
+  });
+
+  it('validateAnalyticsQuery accepts a non-empty cursor', () => {
+    expect(() => validateAnalyticsQuery({ ...window, cursor: 'cur_abc' })).not.toThrow();
+  });
+
+  it('validateAnalyticsQuery rejects an empty cursor', () => {
+    expect(() => validateAnalyticsQuery({ ...window, cursor: '' })).toThrow(
+      'cursor must be a non-empty string',
+    );
+  });
+});
