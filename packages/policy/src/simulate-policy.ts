@@ -68,11 +68,24 @@ export interface PolicySimulationHttpClient {
  * }
  * ```
  */
+import { ValidationError } from '@astroid/errors';
+import { PolicySimulationRequestSchema } from './schemas.js';
+
 export async function simulatePolicy(
   client: PolicySimulationHttpClient,
   input: PolicySimulationRequest,
   options?: RequestOptionsExtras,
 ): Promise<PolicySimulationResult> {
-  const res = await client.post<PolicySimulationResult>(POLICY_SIMULATE_PATH, input, options);
+  const validation = PolicySimulationRequestSchema.safeParse(input);
+  if (!validation.success) {
+    throw new ValidationError('Validation failed for PolicySimulationRequest', {
+      code: 'VALIDATION_ERROR',
+      details: {
+        fields: validation.error.flatten().fieldErrors,
+      },
+    });
+  }
+
+  const res = await client.post<PolicySimulationResult>(POLICY_SIMULATE_PATH, input);
   return res.data;
 }

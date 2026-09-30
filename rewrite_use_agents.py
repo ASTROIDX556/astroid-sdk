@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient, type UseMutationResult, type UseQueryResult } from '@tanstack/react-query';
+content = """import { useMutation, useQuery, useQueryClient, type UseMutationResult, type UseQueryResult } from '@tanstack/react-query';
 import { useAstroidClient } from '../hooks.js';
 import type {
   Agent,
@@ -9,7 +9,7 @@ import type {
   AgentStatus,
   AgentMetadata
 } from '@astroid/types';
-import { queryKeys } from '../hooks.js';
+import { queryKeys, invalidateQueries } from '../hooks.js';
 
 export interface UpdateAgentVariables {
   id: string;
@@ -102,3 +102,7 @@ export function useDeleteAgent(): UseMutationResult<void, Error, string> {
     },
   });
 }
+"""
+
+with open('packages/react/src/hooks/useAgents.ts', 'w') as f:
+    f.write(content)
