@@ -17,7 +17,15 @@ import type {
   TransactionStatus,
   WalletType,
 } from './enums.js';
-import type { Organization, PolicyConfiguration, Session, User } from './entities.js';
+import type {
+  DecimalString,
+  Organization,
+  PolicyConfiguration,
+  Session,
+  StellarAssetCode,
+  StellarPublicKey,
+  User,
+} from './entities.js';
 
 /* -------------------------------------------------------------------------- */
 /* Wallet                                                                      */
@@ -31,7 +39,7 @@ export interface CreateWalletInput {
 }
 
 export interface ImportWalletInput {
-  stellarAddress: string;
+  stellarAddress: StellarPublicKey;
   /** Secret key for self-custody import. Never logged by the SDK. */
   secretKey?: string;
   agentId?: string;
@@ -44,6 +52,40 @@ export interface UpdateWalletInput {
   label?: string;
   agentId?: string | null;
   status?: 'ACTIVE' | 'FROZEN' | 'PAUSED' | 'ARCHIVED';
+}
+
+/**
+ * Optional asset filters for a wallet balance snapshot.
+ *
+ * @example
+ * ```ts
+ * const query: WalletBalanceQuery = { assetCode: 'USDC', issuer: stellarIssuer };
+ * const balance = await astroid.wallets.getWalletBalances('wlt_123', query);
+ * ```
+ */
+export interface WalletBalanceQuery {
+  assetCode?: StellarAssetCode;
+  issuer?: StellarPublicKey;
+}
+
+/**
+ * Asset and exact decimal amount to submit when funding a wallet. Keep `amount`
+ * as a string so the value is not rounded through floating-point arithmetic.
+ *
+ * @example
+ * ```ts
+ * const input: FundWalletInput = {
+ *   assetCode: 'USDC',
+ *   issuer: stellarIssuer,
+ *   amount: '25.0000001',
+ * };
+ * await astroid.wallets.fundWallet('wlt_123', input);
+ * ```
+ */
+export interface FundWalletInput {
+  assetCode: StellarAssetCode;
+  amount: DecimalString;
+  issuer?: StellarPublicKey;
 }
 
 export interface TransferInput {

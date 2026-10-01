@@ -12,6 +12,7 @@
 import { Resource, type RequestOptionsExtras } from '@astroid/core';
 import type {
   CreateWalletInput,
+  FundWalletInput,
   ImportWalletInput,
   Paginated,
   PaginationParams,
@@ -19,6 +20,7 @@ import type {
   TransferInput,
   UpdateWalletInput,
   Wallet,
+  WalletBalanceQuery,
   WalletBalance,
   WalletStatus,
 } from '@astroid/types';
@@ -85,6 +87,21 @@ export class WalletResource extends Resource {
   }
 
   /**
+   * Fetch a wallet by id.
+   *
+   * @param walletId Wallet identifier.
+   * @param options Optional per-request HTTP options.
+   *
+   * @example
+   * ```ts
+   * const wallet = await astroid.wallets.getWallet('wlt_123');
+   * ```
+   */
+  async getWallet(walletId: string, options?: RequestOptionsExtras): Promise<Wallet> {
+    return this.get(walletId, options);
+  }
+
+  /**
    * Look up a single wallet by its Stellar public address (`G…`).
    *
    * Uses the list endpoint's `stellarAddress` filter and returns the first
@@ -104,6 +121,24 @@ export class WalletResource extends Resource {
     options?: RequestOptionsExtras,
   ): Promise<Paginated<Wallet>> {
     return this.listData<Wallet>('/wallets', { ...params }, options);
+  }
+
+  /**
+   * List wallets with optional filters and pagination.
+   *
+   * @param params Optional filters and pagination settings.
+   * @param options Optional per-request HTTP options.
+   *
+   * @example
+   * ```ts
+   * const wallets = await astroid.wallets.listWallets({ status: 'ACTIVE', limit: 20 });
+   * ```
+   */
+  async listWallets(
+    params: WalletListParams = {},
+    options?: RequestOptionsExtras,
+  ): Promise<Paginated<Wallet>> {
+    return this.list(params, options);
   }
 
   /** Iterate every wallet across all pages (page-number pagination). */
@@ -198,6 +233,66 @@ export class WalletResource extends Resource {
       undefined,
       options,
     );
+  }
+
+  /**
+   * Read live on-chain balances, optionally filtering by asset code and issuer.
+   * The API returns balance amounts as decimal strings to preserve precision.
+   *
+   * @param walletId Wallet identifier.
+   * @param query Optional asset code and issuer filters.
+   * @param options Optional per-request HTTP options.
+   *
+   * @example
+   * ```ts
+   * const balances = await astroid.wallets.getWalletBalances('wlt_123', {
+   *   assetCode: 'USDC',
+   *   issuer: 'GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX',
+   * });
+   * ```
+   */
+  async getWalletBalances(
+    walletId: string,
+    query: WalletBalanceQuery = {},
+    options?: RequestOptionsExtras,
+  ): Promise<WalletBalance> {
+    return this.getData<WalletBalance>(
+      `/wallets/${encodeURIComponent(walletId)}/balance`,
+      {
+        ...(query.assetCode !== undefined ? { assetCode: query.assetCode } : {}),
+        ...(query.issuer !== undefined ? { issuer: query.issuer } : {}),
+      },
+      options,
+    );
+  }
+
+  /**
+   * Fund a wallet with an asset amount expressed as an exact decimal string.
+   *
+   * @param walletId Wallet identifier.
+   * @param input Asset and exact decimal amount to fund.
+   * @param options Optional per-request HTTP options.
+   *
+   * @example
+   * ```ts
+   * const balances = await astroid.wallets.fundWallet('wlt_123', {
+   *   assetCode: 'USDC',
+   *   amount: '25.0000001',
+   *   issuer: 'GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX',
+   * });
+   * ```
+   */
+  async fundWallet(
+    walletId: string,
+    input: FundWalletInput,
+    options?: RequestOptionsExtras,
+  ): Promise<WalletBalance> {
+    const res = await this.client.post<WalletBalance>(
+      `/wallets/${encodeURIComponent(walletId)}/fund`,
+      input,
+      options,
+    );
+    return res.data;
   }
 
   /**
