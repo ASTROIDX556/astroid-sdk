@@ -183,6 +183,29 @@ describe('BudgetClient', () => {
     expect(res.violations.length).toBeGreaterThan(0);
   });
 
+  it('createBudget() aliases create() with decimal-string limits', async () => {
+    const budget = makeBudget({ limitAmount: '5000.00' });
+    http.post.mockResolvedValue(budget);
+    const result = await client.createBudget({ name: 'Q3 Ops', limitAmount: '5000.00' });
+    expect(http.post).toHaveBeenCalledWith('/v1/budgets', {
+      name: 'Q3 Ops',
+      limitAmount: '5000.00',
+    });
+    expect(result.limitAmount).toBe('5000.00');
+  });
+
+  it('reset() / resetBudget() POSTs to the reset sub-resource', async () => {
+    http.post.mockResolvedValue(makeBudget({ spent: '0' }));
+    const result = await client.reset('bud_1');
+    expect(http.post).toHaveBeenCalledWith('/v1/budgets/bud_1/reset');
+    expect(result.spent).toBe('0');
+
+    http.post.mockResolvedValue(makeBudget({ spent: '0' }));
+    const alias = await client.resetBudget('bud_1');
+    expect(http.post).toHaveBeenCalledWith('/v1/budgets/bud_1/reset');
+    expect(alias.spent).toBe('0');
+  });
+
   it('update() PATCHes the budget', async () => {
     http.patch.mockResolvedValue(makeBudget({ name: 'Renamed' }));
     const result = await client.update('bud_1', { name: 'Renamed' });
@@ -286,9 +309,7 @@ describe('BudgetClient', () => {
   it('getBudgetUtilization() propagates transport errors', async () => {
     http.get.mockRejectedValue(new Error('utilization unavailable'));
 
-    await expect(client.getBudgetUtilization('bud_1')).rejects.toThrow(
-      'utilization unavailable',
-    );
+    await expect(client.getBudgetUtilization('bud_1')).rejects.toThrow('utilization unavailable');
   });
 
   it('propagates a failed request as a rejection', async () => {
@@ -409,7 +430,9 @@ describe('BudgetClient', () => {
     });
     expect(result).toBe(updated);
 
-    const aliasResult = await client.updateThresholdAlert('bud_1', 'alt_1', { thresholdPercent: 90 });
+    const aliasResult = await client.updateThresholdAlert('bud_1', 'alt_1', {
+      thresholdPercent: 90,
+    });
     expect(aliasResult).toBe(updated);
   });
 

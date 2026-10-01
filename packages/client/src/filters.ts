@@ -314,7 +314,7 @@ export function buildFilterQuery(filters?: CommonListFilters | null): Record<str
   const status = normalizeStatusFilter(
     filters.status as string | readonly string[] | null | undefined,
   );
-  if (status !== undefined) query['status'] = status.length === 1 ? status[0] as string : status;
+  if (status !== undefined) query['status'] = status.length === 1 ? (status[0] as string) : status;
 
   const asset = normalizeFilterString(filters.asset);
   if (asset !== undefined) query['asset'] = asset;
@@ -444,9 +444,7 @@ export function parsePaginatedResponse<T>(
         ? meta.prevCursor.trim()
         : null;
     const metaEcho =
-      typeof meta?.cursor === 'string' && meta.cursor.trim().length > 0
-        ? meta.cursor.trim()
-        : null;
+      typeof meta?.cursor === 'string' && meta.cursor.trim().length > 0 ? meta.cursor.trim() : null;
     const nextCursor = cursors.nextCursor ?? metaNext ?? metaEcho;
     const prevCursor = cursors.prevCursor ?? metaPrev;
     if (meta === undefined && nextCursor === null && prevCursor === null) {

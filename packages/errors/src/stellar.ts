@@ -36,10 +36,7 @@
  */
 
 import type { ApiError } from '@astroid/types';
-import {
-  AstroidError,
-  type AstroidErrorOptions,
-} from './base.js';
+import { AstroidError, type AstroidErrorOptions } from './base.js';
 import {
   InsufficientFundsError,
   AuthenticationError,
@@ -268,7 +265,9 @@ export interface StellarMappingContext {
  * {@link StellarNetworkError}.
  */
 export function errorClassForStellarCode(code: string): typeof AstroidError {
-  return STELLAR_OPERATION_CODE_MAP[code] ?? STELLAR_TRANSACTION_CODE_MAP[code] ?? StellarNetworkError;
+  return (
+    STELLAR_OPERATION_CODE_MAP[code] ?? STELLAR_TRANSACTION_CODE_MAP[code] ?? StellarNetworkError
+  );
 }
 
 /**
@@ -307,9 +306,7 @@ export function mapStellarError(body: unknown, context: StellarMappingContext = 
   // carried them. Fall back to the response status, then 400.
   const status = STELLAR_CODE_STATUS_MAP[stellarCode] ?? context.status ?? 400;
   const message =
-    context.message ??
-    extractStellarMessage(body) ??
-    `Stellar transaction failed: ${stellarCode}`;
+    context.message ?? extractStellarMessage(body) ?? `Stellar transaction failed: ${stellarCode}`;
 
   const payloadDetails = extractStellarDetails(body);
   const details: Record<string, unknown> = {

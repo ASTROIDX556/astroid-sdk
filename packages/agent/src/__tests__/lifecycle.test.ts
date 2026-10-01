@@ -54,7 +54,7 @@ describe('AgentResource lifecycle (issue #77)', () => {
     const result = await resource.create(CREATE_PARAMS);
 
     expect(result).toEqual(agent);
-    expect(http.post).toHaveBeenCalledWith('/agents', CREATE_PARAMS);
+    expect(http.post).toHaveBeenCalledWith('/agents', CREATE_PARAMS, undefined);
   });
 
   it('get() GETs /agents/:id', async () => {
@@ -68,7 +68,13 @@ describe('AgentResource lifecycle (issue #77)', () => {
   it('list() forwards status/role/search filters as query params', async () => {
     http.get.mockResolvedValue(httpOk([makeAgent()]));
 
-    await resource.list({ status: 'ACTIVE', role: 'OPERATIONS', search: 'bot', page: 1, limit: 10 });
+    await resource.list({
+      status: 'ACTIVE',
+      role: 'OPERATIONS',
+      search: 'bot',
+      page: 1,
+      limit: 10,
+    });
 
     expect(http.get).toHaveBeenCalledWith('/agents', {
       query: { status: 'ACTIVE', role: 'OPERATIONS', search: 'bot', page: 1, limit: 10 },
@@ -82,7 +88,7 @@ describe('AgentResource lifecycle (issue #77)', () => {
     const result = await resource.update('agt_1', { name: 'RenamedBot' });
 
     expect(result).toEqual(updated);
-    expect(http.patch).toHaveBeenCalledWith('/agents/agt_1', { name: 'RenamedBot' });
+    expect(http.patch).toHaveBeenCalledWith('/agents/agt_1', { name: 'RenamedBot' }, undefined);
   });
 
   it('deactivate() POSTs /agents/:id/deactivate and returns the archived agent', async () => {
@@ -92,7 +98,7 @@ describe('AgentResource lifecycle (issue #77)', () => {
     const result = await resource.deactivate('agt_1');
 
     expect(result).toEqual(deactivated);
-    expect(http.post).toHaveBeenCalledWith('/agents/agt_1/deactivate');
+    expect(http.post).toHaveBeenCalledWith('/agents/agt_1/deactivate', undefined, undefined);
   });
 
   it('deactivate() percent-encodes the agent id', async () => {
@@ -100,6 +106,10 @@ describe('AgentResource lifecycle (issue #77)', () => {
 
     await resource.deactivate('agt/special');
 
-    expect(http.post).toHaveBeenCalledWith('/agents/agt%2Fspecial/deactivate');
+    expect(http.post).toHaveBeenCalledWith(
+      '/agents/agt%2Fspecial/deactivate',
+      undefined,
+      undefined,
+    );
   });
 });

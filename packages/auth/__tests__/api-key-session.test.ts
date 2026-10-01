@@ -4,7 +4,8 @@ import { AuthenticationError } from '@astroid/errors';
 import type { PreparedRequest } from '@astroid/core';
 import type { AuthTokens } from '@astroid/types';
 
-import { SessionManager, createSessionMiddleware, type TokenStorage } from '../src/session.js';
+import { SessionManager, type TokenStorage } from '../src/session.js';
+import { createSessionMiddleware } from '../src/auth.js';
 
 /** Minimal prepared-request fixture accepted by the middleware. */
 function request(overrides: Partial<PreparedRequest> = {}): PreparedRequest {

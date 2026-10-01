@@ -1,21 +1,25 @@
 import { describe, expect, it } from 'vitest';
 
-import { AgentRole, AgentStatus } from '@astroid/types';
+import { AgentRole, AgentStatus, CreateAgentDtoSchema, UpdateAgentDtoSchema } from '@astroid/types';
 
 import { AstroidValidationError } from '../errors.js';
 import {
   assertValidAgentId,
+  assertValidAmountString,
+  assertValidStellarPublicKey,
   isValidAgentId,
+  isValidAgentMetadata,
   isValidAmountString,
   isValidCreateAgentParams,
   isValidStellarPublicKey,
   isValidUpdateAgentParams,
+  validateAgentMetadata,
   validateCreateAgentParams,
   validateUpdateAgentParams,
 } from '../validation.js';
 
-/** A format-valid Stellar public key (`G` + 55 base-32 characters). */
-const VALID_ADDRESS = `G${'A'.repeat(55)}`;
+/** A format-valid agent payload address (`G` + 51 base-32 characters). */
+const VALID_ADDRESS = `G${'A'.repeat(51)}`;
 
 /** A minimal valid create payload, spread as the base of most cases. */
 const VALID_CREATE = {
@@ -228,10 +232,10 @@ describe('Agent validation schemas', () => {
     it('rejects malformed keys and non-strings', () => {
       expect(isValidStellarPublicKey('')).toBe(false);
       expect(isValidStellarPublicKey('GABC')).toBe(false);
-      expect(isValidStellarPublicKey(`S${'A'.repeat(55)}`)).toBe(false); // wrong prefix
-      expect(isValidStellarPublicKey(`G${'a'.repeat(55)}`)).toBe(false); // lowercase base32
-      expect(isValidStellarPublicKey(`G${'A'.repeat(54)}`)).toBe(false); // too short
-      expect(isValidStellarPublicKey(`G${'A'.repeat(56)}`)).toBe(false); // too long
+      expect(isValidStellarPublicKey(`S${'A'.repeat(51)}`)).toBe(false); // wrong prefix
+      expect(isValidStellarPublicKey(`G${'a'.repeat(51)}`)).toBe(false); // lowercase base32
+      expect(isValidStellarPublicKey(`G${'A'.repeat(50)}`)).toBe(false); // too short
+      expect(isValidStellarPublicKey(`G${'A'.repeat(52)}`)).toBe(false); // too long
       expect(isValidStellarPublicKey(undefined)).toBe(false);
       expect(isValidStellarPublicKey(123)).toBe(false);
     });
@@ -477,5 +481,213 @@ describe('UpdateAgentDto validation', () => {
       expect(error.details?.['expected']).toBe('AgentStatus');
       expect(error.details?.['received']).toBe('BOGUS');
     });
+  });
+});
+
+/* ========================================================================== */
+/* Exported primitive and metadata guards (issue #215)                         */
+/* ========================================================================== */
+
+describe('assertValidStellarPublicKey', () => {
+  const VALID_ADDRESS = `G${'A'.repeat(51)}`;
+
+  it('does not throw for a format-valid key', () => {
+    expect(() => assertValidStellarPublicKey(VALID_ADDRESS)).not.toThrow();
+    expect(() => assertValidStellarPublicKey(`  ${VALID_ADDRESS}  `)).not.toThrow();
+  });
+
+  it('throws a field-addressed AstroidValidationError for a malformed key', () => {
+    const error = expectFieldError(
+      () => assertValidStellarPublicKey('GABC', 'metadata.stellarAddress'),
+      /Stellar public key/,
+    );
+    expect(error.details?.['field']).toBe('metadata.stellarAddress');
+    expect(error.details?.['expected']).toBe('Stellar public key (G…)');
+  });
+
+  it('defaults the field name to stellarAddress and rejects non-strings', () => {
+    const error = expectFieldError(() => assertValidStellarPublicKey(42), /"stellarAddress"/);
+    expect(error.details?.['field']).toBe('stellarAddress');
+  });
+});
+
+describe('assertValidAmountString', () => {
+  it('accepts non-negative decimal strings, including zero', () => {
+    for (const amount of ['0', '500', '1000.00', '0.000001']) {
+      expect(() => assertValidAmountString(amount), amount).not.toThrow();
+    }
+  });
+
+  it('rejects negative budget caps and coercible-but-invalid values', () => {
+    for (const amount of ['-50', '-0.01', '', 'Infinity', '1e3', '0x10', 42, null]) {
+      const error = expectFieldError(
+        () => assertValidAmountString(amount, 'initialBudget.amount'),
+        /non-negative decimal/,
+      );
+      expect(error.details?.['field']).toBe('initialBudget.amount');
+    }
+  });
+
+  it('defaults the field name to amount', () => {
+    const error = expectFieldError(() => assertValidAmountString('-1'), /"amount"/);
+    expect(error.details?.['field']).toBe('amount');
+  });
+});
+
+describe('validateAgentMetadata / isValidAgentMetadata', () => {
+  const VALID_ADDRESS = `G${'A'.repeat(51)}`;
+
+  it('accepts an empty bag and passes unknown keys through unchanged', () => {
+    expect(() => validateAgentMetadata({})).not.toThrow();
+    expect(isValidAgentMetadata({ anything: [1, 2, 3], nested: { a: 1 } })).toBe(true);
+  });
+
+  it('accepts the typed keys when well formed', () => {
+    expect(
+      isValidAgentMetadata({
+        team: 'ops',
+        externalId: 'ext_1',
+        tags: ['prod', 'eu'],
+        stellarAddress: VALID_ADDRESS,
+      }),
+    ).toBe(true);
+  });
+
+  it('rejects non-object metadata', () => {
+    for (const value of [null, undefined, 'nope', ['a'], 42]) {
+      expect(isValidAgentMetadata(value), String(value)).toBe(false);
+    }
+  });
+
+  it('rejects malformed typed keys with a field-addressed error', () => {
+    expect(isValidAgentMetadata({ team: 42 })).toBe(false);
+    expect(isValidAgentMetadata({ team: '   ' })).toBe(false);
+    expect(isValidAgentMetadata({ externalId: '' })).toBe(false);
+    expect(isValidAgentMetadata({ tags: 'prod' })).toBe(false);
+    expect(isValidAgentMetadata({ tags: [1] })).toBe(false);
+    expect(isValidAgentMetadata({ tags: [''] })).toBe(false);
+    expect(isValidAgentMetadata({ stellarAddress: 'GABC' })).toBe(false);
+
+    const error = expectFieldError(
+      () => validateAgentMetadata({ externalId: '' }, 'metadata'),
+      /"metadata.externalId"/,
+    );
+    expect(error.details?.['field']).toBe('metadata.externalId');
+  });
+
+  it('is wired into the create and update guards', () => {
+    expect(isValidCreateAgentParams({ ...VALID_CREATE, metadata: { externalId: '' } })).toBe(false);
+    expect(isValidCreateAgentParams({ ...VALID_CREATE, metadata: { team: 42 } })).toBe(false);
+    expect(isValidUpdateAgentParams({ metadata: { externalId: '' } })).toBe(false);
+    expect(isValidUpdateAgentParams({ metadata: { team: 'ops' } })).toBe(true);
+  });
+});
+
+/* ========================================================================== */
+/* Agreement with the shared @astroid/types DTO schemas                        */
+/* ========================================================================== */
+
+describe('@astroid/types DTO schemas agree with the @astroid/agent guards', () => {
+  const STELLAR_ADDRESS = `G${'A'.repeat(51)}`;
+
+  const VALID_CREATE = {
+    name: 'TradingBot',
+    capabilities: ['swap', 'arbitrage'],
+    initialBudget: { currency: 'USDC', amount: '500' },
+  };
+
+  /** Creation payloads on which both validation layers must agree. */
+  const CREATE_FIXTURES: unknown[] = [
+    VALID_CREATE,
+    {
+      ...VALID_CREATE,
+      description: '',
+      role: 'FINANCE',
+      provider: 'anthropic',
+      model: 'claude-sonnet-5',
+      primaryWalletId: 'wal_1',
+    },
+    {
+      ...VALID_CREATE,
+      metadata: {
+        team: 'ops',
+        tags: ['prod'],
+        stellarAddress: STELLAR_ADDRESS,
+        anything: 1,
+      },
+    },
+    { ...VALID_CREATE, initialBudget: { currency: 'USDC', amount: '0' } },
+    { ...VALID_CREATE, name: '' },
+    { ...VALID_CREATE, name: 42 },
+    { ...VALID_CREATE, name: undefined },
+    { ...VALID_CREATE, capabilities: [] },
+    { ...VALID_CREATE, capabilities: ['swap', 42] },
+    { ...VALID_CREATE, initialBudget: undefined },
+    { ...VALID_CREATE, initialBudget: { currency: 'USDC', amount: '-50' } },
+    { ...VALID_CREATE, initialBudget: { currency: '', amount: '100' } },
+    { ...VALID_CREATE, role: 'BOGUS' },
+    { ...VALID_CREATE, provider: ' ' },
+    { ...VALID_CREATE, primaryWalletId: 42 },
+    { ...VALID_CREATE, metadata: 'nope' },
+    { ...VALID_CREATE, metadata: { team: 42 } },
+    { ...VALID_CREATE, metadata: { tags: [''] } },
+    { ...VALID_CREATE, metadata: { stellarAddress: 'GABC' } },
+    null,
+    'not-an-agent',
+    42,
+    [],
+  ];
+
+  /** Update payloads on which both validation layers must agree. */
+  const UPDATE_FIXTURES: unknown[] = [
+    { status: 'PAUSED' },
+    { name: 'Renamed' },
+    { capabilities: ['transfer'] },
+    { primaryWalletId: null },
+    { primaryWalletId: 'wal_1' },
+    { metadata: { team: 'ops', tags: ['prod'], stellarAddress: STELLAR_ADDRESS } },
+    { description: '' },
+    {},
+    { name: undefined },
+    { name: '' },
+    { status: 'active' },
+    { role: 'finance' },
+    { capabilities: [] },
+    { primaryWalletId: '' },
+    { primaryWalletId: 42 },
+    { metadata: null },
+    { metadata: { externalId: '' } },
+    { metadata: { stellarAddress: 'GABC' } },
+    null,
+    'not-an-agent',
+    42,
+    [],
+  ];
+
+  it('accepts and rejects the same agent creation payloads', () => {
+    for (const fixture of CREATE_FIXTURES) {
+      expect(isValidCreateAgentParams(fixture), JSON.stringify(fixture) ?? 'undefined').toBe(
+        CreateAgentDtoSchema.safeParse(fixture).success,
+      );
+    }
+  });
+
+  it('accepts and rejects the same agent update payloads', () => {
+    for (const fixture of UPDATE_FIXTURES) {
+      expect(isValidUpdateAgentParams(fixture), JSON.stringify(fixture) ?? 'undefined').toBe(
+        UpdateAgentDtoSchema.safeParse(fixture).success,
+      );
+    }
+  });
+
+  it('additionally guards the conventional top-level stellarAddress, which is not part of the DTO', () => {
+    const malformed = { ...VALID_CREATE, stellarAddress: 'not-an-address' };
+    // The DTO schema describes the typed payload only, so it strips the extra key…
+    expect(CreateAgentDtoSchema.safeParse(malformed).success).toBe(true);
+    // …while the request path refuses to send a malformed address over the wire.
+    expect(isValidCreateAgentParams(malformed)).toBe(false);
+    expect(isValidCreateAgentParams({ ...VALID_CREATE, stellarAddress: STELLAR_ADDRESS })).toBe(
+      true,
+    );
   });
 });

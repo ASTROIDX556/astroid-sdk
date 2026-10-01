@@ -9,7 +9,7 @@
  * @packageDocumentation
  */
 
-import { Resource } from '@astroid/core';
+import { Resource, type RequestOptionsExtras } from '@astroid/core';
 import type {
   CreateWalletInput,
   ImportWalletInput,
@@ -65,8 +65,8 @@ export interface WalletListParams extends PaginationParams {
  */
 export class WalletResource extends Resource {
   /** Provision a brand-new managed wallet (the backend generates the keypair). */
-  async create(input: CreateWalletInput): Promise<Wallet> {
-    const res = await this.client.post<Wallet>('/wallets', input);
+  async create(input: CreateWalletInput, options?: RequestOptionsExtras): Promise<Wallet> {
+    const res = await this.client.post<Wallet>('/wallets', input, options);
     return res.data;
   }
 
@@ -74,14 +74,14 @@ export class WalletResource extends Resource {
    * Import an existing Stellar account. The optional `secretKey` is transmitted
    * once for encrypted custody and is never logged or returned.
    */
-  async import(input: ImportWalletInput): Promise<Wallet> {
-    const res = await this.client.post<Wallet>('/wallets/import', input);
+  async import(input: ImportWalletInput, options?: RequestOptionsExtras): Promise<Wallet> {
+    const res = await this.client.post<Wallet>('/wallets/import', input, options);
     return res.data;
   }
 
   /** Fetch a single wallet by id. */
-  async get(walletId: string): Promise<Wallet> {
-    return this.getData<Wallet>(`/wallets/${encodeURIComponent(walletId)}`);
+  async get(walletId: string, options?: RequestOptionsExtras): Promise<Wallet> {
+    return this.getData<Wallet>(`/wallets/${encodeURIComponent(walletId)}`, undefined, options);
   }
 
   /**
@@ -90,19 +90,28 @@ export class WalletResource extends Resource {
    * Uses the list endpoint's `stellarAddress` filter and returns the first
    * match, or `undefined` when no wallet is bound to the address.
    */
-  async getByAddress(stellarAddress: string): Promise<Wallet | undefined> {
-    const res = await this.list({ stellarAddress, limit: 1 });
+  async getByAddress(
+    stellarAddress: string,
+    options?: RequestOptionsExtras,
+  ): Promise<Wallet | undefined> {
+    const res = await this.list({ stellarAddress, limit: 1 }, options);
     return res.data[0];
   }
 
   /** List wallets, with optional status/type/agent filters and pagination. */
-  async list(params: WalletListParams = {}): Promise<Paginated<Wallet>> {
-    return this.listData<Wallet>('/wallets', { ...params });
+  async list(
+    params: WalletListParams = {},
+    options?: RequestOptionsExtras,
+  ): Promise<Paginated<Wallet>> {
+    return this.listData<Wallet>('/wallets', { ...params }, options);
   }
 
   /** Iterate every wallet across all pages (page-number pagination). */
-  iterate(params: WalletListParams = {}): AsyncGenerator<Wallet, void, void> {
-    return this.iterateData<Wallet>('/wallets', { ...params });
+  iterate(
+    params: WalletListParams = {},
+    options?: RequestOptionsExtras,
+  ): AsyncGenerator<Wallet, void, void> {
+    return this.iterateData<Wallet>('/wallets', { ...params }, options);
   }
 
   /**
@@ -131,47 +140,79 @@ export class WalletResource extends Resource {
    * }
    * ```
    */
-  iterateByCursor(params: WalletListParams = {}): AsyncGenerator<Wallet, void, void> {
-    return this.iterateCursorData<Wallet>('/wallets', { ...params });
+  iterateByCursor(
+    params: WalletListParams = {},
+    options?: RequestOptionsExtras,
+  ): AsyncGenerator<Wallet, void, void> {
+    return this.iterateCursorData<Wallet>('/wallets', { ...params }, options);
   }
 
   /** Update a wallet's mutable fields (label, status, metadata). */
-  async update(walletId: string, input: UpdateWalletInput): Promise<Wallet> {
-    const res = await this.client.patch<Wallet>(`/wallets/${encodeURIComponent(walletId)}`, input);
+  async update(
+    walletId: string,
+    input: UpdateWalletInput,
+    options?: RequestOptionsExtras,
+  ): Promise<Wallet> {
+    const res = await this.client.patch<Wallet>(
+      `/wallets/${encodeURIComponent(walletId)}`,
+      input,
+      options,
+    );
     return res.data;
   }
 
   /** Freeze a wallet: block all outgoing transactions immediately. */
-  async freeze(walletId: string): Promise<Wallet> {
-    const res = await this.client.post<Wallet>(`/wallets/${encodeURIComponent(walletId)}/freeze`);
+  async freeze(walletId: string, options?: RequestOptionsExtras): Promise<Wallet> {
+    const res = await this.client.post<Wallet>(
+      `/wallets/${encodeURIComponent(walletId)}/freeze`,
+      undefined,
+      options,
+    );
     return res.data;
   }
 
   /** Reverse a freeze, returning the wallet to `ACTIVE`. */
-  async unfreeze(walletId: string): Promise<Wallet> {
-    const res = await this.client.post<Wallet>(`/wallets/${encodeURIComponent(walletId)}/unfreeze`);
+  async unfreeze(walletId: string, options?: RequestOptionsExtras): Promise<Wallet> {
+    const res = await this.client.post<Wallet>(
+      `/wallets/${encodeURIComponent(walletId)}/unfreeze`,
+      undefined,
+      options,
+    );
     return res.data;
   }
 
   /** Archive a wallet (soft-delete; it can no longer transact). */
-  async archive(walletId: string): Promise<Wallet> {
-    const res = await this.client.post<Wallet>(`/wallets/${encodeURIComponent(walletId)}/archive`);
+  async archive(walletId: string, options?: RequestOptionsExtras): Promise<Wallet> {
+    const res = await this.client.post<Wallet>(
+      `/wallets/${encodeURIComponent(walletId)}/archive`,
+      undefined,
+      options,
+    );
     return res.data;
   }
 
   /** Read live on-chain balances for a wallet. */
-  async balance(walletId: string): Promise<WalletBalance> {
-    return this.getData<WalletBalance>(`/wallets/${encodeURIComponent(walletId)}/balance`);
+  async balance(walletId: string, options?: RequestOptionsExtras): Promise<WalletBalance> {
+    return this.getData<WalletBalance>(
+      `/wallets/${encodeURIComponent(walletId)}/balance`,
+      undefined,
+      options,
+    );
   }
 
   /**
    * Initiate a transfer from a wallet. Returns the created {@link Transaction},
    * which may be `PENDING` if policy requires an approval before submission.
    */
-  async transfer(walletId: string, input: TransferInput): Promise<Transaction> {
+  async transfer(
+    walletId: string,
+    input: TransferInput,
+    options?: RequestOptionsExtras,
+  ): Promise<Transaction> {
     const res = await this.client.post<Transaction>(
       `/wallets/${encodeURIComponent(walletId)}/transfer`,
       input,
+      options,
     );
     return res.data;
   }

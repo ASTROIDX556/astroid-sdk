@@ -133,7 +133,11 @@ export function patchAgentInLists(
  * the shape the server will return for the same patch — so no `any` or loose
  * partial writes ever enter the cache.
  */
-export function patchAgentDetail(queryClient: QueryClient, id: string, params: UpdateAgentParams): void {
+export function patchAgentDetail(
+  queryClient: QueryClient,
+  id: string,
+  params: UpdateAgentParams,
+): void {
   const key = queryKeys.agents.detail(id);
   const previous = queryClient.getQueryData<Agent>(key);
   if (!previous) return;

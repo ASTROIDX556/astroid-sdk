@@ -85,22 +85,29 @@ describe('AgentResource event endpoints', () => {
       eventTypes: ['agent.budget_exhausted'],
       includeHistory: true,
     });
-    expect(http.post).toHaveBeenCalledWith('/v1/agents/agt_1/events/subscriptions', {
-      eventTypes: ['agent.budget_exhausted'],
-      includeHistory: true,
-    });
+    expect(http.post).toHaveBeenCalledWith(
+      '/v1/agents/agt_1/events/subscriptions',
+      {
+        eventTypes: ['agent.budget_exhausted'],
+        includeHistory: true,
+      },
+      undefined,
+    );
     expect(result).toBe(subscription);
   });
 
   it('subscribe() defaults to an empty options payload', async () => {
     http.post.mockResolvedValue({ data: {} });
     await resource.subscribe('agt_1');
-    expect(http.post).toHaveBeenCalledWith('/v1/agents/agt_1/events/subscriptions', {});
+    expect(http.post).toHaveBeenCalledWith('/v1/agents/agt_1/events/subscriptions', {}, undefined);
   });
 
   it('unsubscribe() DELETEs the subscription path with encoded ids', async () => {
     http.delete.mockResolvedValue(undefined);
     await resource.unsubscribe('agt/1', 'sub/1');
-    expect(http.delete).toHaveBeenCalledWith('/v1/agents/agt%2F1/events/subscriptions/sub%2F1');
+    expect(http.delete).toHaveBeenCalledWith(
+      '/v1/agents/agt%2F1/events/subscriptions/sub%2F1',
+      undefined,
+    );
   });
 });

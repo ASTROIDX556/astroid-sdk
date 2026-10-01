@@ -49,11 +49,7 @@ export interface TokenRefreshInterceptor {
 }
 
 /** Auth endpoints excluded from refresh queueing (mirrors the session middleware). */
-const DEFAULT_SKIP_PATHS: readonly string[] = [
-  '/auth/refresh',
-  '/auth/login',
-  '/auth/register',
-];
+const DEFAULT_SKIP_PATHS: readonly string[] = ['/auth/refresh', '/auth/login', '/auth/register'];
 
 /**
  * Build the token refresh interceptor.

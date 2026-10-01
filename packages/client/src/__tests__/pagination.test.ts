@@ -263,9 +263,10 @@ describe('pagination limit bounds (clamping 1–200)', () => {
 
 describe('pagination response header extractors', () => {
   it('extracts next_cursor / prev_cursor from plain records', () => {
-    expect(
-      extractPaginationCursors({ next_cursor: 'next_1', prev_cursor: 'prev_0' }),
-    ).toEqual({ nextCursor: 'next_1', prevCursor: 'prev_0' });
+    expect(extractPaginationCursors({ next_cursor: 'next_1', prev_cursor: 'prev_0' })).toEqual({
+      nextCursor: 'next_1',
+      prevCursor: 'prev_0',
+    });
     expect(extractNextCursor({ next_cursor: 'next_1' })).toBe('next_1');
     expect(extractPrevCursor({ prev_cursor: 'prev_0' })).toBe('prev_0');
   });
@@ -311,9 +312,9 @@ describe('pagination response header extractors', () => {
       >),
     ).toEqual({ nextCursor: null, prevCursor: null });
     expect(extractNextCursor({ next_cursor: ['  ', 'fallback'] })).toBe('fallback');
-    expect(
-      extractNextCursor({ next_cursor: 123 } as unknown as Record<string, string>),
-    ).toBe('123');
+    expect(extractNextCursor({ next_cursor: 123 } as unknown as Record<string, string>)).toBe(
+      '123',
+    );
   });
 
   it('client header helpers delegate without throwing on malformed input', () => {
@@ -332,9 +333,7 @@ describe('paginated response metadata helpers', () => {
     expect(unwrapPaginatedResponse({ data: [] })).toEqual([]);
     expect(unwrapPaginatedResponse(null)).toEqual([]);
     expect(unwrapPaginatedResponse(undefined)).toEqual([]);
-    expect(
-      unwrapPaginatedResponse({ data: 'oops' } as unknown as { data: Row[] }),
-    ).toEqual([]);
+    expect(unwrapPaginatedResponse({ data: 'oops' } as unknown as { data: Row[] })).toEqual([]);
   });
 
   it('normalizePaginatedResponse merges headers over body meta', () => {
@@ -350,9 +349,9 @@ describe('paginated response metadata helpers', () => {
 
   it('normalizePaginatedResponse tolerates empty lists and absent meta/headers', () => {
     expect(normalizePaginatedResponse<Row>([], undefined, undefined)).toEqual({ data: [] });
-    expect(
-      normalizePaginatedResponse<Row>('nope' as unknown as Row[], null, {}),
-    ).toEqual({ data: [] });
+    expect(normalizePaginatedResponse<Row>('nope' as unknown as Row[], null, {})).toEqual({
+      data: [],
+    });
     const fromMeta = normalizePaginatedResponse<Row>([{ id: 'a' }], { nextCursor: 'm1' }, {});
     expect(fromMeta.meta?.nextCursor).toBe('m1');
   });

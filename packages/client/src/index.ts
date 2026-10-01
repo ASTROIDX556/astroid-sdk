@@ -30,6 +30,7 @@ import {
   type AstroidClientConfig as CoreClientConfig,
   type Middleware,
   type QueryValue,
+  type RequestOptionsExtras,
   type RetryConfig,
 } from '@astroid/core';
 import type { PaginatedResponse, PaginationParams, ResponseMeta } from '@astroid/types';
@@ -76,7 +77,7 @@ import { createTokenRefreshInterceptor } from './token-refresh.js';
  * Configuration accepted by `new Astroid({ ... })`.
  *
  * Extends the core client config with shorthand retry options
- * (`retries` / `minTimeout` / `maxTimeout` / `backoffFactor` /
+ * (`retries` / `minTimeout` / `maxTimeout` / `backoffFactor` (`factor`) /
  * `retryableStatuses` / `jitter`) for convenience. Each is merged into the
  * `retry` block, so the full {@link RetryConfig} remains available for advanced
  * use.
@@ -121,6 +122,12 @@ export interface AstroidClientConfig extends CoreClientConfig {
    * values above `2` to back off more aggressively.
    */
   backoffFactor?: number;
+  /**
+   * Exponential growth factor applied between retries (alias for
+   * {@link AstroidClientConfig.backoffFactor} / `retry.backoffFactor`).
+   * Defaults to `2`.
+   */
+  factor?: number;
   /**
    * Apply full jitter to each backoff delay (shorthand for `retry.jitter`).
    * Default `true`; set to `false` for deterministic delays.
@@ -188,8 +195,15 @@ export class AiResource {
    *
    * Set `simulateOnly: true` to force AI Simulation Mode (nothing is created).
    */
-  async requestPayment(intent: PaymentIntent): Promise<PaymentIntentResult> {
-    const res = await this.client.post<PaymentIntentResult>('/ai/request-payment', intent);
+  async requestPayment(
+    intent: PaymentIntent,
+    options?: RequestOptionsExtras,
+  ): Promise<PaymentIntentResult> {
+    const res = await this.client.post<PaymentIntentResult>(
+      '/ai/request-payment',
+      intent,
+      options,
+    );
     return res.data;
   }
 
@@ -197,8 +211,11 @@ export class AiResource {
    * Simulate an intent without creating anything. Convenience wrapper over
    * {@link AiResource.requestPayment} with `simulateOnly` forced on.
    */
-  async simulatePayment(intent: Omit<PaymentIntent, 'simulateOnly'>): Promise<PaymentIntentResult> {
-    return this.requestPayment({ ...intent, simulateOnly: true });
+  async simulatePayment(
+    intent: Omit<PaymentIntent, 'simulateOnly'>,
+    options?: RequestOptionsExtras,
+  ): Promise<PaymentIntentResult> {
+    return this.requestPayment({ ...intent, simulateOnly: true }, options);
   }
 }
 
@@ -337,9 +354,7 @@ export class Astroid {
       return res.data;
     };
 
-    this.use(
-      createSessionMiddleware(this.sessionManager, refreshTokens),
-    );
+    this.use(createSessionMiddleware(this.sessionManager, refreshTokens));
 
     const tokenRefresh = createTokenRefreshInterceptor({
       sessionManager: this.sessionManager,
@@ -365,7 +380,9 @@ export class Astroid {
     // X-Astroid-Correlation-ID header and fires onRequest/onResponse hooks.
     // Static tracing headers from the config are honoured as defaults and are
     // overridden by per-request options.
-    this.http.use(createCorrelationMiddleware(clientConfig?.telemetry, clientConfig?.tracingHeaders));
+    this.http.use(
+      createCorrelationMiddleware(clientConfig?.telemetry, clientConfig?.tracingHeaders),
+    );
 
     // Request/response logging with header redaction (opt-in via config).
     if (clientConfig?.logging) {
@@ -475,9 +492,7 @@ export class Astroid {
    * empty cursors and invalid `order` values are dropped — while every other
    * key passes through untouched.
    */
-  buildQuery(
-    params: PaginationParams & Record<string, QueryValue>,
-  ): Record<string, QueryValue> {
+  buildQuery(params: PaginationParams & Record<string, QueryValue>): Record<string, QueryValue> {
     const { cursor, limit, order, page, ...rest } = params;
     return {
       ...rest,
@@ -519,7 +534,9 @@ export class Astroid {
    *
    * Returns `null` when the header is missing, empty, or malformed — never throws.
    */
-  getNextCursor(headers: Headers | Record<string, string | string[] | null | undefined> | null | undefined): string | null {
+  getNextCursor(
+    headers: Headers | Record<string, string | string[] | null | undefined> | null | undefined,
+  ): string | null {
     return extractNextCursor(headers);
   }
 
@@ -528,14 +545,18 @@ export class Astroid {
    *
    * Returns `null` when the header is missing, empty, or malformed — never throws.
    */
-  getPrevCursor(headers: Headers | Record<string, string | string[] | null | undefined> | null | undefined): string | null {
+  getPrevCursor(
+    headers: Headers | Record<string, string | string[] | null | undefined> | null | undefined,
+  ): string | null {
     return extractPrevCursor(headers);
   }
 
   /**
    * Extract both `next_cursor` / `prev_cursor` cursors from response headers.
    */
-  getPaginationCursors(headers: Headers | Record<string, string | string[] | null | undefined> | null | undefined): {
+  getPaginationCursors(
+    headers: Headers | Record<string, string | string[] | null | undefined> | null | undefined,
+  ): {
     nextCursor: string | null;
     prevCursor: string | null;
   } {
@@ -548,7 +569,7 @@ export { Astroid as AstroidClient };
 
 /**
  * Normalise the flat retry shorthand options
- * (`retries` / `minTimeout` / `maxTimeout` / `backoffFactor` /
+ * (`retries` / `minTimeout` / `maxTimeout` / `backoffFactor` (`factor`) /
  * `retryableStatuses` / `jitter`) into a single core `retry` block, merging
  * with any explicit `retry` object.
  *
@@ -568,6 +589,7 @@ function normalizeConfig(config: AstroidClientConfig): CoreClientConfig {
     maxDelay,
     maxDelayMs: customMaxDelayMs,
     backoffFactor,
+    factor,
     retryableStatuses,
     retryableStatusCodes,
     jitter,
@@ -582,7 +604,8 @@ function normalizeConfig(config: AstroidClientConfig): CoreClientConfig {
   if (resolvedBaseDelay !== undefined) shorthand.baseDelayMs = resolvedBaseDelay;
   const resolvedMaxDelay = maxTimeout ?? maxDelay ?? customMaxDelayMs;
   if (resolvedMaxDelay !== undefined) shorthand.maxDelayMs = resolvedMaxDelay;
-  if (backoffFactor !== undefined) shorthand.backoffFactor = backoffFactor;
+  const resolvedBackoffFactor = backoffFactor ?? factor;
+  if (resolvedBackoffFactor !== undefined) shorthand.backoffFactor = resolvedBackoffFactor;
   const resolvedStatuses = retryableStatuses ?? retryableStatusCodes;
   if (resolvedStatuses !== undefined) shorthand.retryableStatuses = resolvedStatuses;
   if (jitter !== undefined) shorthand.jitter = jitter;
@@ -643,10 +666,7 @@ export {
 // Retry policy helpers from the modular `retry` entry point. `createRetryMiddleware`
 // and `retryMiddleware` are already re-exported above; these add the pieces the
 // retry module owns directly.
-export {
-  computeRetryDelay,
-  type RetryMiddlewareConfig,
-} from './retry.js';
+export { computeRetryDelay, type RetryMiddlewareConfig } from './retry.js';
 export {
   createRateLimiterMiddleware,
   rateLimiterMiddleware,
@@ -669,6 +689,7 @@ export {
   InternalServerError,
   ServerError,
   isAstroidError,
+  isTimeoutError,
 } from '@astroid/errors';
 export {
   InsufficientFundsError,

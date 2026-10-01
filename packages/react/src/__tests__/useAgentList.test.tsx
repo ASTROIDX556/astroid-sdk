@@ -19,12 +19,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { useAgentList } from '../hooks/useAgentList.js';
 import { queryKeys } from '../hooks.js';
-import {
-  AGENT_A,
-  AGENT_B,
-  createMockClient,
-  createWrapper,
-} from './test-utils.js';
+import { AGENT_A, AGENT_B, createMockClient, createWrapper } from './test-utils.js';
 import type { Astroid } from '@astroid/client';
 import type { Agent, Paginated } from '@astroid/types';
 
@@ -93,8 +88,8 @@ function createPagingClient(route: (params: Record<string, unknown>) => Paginate
   client: Astroid;
   list: ListMock;
 } {
-  const list = vi.fn(async (params?: Record<string, unknown>): Promise<Paginated<Agent>> =>
-    route(params ?? {}),
+  const list = vi.fn(
+    async (params?: Record<string, unknown>): Promise<Paginated<Agent>> => route(params ?? {}),
   );
   const client = { agents: { list } } as unknown as Astroid;
   return { client, list };
@@ -225,9 +220,7 @@ describe('useAgentList — filters and pagination options', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    expect(queryClient.getQueryState(queryKeys.agents.list({ limit: 5 }))?.status).toBe(
-      'success',
-    );
+    expect(queryClient.getQueryState(queryKeys.agents.list({ limit: 5 }))?.status).toBe('success');
     expect(result.current.data).toEqual(
       queryClient.getQueryData(queryKeys.agents.list({ limit: 5 })),
     );
@@ -273,10 +266,9 @@ describe('useAgentList — cursor pagination', () => {
     );
     const { Wrapper } = createWrapper(client);
 
-    const { result } = renderHook(
-      () => useAgentList({ params: { status: 'ACTIVE', limit: 1 } }),
-      { wrapper: Wrapper },
-    );
+    const { result } = renderHook(() => useAgentList({ params: { status: 'ACTIVE', limit: 1 } }), {
+      wrapper: Wrapper,
+    });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 

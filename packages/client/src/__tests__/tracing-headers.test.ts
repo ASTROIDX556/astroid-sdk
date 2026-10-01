@@ -87,17 +87,13 @@ describe('X-Request-ID generation (issue #255)', () => {
 
   it('honors options.requestId instead of generating one', async () => {
     const mw = createCorrelationMiddleware();
-    const prepared = await mw.onRequest!(
-      makePreparedRequest({ requestId: 'req-fixed-001' }),
-    );
+    const prepared = await mw.onRequest!(makePreparedRequest({ requestId: 'req-fixed-001' }));
     expect(prepared.headers[REQUEST_ID_HEADER]).toBe('req-fixed-001');
   });
 
   it('falls back to options.correlationId for the request ID', async () => {
     const mw = createCorrelationMiddleware();
-    const prepared = await mw.onRequest!(
-      makePreparedRequest({ correlationId: 'corr-123' }),
-    );
+    const prepared = await mw.onRequest!(makePreparedRequest({ correlationId: 'corr-123' }));
     expect(prepared.headers[REQUEST_ID_HEADER]).toBe('corr-123');
   });
 
@@ -145,7 +141,9 @@ describe('X-Correlation-ID injection (issue #255)', () => {
     const mw = createCorrelationMiddleware(undefined, {
       headers: { [X_CORRELATION_ID_HEADER]: 'static-trace' },
     });
-    const prepared = await mw.onRequest!(makePreparedRequest({ correlationId: 'per-request-trace' }));
+    const prepared = await mw.onRequest!(
+      makePreparedRequest({ correlationId: 'per-request-trace' }),
+    );
     expect(prepared.headers[X_CORRELATION_ID_HEADER]).toBe('per-request-trace');
   });
 

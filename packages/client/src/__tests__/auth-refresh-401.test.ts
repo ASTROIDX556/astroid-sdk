@@ -92,9 +92,7 @@ describe('401 auto-refresh interceptor (client integration)', () => {
       okResponse({ id: 'wal_refreshed' }), // retry of /wallets with new token → 200
     );
 
-    const client = new Astroid(
-      baseConfig(fetchMock) as ConstructorParameters<typeof Astroid>[0],
-    );
+    const client = new Astroid(baseConfig(fetchMock) as ConstructorParameters<typeof Astroid>[0]);
 
     const res = await client.http.get<{ id: string }>('/wallets');
 

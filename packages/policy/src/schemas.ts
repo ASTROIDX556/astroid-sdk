@@ -1,8 +1,6 @@
 import { z } from 'zod';
-import type {
-  PolicyCreateInput,
-  PolicyUpdateInput,
-} from './index.js';
+import { ValidationError } from '@astroid/errors';
+import type { PolicyCreateInput, PolicyUpdateInput } from './index.js';
 import type {
   PolicySimulationRequest,
   SimulatePolicyRequest,
@@ -72,15 +70,25 @@ export const PolicyConfigurationSchema = z
   })
   .passthrough();
 
-export const PolicyCreateInputSchema: z.ZodType<PolicyCreateInput> = z.object({
-  name: z.string(),
-  description: z.string().nullable().optional(),
-  type: PolicyTypeSchema,
-  configuration: PolicyConfigurationSchema,
-  priority: z.number(),
-  enabled: z.boolean(),
-  agentId: z.string().nullable().optional(),
-});
+/**
+ * Validates the required fields of a policy-create payload.
+ *
+ * Declared with `.passthrough()` on purpose: the resource is a thin transport
+ * that forwards the caller's payload verbatim (stripping server-owned fields
+ * is left to the type system), so runtime validation must check the known
+ * fields without dropping any extra keys.
+ */
+export const PolicyCreateInputSchema: z.ZodType<PolicyCreateInput> = z
+  .object({
+    name: z.string(),
+    description: z.string().nullable().optional(),
+    type: PolicyTypeSchema,
+    configuration: PolicyConfigurationSchema,
+    priority: z.number(),
+    enabled: z.boolean(),
+    agentId: z.string().nullable().optional(),
+  })
+  .passthrough();
 
 export const PolicyUpdateInputSchema: z.ZodType<PolicyUpdateInput> = z.object({
   name: z.string().optional(),
@@ -92,18 +100,21 @@ export const PolicyUpdateInputSchema: z.ZodType<PolicyUpdateInput> = z.object({
   agentId: z.string().nullable().optional(),
 });
 
-export const PolicySimulationRequestSchema: z.ZodType<PolicySimulationRequest> = z.object({
-  walletId: z.string().optional(),
-  agentId: z.string().optional(),
-  asset: z.string(),
-  amount: z.union([z.number(), z.string()]),
-  recipientAddress: z.string().optional(),
-  senderAddress: z.string().optional(),
-  memo: z.string().optional(),
-  spentInWindow: z.union([z.number(), z.string()]).optional(),
-  policyIds: z.array(z.string()).optional(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
-});
+/** Validates a simulation request; passthrough so unknown keys are forwarded verbatim. */
+export const PolicySimulationRequestSchema: z.ZodType<PolicySimulationRequest> = z
+  .object({
+    walletId: z.string().optional(),
+    agentId: z.string().optional(),
+    asset: z.string(),
+    amount: z.union([z.number(), z.string()]),
+    recipientAddress: z.string().optional(),
+    senderAddress: z.string().optional(),
+    memo: z.string().optional(),
+    spentInWindow: z.union([z.number(), z.string()]).optional(),
+    policyIds: z.array(z.string()).optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
+  })
+  .passthrough();
 
 export const SimulatePolicyRequestSchema: z.ZodType<SimulatePolicyRequest> = z.object({
   walletId: z.string().optional(),
@@ -186,7 +197,12 @@ export const PolicySimulationResultSchema: z.ZodType<PolicySimulationResult> = z
   explanation: z.string(),
 });
 
-export const PolicyRuleCheckSchema: z.ZodType<PolicyRuleCheck> = z.enum(['address', 'time', 'signatures', 'none']);
+export const PolicyRuleCheckSchema: z.ZodType<PolicyRuleCheck> = z.enum([
+  'address',
+  'time',
+  'signatures',
+  'none',
+]);
 
 export const PolicyRuleEvaluationSchema: z.ZodType<PolicyRuleEvaluation> = z.object({
   rule: z.string(),
@@ -203,3 +219,54 @@ export const PolicyEvaluationResultSchema: z.ZodType<PolicyEvaluationResult> = z
   failedRules: z.number(),
   failedRuleNames: z.array(z.string()),
 });
+
+/* -------------------------------------------------------------------------- */
+/* Client-side payload validation                                              */
+/* -------------------------------------------------------------------------- */
+
+/** Flatten a Zod failure into `{ field: [messages] }` for `ValidationError.fieldErrors`. */
+function toFieldErrors(error: z.ZodError): Record<string, string[]> {
+  const fieldErrors: Record<string, string[]> = {};
+  for (const issue of error.issues) {
+    const key = issue.path.length > 0 ? issue.path.map(String).join('.') : 'input';
+    (fieldErrors[key] ??= []).push(issue.message);
+  }
+  return fieldErrors;
+}
+
+/** Throw a structured `ValidationError` when `input` fails `schema`. */
+function assertSchema<T>(schema: z.ZodType<T>, input: unknown, context: string): T {
+  const result = schema.safeParse(input);
+  if (!result.success) {
+    throw new ValidationError(`${context} failed schema validation.`, {
+      code: 'POLICY_INPUT_VALIDATION_FAILED',
+      status: 400,
+      details: { fields: toFieldErrors(result.error) },
+    });
+  }
+  return result.data;
+}
+
+/**
+ * Validate a policy-create payload against {@link PolicyCreateInputSchema}
+ * before any network call.
+ *
+ * @param input The draft policy payload to check.
+ * @returns The parsed payload.
+ * @throws {ValidationError} With `fieldErrors` naming every offending field.
+ */
+export function assertPolicyCreateInput(input: unknown): PolicyCreateInput {
+  return assertSchema(PolicyCreateInputSchema, input, 'Policy create input');
+}
+
+/**
+ * Validate a policy-simulation request against {@link PolicySimulationRequestSchema}
+ * before any network call.
+ *
+ * @param input The simulation request to check.
+ * @returns The parsed request.
+ * @throws {ValidationError} With `fieldErrors` naming every offending field.
+ */
+export function assertPolicySimulationRequest(input: unknown): PolicySimulationRequest {
+  return assertSchema(PolicySimulationRequestSchema, input, 'Policy simulation request');
+}

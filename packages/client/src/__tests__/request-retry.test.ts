@@ -79,6 +79,33 @@ describe('#272 — retry configuration options', () => {
     });
   });
 
+  it('supports the `factor` alias for `backoffFactor` (#247)', () => {
+    const client = new Astroid({
+      ...BASE,
+      fetch: noFetch,
+      retries: 2,
+      minTimeout: 100,
+      factor: 3,
+    });
+
+    expect(client.http.config.retry).toMatchObject({
+      maxRetries: 2,
+      baseDelayMs: 100,
+      backoffFactor: 3,
+    });
+  });
+
+  it('prefers `backoffFactor` over the `factor` alias when both are set', () => {
+    const client = new Astroid({
+      ...BASE,
+      fetch: noFetch,
+      backoffFactor: 4,
+      factor: 3,
+    });
+
+    expect(client.http.config.retry).toMatchObject({ backoffFactor: 4 });
+  });
+
   it('merges shorthand options over an explicit retry object', () => {
     const client = new Astroid({
       ...BASE,
@@ -169,7 +196,13 @@ describe('#272 — retry behaviour', () => {
 
   it('does not retry a non-transient 400', async () => {
     const fetchMock = vi.fn(async () => errorResponse(400, 'VALIDATION_ERROR', 'bad input'));
-    const client = new Astroid({ ...BASE, fetch: fetchMock, retries: 3, minTimeout: 1, maxTimeout: 5 });
+    const client = new Astroid({
+      ...BASE,
+      fetch: fetchMock,
+      retries: 3,
+      minTimeout: 1,
+      maxTimeout: 5,
+    });
 
     await expect(client.wallets.get('w')).rejects.toBeDefined();
     expect(fetchMock).toHaveBeenCalledTimes(1);

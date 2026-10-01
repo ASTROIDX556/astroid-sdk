@@ -259,7 +259,10 @@ describe('resolveBudgetWindow', () => {
   });
 
   it('computes QUARTERLY windows', () => {
-    const window = resolveBudgetWindow({ period: 'QUARTERLY', periodStart: '2026-04-10T00:00:00Z' });
+    const window = resolveBudgetWindow({
+      period: 'QUARTERLY',
+      periodStart: '2026-04-10T00:00:00Z',
+    });
     expect(window.start).toBe('2026-04-01T00:00:00.000Z');
     expect(window.end).toBe('2026-07-01T00:00:00.000Z');
   });
