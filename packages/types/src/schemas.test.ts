@@ -996,15 +996,13 @@ describe('PolicySimulationEvaluationSchema', () => {
 
 describe('Agent DTO schemas (issue #215)', () => {
   /**
-   * A format-valid Stellar public key: `G` plus 55 base-32 characters (56 in
-   * total, as StrKey requires). The issue text mentions "52 characters", which
-   * is shorter than any real Stellar address, so the schemas — like the rest of
-   * the SDK — enforce the real StrKey length.
+   * A format-valid agent payload address: `G` plus 51 base-32 characters (52
+   * total), matching the agent creation DTO contract.
    */
-  const STELLAR_ADDRESS = `G${'A'.repeat(55)}`;
+  const STELLAR_ADDRESS = `G${'A'.repeat(51)}`;
 
   describe('StellarPublicKeySchema', () => {
-    it('accepts a 56-character G-address, ignoring surrounding whitespace', () => {
+    it('accepts a 52-character G-address, ignoring surrounding whitespace', () => {
       expect(StellarPublicKeySchema.safeParse(STELLAR_ADDRESS).success).toBe(true);
       expect(StellarPublicKeySchema.safeParse(`  ${STELLAR_ADDRESS}  `).success).toBe(true);
     });
@@ -1013,9 +1011,11 @@ describe('Agent DTO schemas (issue #215)', () => {
       for (const address of [
         '',
         'GABC',
-        `S${'A'.repeat(55)}`, // secret-key prefix
-        `G${'a'.repeat(55)}`, // lowercase is not base-32
-        `G${'1'.repeat(55)}`, // 1 is not in the base-32 alphabet
+        `S${'A'.repeat(51)}`, // wrong prefix
+        `G${'a'.repeat(51)}`, // lowercase is not base-32
+        `G${'1'.repeat(51)}`, // 1 is not in the base-32 alphabet
+        `G${'A'.repeat(50)}`, // too short
+        `G${'A'.repeat(52)}`, // too long
         'not-an-address',
       ]) {
         expect(StellarPublicKeySchema.safeParse(address).success, address).toBe(false);
@@ -1066,7 +1066,7 @@ describe('Agent DTO schemas (issue #215)', () => {
 });
 
 describe('CreateAgentDtoSchema (issue #215)', () => {
-  const STELLAR_ADDRESS = `G${'A'.repeat(55)}`;
+  const STELLAR_ADDRESS = `G${'A'.repeat(51)}`;
 
   const VALID_CREATE_AGENT = {
     name: 'TradingBot',
@@ -1256,7 +1256,7 @@ describe('UpdateAgentDtoSchema (issue #215)', () => {
 });
 
 describe('Agent DTO validation helpers (issue #215)', () => {
-  const STELLAR_ADDRESS = `G${'A'.repeat(55)}`;
+  const STELLAR_ADDRESS = `G${'A'.repeat(51)}`;
 
   const VALID_CREATE_AGENT = {
     name: 'TradingBot',

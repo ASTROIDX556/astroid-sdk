@@ -56,7 +56,7 @@ describe('BudgetResource threshold alerts (issue #68)', () => {
     const result = await resource.createAlert('bud_1', input);
 
     expect(result).toEqual(alert);
-    expect(http.post).toHaveBeenCalledWith('/v1/budgets/bud_1/alerts', input);
+    expect(http.post).toHaveBeenCalledWith('/v1/budgets/bud_1/alerts', input, undefined);
   });
 
   it('createAlert() rejects invalid payload before calling the transport', async () => {
@@ -88,15 +88,19 @@ describe('BudgetResource threshold alerts (issue #68)', () => {
   it('updateAlert() PATCHes valid changes', async () => {
     http.patch.mockResolvedValue(httpOk(makeAlert({ status: 'PAUSED' })));
     await resource.updateAlert('bud_1', 'alt_1', { status: 'PAUSED', thresholdPercent: 90 });
-    expect(http.patch).toHaveBeenCalledWith('/v1/budgets/bud_1/alerts/alt_1', {
-      status: 'PAUSED',
-      thresholdPercent: 90,
-    });
+    expect(http.patch).toHaveBeenCalledWith(
+      '/v1/budgets/bud_1/alerts/alt_1',
+      {
+        status: 'PAUSED',
+        thresholdPercent: 90,
+      },
+      undefined,
+    );
   });
 
   it('deleteAlert() DELETEs the alert path', async () => {
     http.delete.mockResolvedValue(undefined);
     await expect(resource.deleteAlert('bud_1', 'alt_1')).resolves.toBeUndefined();
-    expect(http.delete).toHaveBeenCalledWith('/v1/budgets/bud_1/alerts/alt_1');
+    expect(http.delete).toHaveBeenCalledWith('/v1/budgets/bud_1/alerts/alt_1', undefined);
   });
 });

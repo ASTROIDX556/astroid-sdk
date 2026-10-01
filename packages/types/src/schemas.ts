@@ -632,14 +632,15 @@ export const SimulatePolicyInputSchema = z.object({
 /* -------------------------------------------------------------------------- */
 
 /**
- * Stellar public key format: `G` followed by 55 base-32 characters (56 total).
+ * Agent payload Stellar address format: `G` followed by 51 base-32 characters
+ * (52 total), as required by the agent API contract.
  *
  * The same shape check `@astroid/agent`'s `validateCreateAgentParams` and
  * `@astroid/transaction`'s `isValidStellarPublicKey` apply, so an address
  * accepted at one SDK boundary is accepted at the others. The base-32 alphabet
  * excludes `0`, `1`, `8` and `9`, which are not valid StrKey characters.
  */
-export const STELLAR_PUBLIC_KEY_PATTERN = /^G[A-Z2-7]{55}$/;
+export const STELLAR_PUBLIC_KEY_PATTERN = /^G[A-Z2-7]{51}$/;
 
 /**
  * Non-negative decimal amount, e.g. `"0"`, `"500"` or `"1000.00"`.
@@ -657,7 +658,7 @@ function isNonBlankString(value: unknown): value is string {
 }
 
 /**
- * A Stellar public key (`G…`, 56 characters).
+ * A Stellar public key (`G…`, 52 characters).
  *
  * This is a syntax check (prefix, length and base-32 alphabet); the CRC16
  * checksum is verified server-side.
@@ -665,7 +666,7 @@ function isNonBlankString(value: unknown): value is string {
 export const StellarPublicKeySchema = z
   .string()
   .refine((value) => STELLAR_PUBLIC_KEY_PATTERN.test(value.trim()), {
-    message: 'Expected a Stellar public key starting with "G" and 56 characters long',
+    message: 'Expected a Stellar public key starting with "G" and 52 characters long',
   });
 
 /** A non-negative decimal amount string (e.g. `"1000.00"`). */
@@ -710,7 +711,7 @@ export const AgentMetadataSchema: z.ZodType<AgentMetadata> = z
       ctx.addIssue({
         code: 'custom',
         path: ['stellarAddress'],
-        message: 'Expected "stellarAddress" to be a Stellar public key (G…, 56 characters)',
+        message: 'Expected "stellarAddress" to be a Stellar public key (G…, 52 characters)',
       });
     }
   });

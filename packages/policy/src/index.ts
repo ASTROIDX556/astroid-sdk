@@ -1,4 +1,4 @@
-import { Resource } from '@astroid/core';
+import { Resource, type RequestOptionsExtras } from '@astroid/core';
 import type {
   Paginated,
   Policy,
@@ -19,10 +19,10 @@ import type { PolicySimulationReport, SimulatedTransaction } from './simulator.j
 import { simulatePolicy } from './simulate-policy.js';
 import { simulatePolicyUpdate } from './simulate-policy-update.js';
 import { simulatePolicyEvaluation } from './simulation.js';
-import { 
-  assertPolicyCreateInput, 
+import {
+  assertPolicyCreateInput,
   assertPolicySimulationRequest,
-  PolicyUpdateInputSchema
+  PolicyUpdateInputSchema,
 } from './schemas.js';
 import { ValidationError } from '@astroid/errors';
 
@@ -195,13 +195,15 @@ export class PolicyResource extends Resource {
   /**
    * Create a new spending policy.
    *
-   * @param input The policy to create — a {@link PolicyCreateInput}, which is
+   * @param input   The policy to create — a {@link PolicyCreateInput}, which is
    *   also the type `PolicyBuilder#build()` returns.
+   * @param options Extra request options (timeout, signal, headers) forwarded
+   *   to the HTTP client.
    * @throws `ValidationError` when the API rejects the payload.
    */
-  async create(input: PolicyCreateInput): Promise<Policy> {
+  async create(input: PolicyCreateInput, options?: RequestOptionsExtras): Promise<Policy> {
     const payload = assertPolicyCreateInput(input);
-    const res = await this.client.post<Policy>('/policies', payload);
+    const res = await this.client.post<Policy>('/policies', payload, options);
     return res.data;
   }
 
@@ -211,8 +213,8 @@ export class PolicyResource extends Resource {
    * @param id The policy id.
    * @throws `NotFoundError` when no policy has that id.
    */
-  async get(id: string): Promise<Policy> {
-    return this.getData<Policy>(`/policies/${encodeURIComponent(id)}`);
+  async get(id: string, options?: RequestOptionsExtras): Promise<Policy> {
+    return this.getData<Policy>(`/policies/${encodeURIComponent(id)}`, undefined, options);
   }
 
   /**
@@ -221,18 +223,27 @@ export class PolicyResource extends Resource {
    * @param params Filters — `enabled`, `type`, `agentId`, `walletId`.
    * @returns       The matching policies plus pagination metadata.
    */
-  async list(params: PolicyListParams = {}): Promise<Paginated<Policy>> {
-    return this.listData<Policy>('/policies', { ...params });
+  async list(
+    params: PolicyListParams = {},
+    options?: RequestOptionsExtras,
+  ): Promise<Paginated<Policy>> {
+    return this.listData<Policy>('/policies', { ...params }, options);
   }
 
   /**
    * Update an existing policy.
    *
-   * @param id    The policy id.
-   * @param input The fields to change — a {@link PolicyUpdateInput}.
+   * @param id      The policy id.
+   * @param input   The fields to change — a {@link PolicyUpdateInput}.
+   * @param options Extra request options (timeout, signal, headers) forwarded
+   *   to the HTTP client.
    * @throws      `NotFoundError` when no policy has that id.
    */
-  async update(id: string, input: PolicyUpdateInput): Promise<Policy> {
+  async update(
+    id: string,
+    input: PolicyUpdateInput,
+    options?: RequestOptionsExtras,
+  ): Promise<Policy> {
     const validation = PolicyUpdateInputSchema.safeParse(input);
     if (!validation.success) {
       throw new ValidationError('Validation failed for PolicyUpdateInput', {
@@ -243,7 +254,11 @@ export class PolicyResource extends Resource {
       });
     }
 
-    const res = await this.client.patch<Policy>(`/policies/${encodeURIComponent(id)}`, input);
+    const res = await this.client.patch<Policy>(
+      `/policies/${encodeURIComponent(id)}`,
+      input,
+      options,
+    );
     return res.data;
   }
 
@@ -253,8 +268,8 @@ export class PolicyResource extends Resource {
    * @param id The policy id.
    * @throws   `NotFoundError` when no policy has that id.
    */
-  async delete(id: string): Promise<void> {
-    await this.client.delete<void>(`/policies/${encodeURIComponent(id)}`);
+  async delete(id: string, options?: RequestOptionsExtras): Promise<void> {
+    await this.client.delete<void>(`/policies/${encodeURIComponent(id)}`, options);
   }
 
   /**
@@ -280,8 +295,8 @@ export class PolicyResource extends Resource {
    * });
    * ```
    */
-  async createPolicy(input: PolicyCreateInput): Promise<Policy> {
-    return this.create(input);
+  async createPolicy(input: PolicyCreateInput, options?: RequestOptionsExtras): Promise<Policy> {
+    return this.create(input, options);
   }
 
   /**
@@ -298,8 +313,8 @@ export class PolicyResource extends Resource {
    * const policy = await astroid.policies.getPolicy('pol_1');
    * ```
    */
-  async getPolicy(id: string): Promise<Policy> {
-    return this.get(id);
+  async getPolicy(id: string, options?: RequestOptionsExtras): Promise<Policy> {
+    return this.get(id, options);
   }
 
   /**
@@ -315,8 +330,11 @@ export class PolicyResource extends Resource {
    * const { data: policies } = await astroid.policies.listPolicies({ enabled: true });
    * ```
    */
-  async listPolicies(params: PolicyListParams = {}): Promise<Paginated<Policy>> {
-    return this.list(params);
+  async listPolicies(
+    params: PolicyListParams = {},
+    options?: RequestOptionsExtras,
+  ): Promise<Paginated<Policy>> {
+    return this.list(params, options);
   }
 
   /**
@@ -324,9 +342,11 @@ export class PolicyResource extends Resource {
    *
    * Identical to {@link PolicyResource.update}.
    *
-   * @param id    The policy id.
-   * @param input The fields to change — a {@link PolicyUpdateInput}.
-   * @returns     The updated policy record.
+   * @param id      The policy id.
+   * @param input   The fields to change — a {@link PolicyUpdateInput}.
+   * @param options Extra request options (timeout, signal, headers) forwarded
+   *   to the HTTP client.
+   * @returns       The updated policy record.
    * @throws      `NotFoundError` when no policy has that id, `ValidationError`
    *              when the API rejects the patch.
    *
@@ -335,8 +355,12 @@ export class PolicyResource extends Resource {
    * const updated = await astroid.policies.updatePolicy('pol_1', { enabled: false });
    * ```
    */
-  async updatePolicy(id: string, input: PolicyUpdateInput): Promise<Policy> {
-    return this.update(id, input);
+  async updatePolicy(
+    id: string,
+    input: PolicyUpdateInput,
+    options?: RequestOptionsExtras,
+  ): Promise<Policy> {
+    return this.update(id, input, options);
   }
 
   /**
@@ -352,8 +376,8 @@ export class PolicyResource extends Resource {
    * await astroid.policies.deletePolicy('pol_1');
    * ```
    */
-  async deletePolicy(id: string): Promise<void> {
-    await this.delete(id);
+  async deletePolicy(id: string, options?: RequestOptionsExtras): Promise<void> {
+    await this.delete(id, options);
   }
   /**
    * Simulate a proposed transaction against policy rules on the server,
@@ -503,8 +527,11 @@ export class PolicyResource extends Resource {
    * overload is available on {@link PolicyResource.simulatePolicy} and
    * {@link PolicyResource.simulatePolicyAgainst}.
    */
-  async simulate(input: PolicySimulationRequest): Promise<PolicySimulationResult> {
-    return this.simulatePolicy(input);
+  async simulate(
+    input: PolicySimulationRequest,
+    options?: RequestOptionsExtras,
+  ): Promise<PolicySimulationResult> {
+    return simulatePolicy(this.client, input, options);
   }
 
   /**
@@ -521,14 +548,19 @@ export class PolicyResource extends Resource {
    * @param options.agentId     Agent whose policies apply (mutually exclusive with `walletId`).
    * @param options.walletId    Wallet whose policies apply (mutually exclusive with `agentId`).
    * @param options.transaction The proposed transaction to evaluate.
+   * @param requestOptions      Extra request options (e.g. `signal`, `timeoutMs`) applied to
+   *                            the policy-listing request.
    * @returns                   A structured report with a `passed` flag and per-rule violations.
    * @throws                    If neither `agentId` nor `walletId` is provided.
    */
-  async simulateTransaction(options: {
-    agentId?: string;
-    walletId?: string;
-    transaction: SimulatedTransaction;
-  }): Promise<PolicySimulationReport> {
+  async simulateTransaction(
+    options: {
+      agentId?: string;
+      walletId?: string;
+      transaction: SimulatedTransaction;
+    },
+    requestOptions?: RequestOptionsExtras,
+  ): Promise<PolicySimulationReport> {
     const { agentId, walletId, transaction } = options;
 
     if (!agentId && !walletId) {
@@ -541,7 +573,7 @@ export class PolicyResource extends Resource {
     if (agentId) params.agentId = agentId;
     if (walletId) params.walletId = walletId;
 
-    const { data: policies } = await this.list(params);
+    const { data: policies } = await this.list(params, requestOptions);
 
     return evaluatePolicyRules(policies, transaction);
   }

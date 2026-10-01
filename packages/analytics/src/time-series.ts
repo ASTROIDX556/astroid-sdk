@@ -12,7 +12,7 @@
  * @module
  */
 
-import type { HttpClient } from '@astroid/core';
+import type { HttpClient, RequestOptionsExtras } from '@astroid/core';
 import type { AnalyticsMetricsResponse, Timeframe } from '@astroid/types';
 
 /* -------------------------------------------------------------------------- */
@@ -179,10 +179,13 @@ export class TimeSeriesResource {
    *   and a roll-up summary.
    * @throws {TimeSeriesQueryError} When parameters are invalid.
    */
-  async getMetrics(params: TimeSeriesQueryParams): Promise<AnalyticsMetricsResponse> {
+  async getMetrics(
+    params: TimeSeriesQueryParams,
+    options?: RequestOptionsExtras,
+  ): Promise<AnalyticsMetricsResponse> {
     validateTimeSeriesQuery(params);
     const path = buildTimeSeriesPath(params);
-    const res = await this.client.get<AnalyticsMetricsResponse>(path);
+    const res = await this.client.get<AnalyticsMetricsResponse>(path, options);
     return res.data;
   }
 }

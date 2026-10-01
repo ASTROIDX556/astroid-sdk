@@ -18,8 +18,8 @@ import {
   validateUpdateAgentParams,
 } from '../validation.js';
 
-/** A format-valid Stellar public key (`G` + 55 base-32 characters). */
-const VALID_ADDRESS = `G${'A'.repeat(55)}`;
+/** A format-valid agent payload address (`G` + 51 base-32 characters). */
+const VALID_ADDRESS = `G${'A'.repeat(51)}`;
 
 /** A minimal valid create payload, spread as the base of most cases. */
 const VALID_CREATE = {
@@ -232,10 +232,10 @@ describe('Agent validation schemas', () => {
     it('rejects malformed keys and non-strings', () => {
       expect(isValidStellarPublicKey('')).toBe(false);
       expect(isValidStellarPublicKey('GABC')).toBe(false);
-      expect(isValidStellarPublicKey(`S${'A'.repeat(55)}`)).toBe(false); // wrong prefix
-      expect(isValidStellarPublicKey(`G${'a'.repeat(55)}`)).toBe(false); // lowercase base32
-      expect(isValidStellarPublicKey(`G${'A'.repeat(54)}`)).toBe(false); // too short
-      expect(isValidStellarPublicKey(`G${'A'.repeat(56)}`)).toBe(false); // too long
+      expect(isValidStellarPublicKey(`S${'A'.repeat(51)}`)).toBe(false); // wrong prefix
+      expect(isValidStellarPublicKey(`G${'a'.repeat(51)}`)).toBe(false); // lowercase base32
+      expect(isValidStellarPublicKey(`G${'A'.repeat(50)}`)).toBe(false); // too short
+      expect(isValidStellarPublicKey(`G${'A'.repeat(52)}`)).toBe(false); // too long
       expect(isValidStellarPublicKey(undefined)).toBe(false);
       expect(isValidStellarPublicKey(123)).toBe(false);
     });
@@ -489,7 +489,7 @@ describe('UpdateAgentDto validation', () => {
 /* ========================================================================== */
 
 describe('assertValidStellarPublicKey', () => {
-  const VALID_ADDRESS = `G${'A'.repeat(55)}`;
+  const VALID_ADDRESS = `G${'A'.repeat(51)}`;
 
   it('does not throw for a format-valid key', () => {
     expect(() => assertValidStellarPublicKey(VALID_ADDRESS)).not.toThrow();
@@ -535,7 +535,7 @@ describe('assertValidAmountString', () => {
 });
 
 describe('validateAgentMetadata / isValidAgentMetadata', () => {
-  const VALID_ADDRESS = `G${'A'.repeat(55)}`;
+  const VALID_ADDRESS = `G${'A'.repeat(51)}`;
 
   it('accepts an empty bag and passes unknown keys through unchanged', () => {
     expect(() => validateAgentMetadata({})).not.toThrow();
@@ -588,7 +588,7 @@ describe('validateAgentMetadata / isValidAgentMetadata', () => {
 /* ========================================================================== */
 
 describe('@astroid/types DTO schemas agree with the @astroid/agent guards', () => {
-  const STELLAR_ADDRESS = `G${'A'.repeat(55)}`;
+  const STELLAR_ADDRESS = `G${'A'.repeat(51)}`;
 
   const VALID_CREATE = {
     name: 'TradingBot',
