@@ -8,7 +8,7 @@ import {
   Operation,
   TransactionBuilder,
 } from '@stellar/stellar-base';
-import { ValidationError } from '@astroid/errors';
+import { ValidationError } from '@astroid/errors';import type { Transaction, FeeBumpTransaction } from '@stellar/stellar-base';
 
 import {
   buildAgentTransferTransaction,
@@ -132,7 +132,7 @@ describe('buildAgentTransferTransaction', () => {
   it('builds a payment with the account sequence and serializes to XDR', () => {
     const source = Keypair.random();
     const destination = Keypair.random().publicKey();
-    const tx = buildAgentTransferTransaction({
+    const tx = buildAgentTransferTransaction(){
       source: new Account(source.publicKey(), '41'),
       networkPassphrase: Networks.TESTNET,
       destination,
@@ -148,7 +148,7 @@ describe('buildAgentTransferTransaction', () => {
 
   it('wraps the payment in a fee-bump envelope when a sponsor is provided', () => {
     const sponsor = Keypair.random();
-    const tx = buildAgentTransferTransaction({
+    const tx = buildAgentTransferTransaction(){
       source: new Account(Keypair.random().publicKey(), '1'),
       networkPassphrase: Networks.TESTNET,
       destination: Keypair.random().publicKey(),
@@ -166,7 +166,7 @@ describe('buildAgentTransferTransaction', () => {
 
   it('validates invalid transfer parameters through the shared payment builder', () => {
     expect(() =>
-      buildAgentTransferTransaction({
+      buildAgentTransferTransaction(){
         source: new Account(Keypair.random().publicKey(), '1'),
         networkPassphrase: Networks.TESTNET,
         destination: 'invalid',
