@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { isTimeoutError } from '@astroid/errors';
 import {
   Astroid,
   AstroidError,

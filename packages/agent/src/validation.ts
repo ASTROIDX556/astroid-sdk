@@ -38,14 +38,13 @@ import { AstroidValidationError } from './errors.js';
 /* -------------------------------------------------------------------------- */
 
 /**
- * Agent payload Stellar address format: `G` followed by 51 base-32 characters
- * (52 characters total), as required by the agent API contract.
+ * Stellar public key format: `G` followed by 55 base-32 characters.
  *
  * This is a syntax check (prefix, length and alphabet); the CRC16 checksum is
  * verified server-side. It matches the check used by `@astroid/policy`'s
  * policy builder so client-side validation is consistent across packages.
  */
-const STELLAR_PUBLIC_KEY_PATTERN = /^G[A-Z2-7]{51}$/;
+const STELLAR_PUBLIC_KEY_PATTERN = /^G[A-Z2-7]{55}$/;
 
 /**
  * Non-negative decimal amount, e.g. `"0"`, `"500"` or `"1000.00"`.
@@ -99,7 +98,7 @@ export function isValidStellarPublicKey(value: unknown): value is string {
 export function assertValidStellarPublicKey(value: unknown, field = 'stellarAddress'): void {
   if (!isValidStellarPublicKey(value)) {
     fail(
-      `Agent validation failed: "${field}" must be a valid Stellar public key starting with "G" and 52 characters long.`,
+      `Agent validation failed: "${field}" must be a valid Stellar public key (G…, 56 characters).`,
       { field, received: value, expected: 'Stellar public key (G…)' },
     );
   }
