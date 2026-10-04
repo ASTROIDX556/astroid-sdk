@@ -383,8 +383,6 @@ export function buildAgentTransferTransaction(
 }
 
 /**
- * Serialise a Stellar transaction to base64 XDR.
- *
  * Accepts a built `Transaction`, a `FeeBumpTransaction`, or an already-encoded
  * base64 XDR string (returned unchanged). The result is the envelope format used
  * by the Astroid API for simulation and submission.
