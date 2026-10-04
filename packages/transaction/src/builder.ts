@@ -383,49 +383,6 @@ export function buildAgentTransferTransaction(
 }
 
 /**
- * Build a transfer of a native or custom Stellar asset to a destination account.
- *
- * This is the single most common operation for an autonomous agent: it validates
- * the source account, network passphrase, destination address, amount and asset
- * identifier, then assembles a one-operation payment transaction under the Astroid
- * fee bounds. The asset identifier supports native XLM (`XLM`), any 1-12 character
- * asset code (`USDC`), or an issued asset in `CODE:ISSUER` form (`USDC:G…Issuer`)
- * so trustline assets are covered without extra ceremony.
- *
- * The transaction is returned unsigned. Sign it with the wallet package's offline
- * signer before submission, or pass the base64 XDR to the transaction resource.
- *
- * @param options Destination, asset, amount and shared build options.
- * @returns An unsigned Stellar `Transaction` with the payment operation.
- * @throws {ValidationError} For an invalid destination, amount, asset, account,
- *   memo, or a fee outside the accepted bounds.
- *
- * @example
- * ```ts
- * // Native XLM transfer with a memo:
- * const xlmTx = buildPaymentTransaction({
- *   source: account,
- *   networkPassphrase: StellarNetworkPassphrase.TESTNET,
- *   destination: 'G…',
- *   asset: 'XLM',
- *   amount: '10.5',
- *   memoText: 'reimburse',
- * });
- *
- * // Issued asset transfer with an explicit fee bid (stroops):
- * const usdcTx = buildPaymentTransaction({
- *   source: account,
- *   networkPassphrase: StellarNetworkPassphrase.TESTNET,
- *   destination: 'G…',
- *   asset: `USDC:${issuer}`,   // CODE:ISSUER
- *   amount: '25',
- *   fee: 500,                  // ≥ 100 stroops/op, ≤ 10,000,000 stroops
- * });
- * ```
- */
-export function buildPaymentTransaction(options: PaymentTransactionOptions): Transaction {
-}
- *
  * Accepts a built `Transaction`, a `FeeBumpTransaction`, or an already-encoded
  * base64 XDR string (returned unchanged). The result is the envelope format used
  * by the Astroid API for simulation and submission.
