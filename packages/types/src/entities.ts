@@ -34,6 +34,26 @@ export type IsoDateTime = string;
 /** A decimal monetary amount serialised as a string to preserve precision. */
 export type DecimalString = string;
 
+/**
+ * Stellar asset code, such as `XLM` or `USDC`.
+ *
+ * @example
+ * ```ts
+ * const assetCode: StellarAssetCode = 'USDC';
+ * ```
+ */
+export type StellarAssetCode = string;
+
+/**
+ * Stellar account public key, conventionally beginning with `G`.
+ *
+ * @example
+ * ```ts
+ * const issuer: StellarPublicKey = 'G...'; // Replace with a valid public key.
+ * ```
+ */
+export type StellarPublicKey = string;
+
 /** 1. Organization — the multi-tenant root. */
 export interface Organization {
   id: string;
@@ -86,7 +106,7 @@ export interface Wallet {
   id: string;
   organizationId: string;
   agentId?: string | null;
-  stellarAddress: string;
+  stellarAddress: StellarPublicKey;
   label?: string | null;
   walletType: WalletType;
   network: StellarNetwork;
@@ -98,16 +118,16 @@ export interface Wallet {
 
 /** A single asset balance on a wallet. */
 export interface AssetBalance {
-  asset: string;
+  asset: StellarAssetCode;
   balance: DecimalString;
   /** Optional issuer for non-native Stellar assets. */
-  issuer?: string | null;
+  issuer?: StellarPublicKey | null;
 }
 
 /** The full balance snapshot for a wallet. */
 export interface WalletBalance {
   walletId: string;
-  stellarAddress: string;
+  stellarAddress: StellarPublicKey;
   network: StellarNetwork;
   balances: AssetBalance[];
   updatedAt: IsoDateTime;

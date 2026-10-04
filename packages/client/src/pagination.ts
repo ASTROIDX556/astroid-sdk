@@ -37,7 +37,9 @@ export const DEFAULT_PAGE_LIMIT = 20;
 export const DEFAULT_PAGE_ORDER: PaginationParams['order'] = 'desc';
 
 /** Default pagination options applied by {@link resolvePaginationParams}. */
-export const DEFAULT_PAGINATION_PARAMS: Readonly<Required<Pick<PaginationParams, 'limit' | 'order'>>> = {
+export const DEFAULT_PAGINATION_PARAMS: Readonly<
+  Required<Pick<PaginationParams, 'limit' | 'order'>>
+> = {
   limit: DEFAULT_PAGE_LIMIT,
   order: DEFAULT_PAGE_ORDER,
 } as const;

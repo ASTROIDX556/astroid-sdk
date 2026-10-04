@@ -130,9 +130,7 @@ export interface UseWalletBalancesResult {
  * application's `QueryClient`. Exported for advanced compositions — SDK hooks
  * such as `useTransfer` already call this automatically.
  */
-export function useInvalidateWalletBalances(): (
-  walletId?: string,
-) => Promise<void> {
+export function useInvalidateWalletBalances(): (walletId?: string) => Promise<void> {
   const queryClient = useQueryClient();
   return async (walletId?: string) => {
     if (walletId) {

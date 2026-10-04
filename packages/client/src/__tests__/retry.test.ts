@@ -461,9 +461,9 @@ describe('Astroid client — non-retryable errors', () => {
   });
 
   it('does not retry on 408 (Request Timeout) despite the transient-sounding name', async () => {
-    const mockFetch = vi.fn().mockImplementation(async () =>
-      errorResponse(408, 'REQUEST_TIMEOUT', 'Request Timeout'),
-    );
+    const mockFetch = vi
+      .fn()
+      .mockImplementation(async () => errorResponse(408, 'REQUEST_TIMEOUT', 'Request Timeout'));
 
     const client = new Astroid({
       ...BASE_CONFIG,
@@ -476,9 +476,9 @@ describe('Astroid client — non-retryable errors', () => {
   });
 
   it('does not retry on 425 (Too Early)', async () => {
-    const mockFetch = vi.fn().mockImplementation(async () =>
-      errorResponse(425, 'TOO_EARLY', 'Too Early'),
-    );
+    const mockFetch = vi
+      .fn()
+      .mockImplementation(async () => errorResponse(425, 'TOO_EARLY', 'Too Early'));
 
     const client = new Astroid({
       ...BASE_CONFIG,
@@ -551,9 +551,9 @@ describe('Astroid client — timeout retries', () => {
   });
 
   it('throws AstroidTimeoutError after exhausting retries on persistent timeouts', async () => {
-    const mockFetch = vi.fn().mockImplementation((_url: string, init?: RequestInit) =>
-      hangingFetch(init),
-    );
+    const mockFetch = vi
+      .fn()
+      .mockImplementation((_url: string, init?: RequestInit) => hangingFetch(init));
 
     const client = new Astroid({
       ...BASE_CONFIG,
@@ -568,9 +568,9 @@ describe('Astroid client — timeout retries', () => {
   });
 
   it('does not retry a timeout on a non-idempotent POST', async () => {
-    const mockFetch = vi.fn().mockImplementation((_url: string, init?: RequestInit) =>
-      hangingFetch(init),
-    );
+    const mockFetch = vi
+      .fn()
+      .mockImplementation((_url: string, init?: RequestInit) => hangingFetch(init));
 
     const client = new Astroid({
       ...BASE_CONFIG,

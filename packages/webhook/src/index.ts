@@ -18,7 +18,7 @@
 
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
-import { Resource } from '@astroid/core';
+import { Resource, type RequestOptionsExtras } from '@astroid/core';
 import { AstroidError } from '@astroid/errors';
 import type {
   AnyWebhookEvent,
@@ -66,54 +66,71 @@ const DEFAULT_TOLERANCE_SECONDS = 300;
  */
 export class WebhookResource extends Resource {
   /** Register a new webhook endpoint. The response includes the signing secret. */
-  async create(input: CreateWebhookInput): Promise<Webhook> {
-    const res = await this.client.post<Webhook>('/webhooks', input);
+  async create(input: CreateWebhookInput, options?: RequestOptionsExtras): Promise<Webhook> {
+    const res = await this.client.post<Webhook>('/webhooks', input, options);
     return res.data;
   }
 
   /** Fetch a single webhook endpoint by id (the secret is omitted). */
-  async get(webhookId: string): Promise<Webhook> {
-    return this.getData<Webhook>(`/webhooks/${encodeURIComponent(webhookId)}`);
+  async get(webhookId: string, options?: RequestOptionsExtras): Promise<Webhook> {
+    return this.getData<Webhook>(`/webhooks/${encodeURIComponent(webhookId)}`, undefined, options);
   }
 
   /** List webhook endpoints. */
-  async list(params: WebhookListParams = {}): Promise<Paginated<Webhook>> {
-    return this.listData<Webhook>('/webhooks', { ...params });
+  async list(
+    params: WebhookListParams = {},
+    options?: RequestOptionsExtras,
+  ): Promise<Paginated<Webhook>> {
+    return this.listData<Webhook>('/webhooks', { ...params }, options);
   }
 
   /** Iterate every webhook endpoint across all pages. */
-  iterate(params: WebhookListParams = {}): AsyncGenerator<Webhook, void, void> {
-    return this.iterateData<Webhook>('/webhooks', { ...params });
+  iterate(
+    params: WebhookListParams = {},
+    options?: RequestOptionsExtras,
+  ): AsyncGenerator<Webhook, void, void> {
+    return this.iterateData<Webhook>('/webhooks', { ...params }, options);
   }
 
   /** Update a webhook's URL, subscribed events, or enabled state. */
-  async update(webhookId: string, input: UpdateWebhookInput): Promise<Webhook> {
+  async update(
+    webhookId: string,
+    input: UpdateWebhookInput,
+    options?: RequestOptionsExtras,
+  ): Promise<Webhook> {
     const res = await this.client.patch<Webhook>(
       `/webhooks/${encodeURIComponent(webhookId)}`,
       input,
+      options,
     );
     return res.data;
   }
 
   /** Permanently delete a webhook endpoint. */
-  async delete(webhookId: string): Promise<void> {
-    await this.client.delete<void>(`/webhooks/${encodeURIComponent(webhookId)}`);
+  async delete(webhookId: string, options?: RequestOptionsExtras): Promise<void> {
+    await this.client.delete<void>(`/webhooks/${encodeURIComponent(webhookId)}`, options);
   }
 
   /**
    * Rotate the endpoint's signing secret, returning the webhook with the new
    * `secret` populated. The previous secret stops verifying immediately.
    */
-  async rotateSecret(webhookId: string): Promise<Webhook> {
+  async rotateSecret(webhookId: string, options?: RequestOptionsExtras): Promise<Webhook> {
     const res = await this.client.post<Webhook>(
       `/webhooks/${encodeURIComponent(webhookId)}/rotate-secret`,
+      undefined,
+      options,
     );
     return res.data;
   }
 
   /** Send a test event to the endpoint to confirm connectivity. */
-  async test(webhookId: string): Promise<void> {
-    await this.client.post<void>(`/webhooks/${encodeURIComponent(webhookId)}/test`);
+  async test(webhookId: string, options?: RequestOptionsExtras): Promise<void> {
+    await this.client.post<void>(
+      `/webhooks/${encodeURIComponent(webhookId)}/test`,
+      undefined,
+      options,
+    );
   }
 
   /* --------------------------- verification (local) --------------------------- */

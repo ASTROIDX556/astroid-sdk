@@ -9,21 +9,11 @@ describe('queryKeys', () => {
 
     it('list returns a stable key with params', () => {
       const params = { limit: 10, cursor: 'cur_1' };
-      expect(queryKeys.wallets.list(params)).toEqual([
-        'astroid',
-        'wallets',
-        'list',
-        params,
-      ]);
+      expect(queryKeys.wallets.list(params)).toEqual(['astroid', 'wallets', 'list', params]);
     });
 
     it('list defaults to empty object when no params', () => {
-      expect(queryKeys.wallets.list()).toEqual([
-        'astroid',
-        'wallets',
-        'list',
-        {},
-      ]);
+      expect(queryKeys.wallets.list()).toEqual(['astroid', 'wallets', 'list', {}]);
     });
 
     it('detail returns a key with the wallet ID', () => {
@@ -46,9 +36,7 @@ describe('queryKeys', () => {
     });
 
     it('different wallet IDs produce different keys', () => {
-      expect(queryKeys.wallets.detail('wal_1')).not.toEqual(
-        queryKeys.wallets.detail('wal_2'),
-      );
+      expect(queryKeys.wallets.detail('wal_1')).not.toEqual(queryKeys.wallets.detail('wal_2'));
     });
   });
 
@@ -82,12 +70,7 @@ describe('queryKeys', () => {
     });
 
     it('list returns a stable key', () => {
-      expect(queryKeys.policies.list()).toEqual([
-        'astroid',
-        'policies',
-        'list',
-        {},
-      ]);
+      expect(queryKeys.policies.list()).toEqual(['astroid', 'policies', 'list', {}]);
     });
 
     it('detail returns a key with the policy ID', () => {

@@ -99,9 +99,9 @@ describe('server-side errors reach the caller as the exact SDK class', () => {
   it('maps BUDGET_EXCEEDED to BudgetExceededError', async () => {
     api.fail('POST /budgets/bdg_1/consume', 422, 'BUDGET_EXCEEDED', 'Daily cap reached');
 
-    await expect(
-      astroid.budgets.consume('bdg_1', { amount: '10.00' }),
-    ).rejects.toBeInstanceOf(BudgetExceededError);
+    await expect(astroid.budgets.consume('bdg_1', { amount: '10.00' })).rejects.toBeInstanceOf(
+      BudgetExceededError,
+    );
   });
 
   it('maps 409 CONFLICT to ConflictError', async () => {
@@ -109,7 +109,11 @@ describe('server-side errors reach the caller as the exact SDK class', () => {
 
     const error = asAstroidError(
       await astroid.agents
-        .create({ name: 'dupe', capabilities: ['a'], initialBudget: { currency: 'XLM', amount: '1' } })
+        .create({
+          name: 'dupe',
+          capabilities: ['a'],
+          initialBudget: { currency: 'XLM', amount: '1' },
+        })
         .catch((err: unknown) => err),
     );
 
@@ -120,9 +124,7 @@ describe('server-side errors reach the caller as the exact SDK class', () => {
   it('maps 429 RATE_LIMITED to RateLimitError and marks it retryable', async () => {
     api.fail('GET /agents/agt_1', 429, 'RATE_LIMITED', 'Slow down');
 
-    const error = asAstroidError(
-      await astroid.agents.get('agt_1').catch((err: unknown) => err),
-    );
+    const error = asAstroidError(await astroid.agents.get('agt_1').catch((err: unknown) => err));
 
     expect(error).toBeInstanceOf(RateLimitError);
     // Retrying a rate limit is meaningful, so the flag must say so.
@@ -132,9 +134,7 @@ describe('server-side errors reach the caller as the exact SDK class', () => {
   it('maps 500 to InternalServerError and marks it retryable', async () => {
     api.fail('GET /agents/agt_1', 500, 'INTERNAL_ERROR', 'Upstream exploded');
 
-    const error = asAstroidError(
-      await astroid.agents.get('agt_1').catch((err: unknown) => err),
-    );
+    const error = asAstroidError(await astroid.agents.get('agt_1').catch((err: unknown) => err));
 
     expect(error).toBeInstanceOf(InternalServerError);
     expect(error.isRetryable).toBe(true);
@@ -155,9 +155,7 @@ describe('server-side errors reach the caller as the exact SDK class', () => {
       headers: { 'x-request-id': 'req_header_42' },
     }));
 
-    const error = asAstroidError(
-      await astroid.agents.get('agt_1').catch((err: unknown) => err),
-    );
+    const error = asAstroidError(await astroid.agents.get('agt_1').catch((err: unknown) => err));
 
     expect(error.requestId).toBe('req_header_42');
   });
@@ -165,9 +163,7 @@ describe('server-side errors reach the caller as the exact SDK class', () => {
   it('serialises the mapped error without leaking internals', async () => {
     api.fail('GET /agents/agt_1', 404, 'NOT_FOUND', 'Agent not found');
 
-    const error = asAstroidError(
-      await astroid.agents.get('agt_1').catch((err: unknown) => err),
-    );
+    const error = asAstroidError(await astroid.agents.get('agt_1').catch((err: unknown) => err));
     const json = error.toJSON();
 
     expect(json).toMatchObject({ name: 'NotFoundError', code: 'NOT_FOUND', status: 404 });
@@ -259,9 +255,7 @@ describe('errors keep one class identity across the package graph', () => {
       retry: { maxRetries: 2, baseDelayMs: 1, maxDelayMs: 2 },
     });
 
-    const error = asAstroidError(
-      await retrying.agents.get('agt_1').catch((err: unknown) => err),
-    );
+    const error = asAstroidError(await retrying.agents.get('agt_1').catch((err: unknown) => err));
 
     expect(error.code).toBe('NETWORK_ERROR');
     expect(error.isRetryable).toBe(true);

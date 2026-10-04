@@ -83,7 +83,7 @@ describe('AgentResource CRUD', () => {
 
       expect(result).toEqual(agent);
       expect(http.post).toHaveBeenCalledOnce();
-      expect(http.post).toHaveBeenCalledWith('/agents', CREATE_PARAMS);
+      expect(http.post).toHaveBeenCalledWith('/agents', CREATE_PARAMS, undefined);
     });
 
     it('forwards optional fields (description, role, provider, model, metadata)', async () => {
@@ -102,14 +102,18 @@ describe('AgentResource CRUD', () => {
 
       await resource.create(params);
 
-      expect(http.post).toHaveBeenCalledWith('/agents', params);
+      expect(http.post).toHaveBeenCalledWith('/agents', params, undefined);
     });
 
     it('throws AstroidValidationError when required fields are missing', async () => {
       const { AstroidValidationError } = await import('../errors.js');
 
       await expect(
-        resource.create({ name: '', capabilities: [], initialBudget: { currency: '', amount: '' } }),
+        resource.create({
+          name: '',
+          capabilities: [],
+          initialBudget: { currency: '', amount: '' },
+        }),
       ).rejects.toBeInstanceOf(AstroidValidationError);
 
       // Client should not have been called — validation is pre-flight
@@ -221,10 +225,14 @@ describe('AgentResource CRUD', () => {
       const result = await resource.update('agt_1', { name: 'RenamedBot', status: 'SUSPENDED' });
 
       expect(result).toEqual(updated);
-      expect(http.patch).toHaveBeenCalledWith('/agents/agt_1', {
-        name: 'RenamedBot',
-        status: 'SUSPENDED',
-      });
+      expect(http.patch).toHaveBeenCalledWith(
+        '/agents/agt_1',
+        {
+          name: 'RenamedBot',
+          status: 'SUSPENDED',
+        },
+        undefined,
+      );
     });
 
     it('percent-encodes slashes in the agent id for PATCH', async () => {
@@ -232,7 +240,7 @@ describe('AgentResource CRUD', () => {
 
       await resource.update('agt/special', { name: 'X' });
 
-      expect(http.patch).toHaveBeenCalledWith('/agents/agt%2Fspecial', { name: 'X' });
+      expect(http.patch).toHaveBeenCalledWith('/agents/agt%2Fspecial', { name: 'X' }, undefined);
     });
 
     it('accepts partial update payloads (only changed fields)', async () => {
@@ -240,7 +248,11 @@ describe('AgentResource CRUD', () => {
 
       await resource.update('agt_1', { metadata: { team: 'ops' } });
 
-      expect(http.patch).toHaveBeenCalledWith('/agents/agt_1', { metadata: { team: 'ops' } });
+      expect(http.patch).toHaveBeenCalledWith(
+        '/agents/agt_1',
+        { metadata: { team: 'ops' } },
+        undefined,
+      );
     });
 
     it('accepts a null primaryWalletId (wallet detach)', async () => {
@@ -248,7 +260,7 @@ describe('AgentResource CRUD', () => {
 
       await resource.update('agt_1', { primaryWalletId: null });
 
-      expect(http.patch).toHaveBeenCalledWith('/agents/agt_1', { primaryWalletId: null });
+      expect(http.patch).toHaveBeenCalledWith('/agents/agt_1', { primaryWalletId: null }, undefined);
     });
 
     it.each([
@@ -289,7 +301,7 @@ describe('AgentResource CRUD', () => {
 
       await expect(resource.delete('agt_1')).resolves.toBeUndefined();
 
-      expect(http.delete).toHaveBeenCalledWith('/agents/agt_1');
+      expect(http.delete).toHaveBeenCalledWith('/agents/agt_1', undefined);
     });
 
     it('percent-encodes slashes in the agent id for DELETE', async () => {
@@ -297,7 +309,7 @@ describe('AgentResource CRUD', () => {
 
       await resource.delete('agt/special');
 
-      expect(http.delete).toHaveBeenCalledWith('/agents/agt%2Fspecial');
+      expect(http.delete).toHaveBeenCalledWith('/agents/agt%2Fspecial', undefined);
     });
   });
 
@@ -313,7 +325,7 @@ describe('AgentResource CRUD', () => {
       const result = await resource.deactivate('agt_1');
 
       expect(result).toEqual(deactivated);
-      expect(http.post).toHaveBeenCalledWith('/agents/agt_1/deactivate');
+      expect(http.post).toHaveBeenCalledWith('/agents/agt_1/deactivate', undefined, undefined);
     });
 
     it('percent-encodes slashes in the agent id for deactivate', async () => {
@@ -321,7 +333,7 @@ describe('AgentResource CRUD', () => {
 
       await resource.deactivate('agt/special');
 
-      expect(http.post).toHaveBeenCalledWith('/agents/agt%2Fspecial/deactivate');
+      expect(http.post).toHaveBeenCalledWith('/agents/agt%2Fspecial/deactivate', undefined, undefined);
     });
   });
 

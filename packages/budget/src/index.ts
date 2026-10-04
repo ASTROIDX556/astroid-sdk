@@ -60,7 +60,7 @@ export {
   type ValidateSimulationOptions,
 } from './simulation.js';
 
-import { Resource } from '@astroid/core';
+import { Resource, type RequestOptionsExtras } from '@astroid/core';
 import type {
   Budget,
   BudgetAlert,
@@ -148,6 +148,8 @@ export class BudgetResource extends Resource {
    * Fetch a single budget by id.
    *
    * @param budgetId The budget id.
+   * @param options Extra request options (timeout, signal, headers) forwarded
+   *   to the HTTP client.
    * @returns The {@link Budget}.
    *
    * @example
@@ -155,8 +157,8 @@ export class BudgetResource extends Resource {
    * const budget = await asteroid.budgets.get('bud_1');
    * ```
    */
-  async get(budgetId: string): Promise<Budget> {
-    return this.getData<Budget>(`/budgets/${encodeURIComponent(budgetId)}`);
+  async get(budgetId: string, options?: RequestOptionsExtras): Promise<Budget> {
+    return this.getData<Budget>(`/budgets/${encodeURIComponent(budgetId)}`, undefined, options);
   }
 
   /**
@@ -256,10 +258,15 @@ export class BudgetResource extends Resource {
    * const updated = await asteroid.budgets.consume('bud_1', { amount: '25.00' });
    * ```
    */
-  async consume(budgetId: string, input: ConsumeBudgetInput): Promise<Budget> {
+  async consume(
+    budgetId: string,
+    input: ConsumeBudgetInput,
+    options?: RequestOptionsExtras,
+  ): Promise<Budget> {
     const res = await this.client.post<Budget>(
       `/budgets/${encodeURIComponent(budgetId)}/consume`,
       input,
+      options,
     );
     return res.data;
   }
@@ -312,10 +319,13 @@ export class BudgetResource extends Resource {
   async history(
     budgetId: string,
     params: PaginationParams = {},
+    options?: RequestOptionsExtras,
   ): Promise<Paginated<BudgetHistoryEntry>> {
-    return this.listData<BudgetHistoryEntry>(`/budgets/${encodeURIComponent(budgetId)}/history`, {
-      ...params,
-    });
+    return this.listData<BudgetHistoryEntry>(
+      `/budgets/${encodeURIComponent(budgetId)}/history`,
+      { ...params },
+      options,
+    );
   }
 
   /**
@@ -332,8 +342,8 @@ export class BudgetResource extends Resource {
    * const budget = await asteroid.budgets.getBudget('bud_1');
    * ```
    */
-  async getBudget(budgetId: string): Promise<Budget> {
-    return this.getData<Budget>(`/budgets/${encodeURIComponent(budgetId)}`);
+  async getBudget(budgetId: string, options?: RequestOptionsExtras): Promise<Budget> {
+    return this.getData<Budget>(`/budgets/${encodeURIComponent(budgetId)}`, undefined, options);
   }
 
   /**
@@ -350,8 +360,11 @@ export class BudgetResource extends Resource {
    * const { data } = await asteroid.budgets.listBudgets({ agentId: 'agt_1', limit: 25 });
    * ```
    */
-  async listBudgets(params: BudgetListParams = {}): Promise<Paginated<Budget>> {
-    return this.listData<Budget>('/budgets', { ...params });
+  async listBudgets(
+    params: BudgetListParams = {},
+    options?: RequestOptionsExtras,
+  ): Promise<Paginated<Budget>> {
+    return this.listData<Budget>('/budgets', { ...params }, options);
   }
 
   /**
@@ -377,10 +390,12 @@ export class BudgetResource extends Resource {
   async simulateBudgetCheck(
     budgetId: string,
     input: BudgetSimulationInput,
+    options?: RequestOptionsExtras,
   ): Promise<BudgetSimulationResult> {
     const res = await this.client.post<BudgetSimulationResult>(
       `/budgets/${encodeURIComponent(budgetId)}/simulate`,
       input,
+      options,
     );
     return res.data;
   }
@@ -418,8 +433,9 @@ export class BudgetResource extends Resource {
     budgetId: string,
     input: BudgetSimulationInput & { conversionRate?: string | number },
     options: { budget?: Budget; simulation?: ValidateSimulationOptions } = {},
+    requestOptions?: RequestOptionsExtras,
   ): Promise<BudgetSimulationCheckResult> {
-    const budget = options.budget ?? (await this.get(budgetId));
+    const budget = options.budget ?? (await this.get(budgetId, requestOptions));
     const local = validateSimulationRequest(budget, input, options.simulation);
 
     // A locally-rejected draw never reaches the API — the dry-run result is
@@ -427,7 +443,7 @@ export class BudgetResource extends Resource {
     if (!local.allowed) return local;
 
     const { asset, amount } = input;
-    const remote = await this.simulateBudgetCheck(budgetId, { asset, amount });
+    const remote = await this.simulateBudgetCheck(budgetId, { asset, amount }, requestOptions);
 
     // The remote decision is authoritative: if the API rejects the draw, map
     // its textual violations onto the typed shape while preserving the wire
@@ -469,8 +485,12 @@ export class BudgetResource extends Resource {
    * if (u.percent >= 80) console.warn(`budget ${u.percent}% consumed`);
    * ```
    */
-  async utilization(budgetId: string): Promise<BudgetUtilization> {
-    return this.getData<BudgetUtilization>(`/budgets/${encodeURIComponent(budgetId)}/utilization`);
+  async utilization(budgetId: string, options?: RequestOptionsExtras): Promise<BudgetUtilization> {
+    return this.getData<BudgetUtilization>(
+      `/budgets/${encodeURIComponent(budgetId)}/utilization`,
+      undefined,
+      options,
+    );
   }
 
   /**
@@ -490,8 +510,11 @@ export class BudgetResource extends Resource {
    * if (u.state === 'critical' || u.state === 'exhausted') pauseAgent();
    * ```
    */
-  async getBudgetUtilization(budgetId: string): Promise<BudgetUtilization> {
-    return this.utilization(budgetId);
+  async getBudgetUtilization(
+    budgetId: string,
+    options?: RequestOptionsExtras,
+  ): Promise<BudgetUtilization> {
+    return this.utilization(budgetId, options);
   }
 
   /* ------------------------------------------------------------------------ */
@@ -510,11 +533,16 @@ export class BudgetResource extends Resource {
    * @throws {BudgetAlertValidationError} When `input` is structurally invalid.
    *   API transport errors propagate unchanged.
    */
-  async createAlert(budgetId: string, input: CreateBudgetAlertInput): Promise<BudgetAlert> {
+  async createAlert(
+    budgetId: string,
+    input: CreateBudgetAlertInput,
+    options?: RequestOptionsExtras,
+  ): Promise<BudgetAlert> {
     assertCreateAlertInput(input);
     const res = await this.client.post<BudgetAlert>(
       `/v1/budgets/${encodeURIComponent(budgetId)}/alerts`,
       input,
+      options,
     );
     return res.data;
   }
@@ -529,10 +557,13 @@ export class BudgetResource extends Resource {
   async listAlerts(
     budgetId: string,
     params: ListBudgetAlertsParams = {},
+    options?: RequestOptionsExtras,
   ): Promise<Paginated<BudgetAlert>> {
-    return this.listData<BudgetAlert>(`/v1/budgets/${encodeURIComponent(budgetId)}/alerts`, {
-      ...params,
-    });
+    return this.listData<BudgetAlert>(
+      `/v1/budgets/${encodeURIComponent(budgetId)}/alerts`,
+      { ...params },
+      options,
+    );
   }
 
   /**
@@ -547,8 +578,9 @@ export class BudgetResource extends Resource {
   async listBudgetAlerts(
     budgetId: string,
     params: ListBudgetAlertsParams = {},
+    options?: RequestOptionsExtras,
   ): Promise<PaginatedResponse<BudgetAlert>> {
-    const page = await this.listAlerts(budgetId, params);
+    const page = await this.listAlerts(budgetId, params, options);
     return { data: page.data } as PaginatedResponse<BudgetAlert>;
   }
 
@@ -558,9 +590,15 @@ export class BudgetResource extends Resource {
    * @param budgetId The budget id.
    * @param alertId The alert id.
    */
-  async getAlert(budgetId: string, alertId: string): Promise<BudgetAlert> {
+  async getAlert(
+    budgetId: string,
+    alertId: string,
+    options?: RequestOptionsExtras,
+  ): Promise<BudgetAlert> {
     return this.getData<BudgetAlert>(
       `/v1/budgets/${encodeURIComponent(budgetId)}/alerts/${encodeURIComponent(alertId)}`,
+      undefined,
+      options,
     );
   }
 
@@ -576,6 +614,7 @@ export class BudgetResource extends Resource {
     budgetId: string,
     alertId: string,
     input: UpdateBudgetAlertInput,
+    options?: RequestOptionsExtras,
   ): Promise<BudgetAlert> {
     if (input.thresholdPercent !== undefined) {
       assertValidThresholdPercent(input.thresholdPercent);
@@ -589,6 +628,7 @@ export class BudgetResource extends Resource {
     const res = await this.client.patch<BudgetAlert>(
       `/v1/budgets/${encodeURIComponent(budgetId)}/alerts/${encodeURIComponent(alertId)}`,
       input,
+      options,
     );
     return res.data;
   }
@@ -599,9 +639,14 @@ export class BudgetResource extends Resource {
    * @param budgetId The budget id.
    * @param alertId The alert id to delete.
    */
-  async deleteAlert(budgetId: string, alertId: string): Promise<void> {
+  async deleteAlert(
+    budgetId: string,
+    alertId: string,
+    options?: RequestOptionsExtras,
+  ): Promise<void> {
     await this.client.delete<void>(
       `/v1/budgets/${encodeURIComponent(budgetId)}/alerts/${encodeURIComponent(alertId)}`,
+      options,
     );
   }
 }
@@ -617,17 +662,23 @@ const TARGETED_ALERT_CHANNELS: readonly string[] = ['EMAIL', 'WEBHOOK', 'SLACK']
 function assertCreateAlertInput(input: CreateBudgetAlertInput): void {
   assertValidThresholdPercent(input.thresholdPercent);
   if (!isValidBudgetAlertChannel(input.channel)) {
-    throw new BudgetAlertValidationError(`Unknown budget alert channel "${String(input.channel)}".`, {
-      channel: input.channel,
-    });
+    throw new BudgetAlertValidationError(
+      `Unknown budget alert channel "${String(input.channel)}".`,
+      {
+        channel: input.channel,
+      },
+    );
   }
   if (
     TARGETED_ALERT_CHANNELS.includes(input.channel) &&
     (typeof input.target !== 'string' || input.target.trim() === '')
   ) {
-    throw new BudgetAlertValidationError(`A "${input.channel}" alert requires a non-empty target.`, {
-      channel: input.channel,
-    });
+    throw new BudgetAlertValidationError(
+      `A "${input.channel}" alert requires a non-empty target.`,
+      {
+        channel: input.channel,
+      },
+    );
   }
 }
 

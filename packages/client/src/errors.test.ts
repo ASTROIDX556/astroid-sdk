@@ -133,6 +133,18 @@ describe('parseErrorResponse', () => {
     expect(error).toBeInstanceOf(RateLimitError);
   });
 
+  it('extracts Retry-After header on RATE_LIMITED response', async () => {
+    const response = makeResponse(
+      { error: { code: 'RATE_LIMITED', message: 'Rate limit exceeded' } },
+      429,
+      { 'retry-after': '30' },
+    );
+
+    const { error } = await parseErrorResponse(response);
+    expect(error).toBeInstanceOf(RateLimitError);
+    expect((error as RateLimitError).retryAfter).toBe(30);
+  });
+
   it('maps INTERNAL_ERROR to InternalServerError and ServerError', async () => {
     const response = makeResponse(
       { error: { code: 'INTERNAL_ERROR', message: 'Something broke' } },

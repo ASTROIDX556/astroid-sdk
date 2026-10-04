@@ -7,11 +7,11 @@
  * fetch/headers/retries directly.
  */
 
-import type { Paginated, PaginationMeta } from '@astroid/types';
+import type { CursorPaginated, Paginated, PaginationMeta } from '@astroid/types';
 
 import type { HttpClient } from './http-client.js';
 import type { AstroidResponse, QueryValue, RequestOptions } from './http-types.js';
-import { paginate, paginateCursor } from './pagination.js';
+import { paginate, paginateCursor, normalizeCursorPage } from './pagination.js';
 
 /** Options a list method accepts beyond its typed filters. */
 export type ListRequestOptions = Omit<RequestOptions, 'method' | 'path' | 'body'>;
@@ -50,6 +50,36 @@ export abstract class Resource {
       ...(query ? { query } : {}),
     });
     return { data: res.data ?? [], meta: normalizeMeta(res) };
+  }
+
+  /**
+   * Fetch a cursor-paginated (keyset) list endpoint, returning the items plus a
+   * normalized `nextCursor` / `hasMore` pair.
+   *
+   * The caller drives the loop: pass `page.nextCursor` back as `query.cursor`
+   * for the next request, and stop when `hasMore` is `false` or `nextCursor` is
+   * `null`. For automatic iteration over every page without holding them in
+   * memory, prefer {@link Resource.iterateCursorData}.
+   *
+   * `nextCursor` is read from `meta.nextCursor`, falling back to `meta.cursor`;
+   * a missing or empty cursor is normalized to `null`, and `hasMore` falls back
+   * to `nextCursor !== null` when the API omits it.
+   *
+   * @param path   Resource path, e.g. `/analytics/agents`.
+   * @param query  Typed filters, optionally including a starting `cursor`.
+   * @param extras Extra request options forwarded to the HTTP client.
+   */
+  protected async listCursorData<TItem>(
+    path: string,
+    query?: Record<string, QueryValue>,
+    extras?: RequestOptionsExtras,
+  ): Promise<CursorPaginated<TItem>> {
+    const res: AstroidResponse<TItem[]> = await this.client.get<TItem[]>(path, {
+      ...(extras ?? {}),
+      ...(query ? { query } : {}),
+    });
+    const page = normalizeCursorPage(res);
+    return { items: page.items, nextCursor: page.nextCursor, hasMore: page.hasMore };
   }
 
   /**

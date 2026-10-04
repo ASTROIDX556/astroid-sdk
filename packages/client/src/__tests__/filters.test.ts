@@ -101,9 +101,11 @@ describe('buildFilterQuery — common filters', () => {
   });
 
   it('encodes entity scope filters', () => {
-    expect(
-      buildFilterQuery({ asset: ' USDC ', walletId: 'w_1', agentId: 'a_1' }),
-    ).toEqual({ asset: 'USDC', walletId: 'w_1', agentId: 'a_1' });
+    expect(buildFilterQuery({ asset: ' USDC ', walletId: 'w_1', agentId: 'a_1' })).toEqual({
+      asset: 'USDC',
+      walletId: 'w_1',
+      agentId: 'a_1',
+    });
     expect(buildFilterQuery({ asset: '' })).toEqual({});
   });
 
@@ -262,7 +264,8 @@ describe('iterateCursorPages / collectCursorPages', () => {
     const fetchPage: ListPageFetcher<Row> = vi.fn(async (query) => {
       seen.push({ ...query });
       const cursor = query['cursor'];
-      if (cursor === undefined) return page([{ id: 'w1' }, { id: 'w2' }], { nextCursor: 'c2', hasMore: true });
+      if (cursor === undefined)
+        return page([{ id: 'w1' }, { id: 'w2' }], { nextCursor: 'c2', hasMore: true });
       if (cursor === 'c2') return page([{ id: 'w3' }], { nextCursor: 'c3', hasMore: true });
       return page([{ id: 'w4' }], { nextCursor: null, hasMore: false });
     });
@@ -306,10 +309,12 @@ describe('iterateCursorPages / collectCursorPages', () => {
   });
 
   it('stops on a non-advancing cursor instead of looping forever', async () => {
-    const fetchPage: ListPageFetcher<Row> = vi.fn(async () => page([{ id: 'x' }], {
-      nextCursor: 'same',
-      hasMore: true,
-    }));
+    const fetchPage: ListPageFetcher<Row> = vi.fn(async () =>
+      page([{ id: 'x' }], {
+        nextCursor: 'same',
+        hasMore: true,
+      }),
+    );
     const items = await collectCursorPages(fetchPage, { cursor: 'same' });
     expect(items).toEqual([{ id: 'x' }]);
     expect(fetchPage).toHaveBeenCalledTimes(1);
@@ -348,7 +353,10 @@ describe('iterateCursorPages / collectCursorPages', () => {
     });
 
     const items = await collectCursorPages<Row>(
-      (query) => client.http.get<Row[]>('/wallets', { query }).then((res) => ({ data: res.data, meta: res.meta })),
+      (query) =>
+        client.http
+          .get<Row[]>('/wallets', { query })
+          .then((res) => ({ data: res.data, meta: res.meta })),
       { limit: 1 },
     );
 

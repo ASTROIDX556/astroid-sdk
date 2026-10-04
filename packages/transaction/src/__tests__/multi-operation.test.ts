@@ -53,11 +53,15 @@ function decode(tx: { toXDR(): string }): Transaction {
 
 describe('validateOperationSequence', () => {
   it('accepts a valid bundle with sufficient fee', () => {
-    expect(() => validateOperationSequence([payment(DEST_A, '10'), payment(DEST_B, '5')], 300)).not.toThrow();
+    expect(() =>
+      validateOperationSequence([payment(DEST_A, '10'), payment(DEST_B, '5')], 300),
+    ).not.toThrow();
   });
 
   it('accepts the exact fee floor (count × 100 stroops)', () => {
-    expect(() => validateOperationSequence([payment(DEST_A, '1'), payment(DEST_B, '1')], 200)).not.toThrow();
+    expect(() =>
+      validateOperationSequence([payment(DEST_A, '1'), payment(DEST_B, '1')], 200),
+    ).not.toThrow();
   });
 
   it('rejects an empty bundle (EMPTY_OPERATIONS)', () => {
@@ -127,7 +131,15 @@ describe('validateOperationSequence', () => {
   it('rejects an invalid per-operation source (INVALID_OPERATION_SOURCE path)', () => {
     expect(() =>
       validateOperationSequence(
-        [{ type: 'payment' as const, destination: DEST_A, asset: 'XLM', amount: '1', source: 'GARBAGE' }],
+        [
+          {
+            type: 'payment' as const,
+            destination: DEST_A,
+            asset: 'XLM',
+            amount: '1',
+            source: 'GARBAGE',
+          },
+        ],
         100,
       ),
     ).toThrowError(ValidationError);
@@ -325,13 +337,10 @@ describe('buildTransactionFromOperations', () => {
 
   it('rejects an account merge that is not the final operation (INVALID_OPERATION_SEQUENCE)', () => {
     try {
-      buildTransactionFromOperations(
-        { source: ACCOUNT, networkPassphrase: PASSPHRASE, fee: 300 },
-        [
-          Operation.accountMerge({ destination: DEST_B }),
-          Operation.payment({ destination: DEST_A, asset: Asset.native(), amount: '1' }),
-        ],
-      );
+      buildTransactionFromOperations({ source: ACCOUNT, networkPassphrase: PASSPHRASE, fee: 300 }, [
+        Operation.accountMerge({ destination: DEST_B }),
+        Operation.payment({ destination: DEST_A, asset: Asset.native(), amount: '1' }),
+      ]);
       expect.unreachable('should have thrown');
     } catch (err) {
       expect(err).toBeInstanceOf(ValidationError);

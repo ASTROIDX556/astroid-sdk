@@ -20,23 +20,11 @@
  * @module
  */
 
-import {
-  Asset,
-  Operation,
-  xdr,
-  type Transaction,
-} from '@stellar/stellar-base';
+import { Asset, Operation, xdr, type Transaction } from '@stellar/stellar-base';
 import { ValidationError } from '@astroid/errors';
 
-import {
-  MAX_OPERATIONS,
-  MAX_TOTAL_FEE_STROOPS,
-  MIN_BASE_FEE_STROOPS,
-} from './validator.js';
-import {
-  assertValidPositiveAmount,
-  assertValidStellarPublicKey,
-} from './validate.js';
+import { MAX_OPERATIONS, MAX_TOTAL_FEE_STROOPS, MIN_BASE_FEE_STROOPS } from './validator.js';
+import { assertValidPositiveAmount, assertValidStellarPublicKey } from './validate.js';
 import { createBuilder, parseAsset, type BuildTransactionOptions } from './builder.js';
 
 /* -------------------------------------------------------------------------- */
@@ -237,10 +225,10 @@ function toStellarOperation(spec: OperationSpec, index: number): xdr.Operation {
  */
 export function validateOperationSequence(operations: OperationSpec[], fee: string | number): void {
   if (!Array.isArray(operations) || operations.length === 0) {
-    throw new ValidationError(
-      'A multi-operation transaction requires at least one operation.',
-      { code: 'EMPTY_OPERATIONS', details: { field: 'operations' } },
-    );
+    throw new ValidationError('A multi-operation transaction requires at least one operation.', {
+      code: 'EMPTY_OPERATIONS',
+      details: { field: 'operations' },
+    });
   }
   if (operations.length > MAX_OPERATIONS) {
     throw new ValidationError(
@@ -318,10 +306,7 @@ export function buildMultiOperationTransaction(
   // ceiling), so derive the per-operation base fee to keep the final
   // `tx.fee` equal to the caller's total bid.
   const totalBid = Number(buildOptions.fee ?? '100');
-  const perOpFee = Math.max(
-    MIN_BASE_FEE_STROOPS,
-    Math.floor(totalBid / operations.length),
-  );
+  const perOpFee = Math.max(MIN_BASE_FEE_STROOPS, Math.floor(totalBid / operations.length));
 
   const builder = createBuilder({ ...buildOptions, fee: perOpFee });
   operations.forEach((spec, index) => builder.addOperation(toStellarOperation(spec, index)));
@@ -361,10 +346,10 @@ export function buildTransactionFromOperations(
   operations: xdr.Operation[],
 ): Transaction {
   if (!Array.isArray(operations) || operations.length === 0) {
-    throw new ValidationError(
-      'A multi-operation transaction requires at least one operation.',
-      { code: 'EMPTY_OPERATIONS', details: { field: 'operations' } },
-    );
+    throw new ValidationError('A multi-operation transaction requires at least one operation.', {
+      code: 'EMPTY_OPERATIONS',
+      details: { field: 'operations' },
+    });
   }
   if (operations.length > MAX_OPERATIONS) {
     throw new ValidationError(
@@ -379,13 +364,10 @@ export function buildTransactionFromOperations(
     (op) => op.body().switch() === xdr.OperationType.accountMerge(),
   );
   if (mergeIndex !== -1 && mergeIndex !== operations.length - 1) {
-    throw new ValidationError(
-      'An account merge must be the final operation of a transaction.',
-      {
-        code: 'INVALID_OPERATION_SEQUENCE',
-        details: { mergeIndex, operationCount: operations.length },
-      },
-    );
+    throw new ValidationError('An account merge must be the final operation of a transaction.', {
+      code: 'INVALID_OPERATION_SEQUENCE',
+      details: { mergeIndex, operationCount: operations.length },
+    });
   }
 
   // Mirror the total-bid semantics of {@link buildMultiOperationTransaction}:
