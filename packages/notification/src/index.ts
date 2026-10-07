@@ -100,3 +100,11 @@ export class NotificationResource extends Resource {
     return res.data;
   }
 }
+
+export {
+  NotificationDispatcher,
+  patternToRegExp,
+  type NotificationHandler,
+  type Subscription,
+  type NotificationDispatcherOptions,
+} from './dispatcher';
