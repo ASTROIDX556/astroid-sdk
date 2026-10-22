@@ -62,6 +62,17 @@ export class AgentResource extends Resource {
   }
 
   /**
+   * Create an agent using the explicit resource-method name.
+   *
+   * @param params Agent creation parameters.
+   * @param options Optional per-request HTTP options.
+   * @returns The created agent entity.
+   */
+  async createAgent(params: CreateAgentParams, options?: RequestOptionsExtras): Promise<Agent> {
+    return this.create(params, options);
+  }
+
+  /**
    * Retrieve an agent by its unique identifier.
    *
    * @param agentId The unique agent ID.
@@ -94,6 +105,20 @@ export class AgentResource extends Resource {
     options?: RequestOptionsExtras,
   ): Promise<Paginated<Agent>> {
     return this.listData<Agent>('/agents', { ...params }, options);
+  }
+
+  /**
+   * List agents using the explicit resource-method name.
+   *
+   * @param params Optional filters and pagination parameters.
+   * @param options Optional per-request HTTP options.
+   * @returns A paginated list of agent entities.
+   */
+  async listAgents(
+    params: AgentListParams = {},
+    options?: RequestOptionsExtras,
+  ): Promise<Paginated<Agent>> {
+    return this.list(params, options);
   }
 
   /**
@@ -175,6 +200,39 @@ export class AgentResource extends Resource {
   }
 
   /**
+   * Update an agent using the explicit resource-method name.
+   *
+   * @param agentId The unique agent ID.
+   * @param params Partial agent fields to update.
+   * @param options Optional per-request HTTP options.
+   * @returns The updated agent entity.
+   */
+  async updateAgent(
+    agentId: string,
+    params: UpdateAgentParams,
+    options?: RequestOptionsExtras,
+  ): Promise<Agent> {
+    return this.update(agentId, params, options);
+  }
+
+  /**
+   * Suspend an agent while retaining its configuration and history.
+   *
+   * @param agentId The unique agent ID.
+   * @param options Optional per-request HTTP options.
+   * @returns The suspended agent entity.
+   *
+   * @example
+   * ```ts
+   * const suspended = await astroid.agents.suspendAgent('agt_12345');
+   * console.log(suspended.status); // 'SUSPENDED'
+   * ```
+   */
+  async suspendAgent(agentId: string, options?: RequestOptionsExtras): Promise<Agent> {
+    return this.update(agentId, { status: 'SUSPENDED' }, options);
+  }
+
+  /**
    * Deactivate an agent by its unique identifier.
    *
    * Issues `POST /agents/:id/deactivate` and returns the updated agent
@@ -190,8 +248,12 @@ export class AgentResource extends Resource {
    * console.log(deactivated.status); // 'ARCHIVED'
    * ```
    */
-  async deactivate(agentId: string): Promise<Agent> {
-    const res = await this.client.post<Agent>(`/agents/${encodeURIComponent(agentId)}/deactivate`);
+  async deactivate(agentId: string, options?: RequestOptionsExtras): Promise<Agent> {
+    const res = await this.client.post<Agent>(
+      `/agents/${encodeURIComponent(agentId)}/deactivate`,
+      undefined,
+      options,
+    );
     return res.data;
   }
 
