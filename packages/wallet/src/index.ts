@@ -320,3 +320,11 @@ export class WalletResource extends Resource {
 }
 
 export * from './multisig.js';
+export {
+  verifyAssetTrustline,
+  hasAssetTrustline,
+  type TrustlineAsset,
+  type TrustlineVerificationResult,
+  type TrustlineErrorCodeValue,
+  TrustlineErrorCode,
+} from './trustline.js';
