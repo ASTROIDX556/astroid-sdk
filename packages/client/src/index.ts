@@ -699,6 +699,48 @@ export {
   AstroidValidationError,
   AstroidNetworkError,
 } from '@astroid/errors';
+// Typed API exception surface (issue #373): the full set of specialized error
+// classes, the `unknown`-narrowing guards for `catch` blocks, and the
+// status/body → typed-error mappers used by the fetch wrapper. Surfacing them
+// here means agent runtimes can catch specific financial or authorization
+// failures (`RateLimitError`, `InsufficientFundsError`, …) without inspecting
+// raw strings or reaching into `@astroid/errors` directly.
+export {
+  // Specialized classes not covered above. Note: the base `ApiError` *class*
+  // is intentionally not re-exported under that name — `ApiError` already
+  // refers to the API error-envelope DTO from `@astroid/types` (star-exported
+  // above). Use `AstroidApiError` (exported above) for the class.
+  ApiRateLimitError,
+  TransactionSimulationError,
+  // Runtime type guards — narrow `catch (err: unknown)` without `instanceof`.
+  isAuthenticationError,
+  isForbiddenError,
+  isValidationError,
+  isNotFoundError,
+  isConflictError,
+  isPolicyViolationError,
+  isInsufficientFundsError,
+  isRateLimitError,
+  isApiRateLimitError,
+  isNetworkError,
+  isServerError,
+  // Error construction and HTTP-status mapping helpers.
+  fromApiError,
+  fromStatus,
+  fromErrorResponse,
+  toNetworkError,
+  mapStatusToError,
+  errorClassForCode,
+  errorClassForStatus,
+  codeForStatus,
+  statusCodeToCode,
+  setIncludeStackInErrors,
+  getIncludeStackInErrors,
+  // Supporting types.
+  type AstroidErrorOptions,
+  type SerializedAstroidError,
+  type NormalizeErrorContext,
+} from '@astroid/errors';
 // Centralized Stellar domain errors and mapping (issue #253).
 export {
   InsufficientBalanceError,
