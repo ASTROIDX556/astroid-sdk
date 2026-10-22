@@ -25,8 +25,9 @@ import type {
 } from '@astroid/types';
 import type { SessionManager } from './session.js';
 
+export type { TokenStorage, TokenStorageAdapter } from './token-storage.js';
+export { MemoryTokenStorage } from './token-storage.js';
 export type {
-  TokenStorage,
   SessionAuthMode,
   SessionManagerConfig,
   JwtPayload,
@@ -34,16 +35,8 @@ export type {
   AuthFailureEvent,
   AuthFailureReason,
 } from './session.js';
-export {
-  parseJwt,
-  getTokenExpiration,
-  isTokenExpired,
-  SessionManager,
-} from './session.js';
-export {
-  wireSessionToHttpClient,
-  createSessionMiddleware,
-} from './auth.js';
+export { parseJwt, getTokenExpiration, isTokenExpired, SessionManager } from './session.js';
+export { wireSessionToHttpClient, createSessionMiddleware } from './auth.js';
 
 /** The full result of a login/register: tokens plus the resolved session. */
 export interface AuthResult extends AuthTokens {

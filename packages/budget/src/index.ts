@@ -59,11 +59,23 @@ export {
   toBudgetCheckResult,
   type ValidateSimulationOptions,
 } from './simulation.js';
+export {
+  getBudgetExpenditureSummary,
+  assertValidExpenditureSummaryQuery,
+  budgetExpenditurePath,
+  isValidExpenditureThreshold,
+  BudgetExpenditureValidationError,
+  DEFAULT_BUDGET_EXPENDITURE_THRESHOLD_PERCENT,
+  type BudgetExpenditureSummary,
+  type BudgetExpenditureSummaryParams,
+} from './expenditure.js';
 
 import { Resource, type RequestOptionsExtras } from '@astroid/core';
 import type {
   Budget,
   BudgetAlert,
+  BudgetExpenditureSummary,
+  BudgetExpenditureSummaryParams,
   BudgetHistoryEntry,
   BudgetPeriod,
   BudgetSimulationCheckResult,
@@ -81,6 +93,8 @@ import type {
   UpdateBudgetInput,
 } from '@astroid/types';
 import { validateSimulationRequest, type ValidateSimulationOptions } from './simulation.js';
+import { assertValidExpenditureSummaryQuery, budgetExpenditurePath } from './expenditure.js';
+import { toBudgetQuery } from './budget.js';
 import {
   assertValidThresholdPercent,
   isValidBudgetAlertChannel,
@@ -515,6 +529,42 @@ export class BudgetResource extends Resource {
     options?: RequestOptionsExtras,
   ): Promise<BudgetUtilization> {
     return this.utilization(budgetId, options);
+  }
+
+  /**
+   * Fetch a live expenditure summary for a budget.
+   *
+   * Returns the amount spent in the reporting window, the remaining headroom,
+   * utilization percentages and whether a caller-supplied warning threshold has
+   * been reached — all in one round trip. Time-range (`from` / `to`) and
+   * `thresholdPercent` filters are validated locally before the request is sent.
+   *
+   * @param budgetId The budget to summarize.
+   * @param params   Optional time range and warning threshold.
+   * @param options  Extra request options (timeout, signal, headers).
+   * @returns        The structured {@link BudgetExpenditureSummary} snapshot.
+   * @throws {BudgetExpenditureValidationError} When the query is invalid — no
+   *   request is issued.
+   *
+   * @example
+   * ```ts
+   * const summary = await asteroid.budgets.getBudgetExpenditureSummary('bud_1', {
+   *   thresholdPercent: 80,
+   * });
+   * if (summary.thresholdExceeded) console.warn(summary.thresholdWarning);
+   * ```
+   */
+  async getBudgetExpenditureSummary(
+    budgetId: string,
+    params: BudgetExpenditureSummaryParams = {},
+    options?: RequestOptionsExtras,
+  ): Promise<BudgetExpenditureSummary> {
+    assertValidExpenditureSummaryQuery(budgetId, params);
+    return this.getData<BudgetExpenditureSummary>(
+      budgetExpenditurePath(budgetId),
+      toBudgetQuery(params),
+      options,
+    );
   }
 
   /* ------------------------------------------------------------------------ */

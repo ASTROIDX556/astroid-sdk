@@ -8,16 +8,16 @@ import { AuthenticationError } from '@astroid/errors';
 import type { AuthFailureEvent, AuthFailureReason, AuthTokens } from '@astroid/types';
 import type { HttpClient, Middleware, PreparedRequest } from '@astroid/core';
 
+import type { TokenStorage, TokenStorageAdapter } from './token-storage.js';
+
 // Re-exported so `@astroid/auth` consumers can name the failure-event types
 // without reaching into `@astroid/types` (issue #237).
 export type { AuthFailureEvent, AuthFailureReason };
 
-/** Custom storage interface for persisting session tokens (e.g., localStorage). */
-export interface TokenStorage {
-  getItem(key: string): string | null | Promise<string | null>;
-  setItem(key: string, value: string): void | Promise<void>;
-  removeItem(key: string): void | Promise<void>;
-}
+// The storage shapes live in `./token-storage.js` (issue #433); re-exported
+// here so existing `import { type TokenStorage } from './session.js'` paths
+// keep working.
+export type { TokenStorage, TokenStorageAdapter } from './token-storage.js';
 
 /**
  * Authentication strategy a {@link SessionManager} operates in:
@@ -40,7 +40,11 @@ export interface SessionManagerConfig {
   apiKey?: string;
   /** Header that carries the API key. Defaults to `'x-api-key'`. */
   apiKeyHeader?: string;
-  storage?: TokenStorage;
+  /**
+   * Token persistence backend. Accepts either a `Storage`-compatible object
+   * (e.g. `localStorage`) or a {@link TokenStorageAdapter} / {@link MemoryTokenStorage}.
+   */
+  storage?: TokenStorage | TokenStorageAdapter;
   storageKeyPrefix?: string;
   bufferSeconds?: number;
   onTokenUpdate?: (tokens: AuthTokens) => void | Promise<void>;
@@ -125,6 +129,36 @@ export function isTokenExpired(token: string | undefined, bufferSeconds = 30): b
   return now + bufferSeconds >= exp;
 }
 
+/** Whether `storage` implements the token-oriented adapter shape. */
+function isTokenStorageAdapter(
+  storage: TokenStorage | TokenStorageAdapter,
+): storage is TokenStorageAdapter {
+  return typeof (storage as TokenStorageAdapter).getToken === 'function';
+}
+
+/**
+ * Normalize either accepted storage shape to {@link TokenStorageAdapter} so the
+ * session manager has a single, awaitable contract internally.
+ *
+ * A `Storage`-compatible object (e.g. `localStorage`) is wrapped once at
+ * construction time; adapter implementations (such as `MemoryTokenStorage`) are
+ * used as-is.
+ */
+function toTokenStorageAdapter(storage: TokenStorage | TokenStorageAdapter): TokenStorageAdapter {
+  if (isTokenStorageAdapter(storage)) return storage;
+  return {
+    async getToken(key) {
+      return (await storage.getItem(key)) ?? null;
+    },
+    async setToken(key, value) {
+      await storage.setItem(key, value);
+    },
+    async removeToken(key) {
+      await storage.removeItem(key);
+    },
+  };
+}
+
 /**
  * Manages token lifecycles, persistence, and concurrent token refresh queuing.
  */
@@ -132,7 +166,7 @@ export class SessionManager {
   private accessToken?: string;
   private refreshToken?: string;
   private apiKey?: string;
-  private readonly storage?: TokenStorage;
+  private readonly storage?: TokenStorageAdapter;
   private readonly prefix: string;
   private readonly bufferSeconds: number;
   private readonly authMode: SessionAuthMode;
@@ -146,7 +180,7 @@ export class SessionManager {
     this.accessToken = config.accessToken;
     this.refreshToken = config.refreshToken;
     this.apiKey = config.apiKey;
-    this.storage = config.storage;
+    this.storage = config.storage ? toTokenStorageAdapter(config.storage) : undefined;
     this.prefix = config.storageKeyPrefix ?? 'astroid_auth_';
     this.bufferSeconds = config.bufferSeconds ?? 30;
     this.apiKeyHeader = config.apiKeyHeader ?? 'x-api-key';
@@ -192,7 +226,7 @@ export class SessionManager {
     this.apiKey = apiKey;
     if (this.storage) {
       try {
-        await this.storage.setItem(`${this.prefix}api_key`, apiKey);
+        await this.storage.setToken(`${this.prefix}api_key`, apiKey);
       } catch (err) {
         // eslint-disable-next-line no-console
         console.warn('Failed to persist API key to storage:', err);
@@ -272,9 +306,9 @@ export class SessionManager {
 
     if (this.storage) {
       try {
-        await this.storage.setItem(`${this.prefix}access_token`, tokens.accessToken);
+        await this.storage.setToken(`${this.prefix}access_token`, tokens.accessToken);
         if (tokens.refreshToken) {
-          await this.storage.setItem(`${this.prefix}refresh_token`, tokens.refreshToken);
+          await this.storage.setToken(`${this.prefix}refresh_token`, tokens.refreshToken);
         }
       } catch (err) {
         // Storage quota exceptions should not crash token adoption
@@ -310,9 +344,9 @@ export class SessionManager {
 
     if (this.storage) {
       try {
-        await this.storage.removeItem(`${this.prefix}access_token`);
-        await this.storage.removeItem(`${this.prefix}refresh_token`);
-        await this.storage.removeItem(`${this.prefix}api_key`);
+        await this.storage.removeToken(`${this.prefix}access_token`);
+        await this.storage.removeToken(`${this.prefix}refresh_token`);
+        await this.storage.removeToken(`${this.prefix}api_key`);
       } catch (err) {
         // eslint-disable-next-line no-console
         console.warn('Failed to clear tokens from storage:', err);
@@ -336,10 +370,7 @@ export class SessionManager {
    * after cleanup so subscribers observe a fully-invalidated session; callback
    * errors are swallowed so they can never break the auth flow.
    */
-  async handleAuthFailure(
-    reason: AuthFailureReason,
-    error: unknown,
-  ): Promise<void> {
+  async handleAuthFailure(reason: AuthFailureReason, error: unknown): Promise<void> {
     await this.clearTokens();
 
     // The "session is over" hook runs first: it is the coarse signal a UI
@@ -493,9 +524,7 @@ export function createSessionMiddleware(
       // API-key sessions carry a long-lived header and never refresh.
       if (sessionManager.mode === 'apiKey') {
         const apiKey = sessionManager.getApiKey();
-        return apiKey
-          ? { ...req, headers: sessionManager.applyAuthHeaders(req.headers) }
-          : req;
+        return apiKey ? { ...req, headers: sessionManager.applyAuthHeaders(req.headers) } : req;
       }
 
       // Do not intercept authentication endpoints to prevent cyclic calls

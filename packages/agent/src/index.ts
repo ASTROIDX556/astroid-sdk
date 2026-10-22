@@ -16,6 +16,7 @@ export {
   AgentResource,
   AgentsResource,
   type AgentListParams,
+  type AgentListOptions,
   type AgentCursorListParams,
 } from './agent.js';
 export { AstroidValidationError } from './errors.js';

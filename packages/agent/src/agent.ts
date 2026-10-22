@@ -24,6 +24,17 @@ import {
 export type AgentListParams = ListAgentsParams;
 
 /**
+ * Strongly typed query parameters accepted by {@link AgentResource.list}: page
+ * size (`limit`), keyset `cursor`, and the `status` / `tag` filters (plus the
+ * remaining filters inherited from {@link ListAgentsParams}).
+ *
+ * Pass a previously returned `meta.nextCursor` as `cursor` to continue from a
+ * saved position. Only explicitly supplied values are serialized into the
+ * request querystring — `undefined` entries are dropped.
+ */
+export type AgentListOptions = ListAgentsParams;
+
+/**
  * Filters accepted by {@link AgentResource.iterateByCursor}.
  *
  * The same filters as {@link AgentListParams}, but keyset-paginated: the
@@ -80,20 +91,51 @@ export class AgentResource extends Resource {
   /**
    * List all agents associated with the organization.
    *
+   * Every supplied option is serialized into the request querystring by the
+   * HTTP client (which builds the URL with `URLSearchParams`); options left
+   * `undefined` never reach the wire.
+   *
    * @param params Optional filters and pagination parameters.
    * @returns A paginated list of agent entities.
    *
    * @example
    * ```ts
-   * const result = await astroid.agents.list({ status: 'ACTIVE', limit: 10 });
+   * const result = await astroid.agents.list({ status: 'ACTIVE', tag: 'trading', limit: 10 });
    * console.log(result.data.length);
+   * ```
+   *
+   * @example Cursor pagination
+   * ```ts
+   * const first = await astroid.agents.list({ limit: 25 });
+   * const next = await astroid.agents.list({ limit: 25, cursor: first.meta?.nextCursor });
    * ```
    */
   async list(
-    params: AgentListParams = {},
+    params: AgentListOptions = {},
     options?: RequestOptionsExtras,
   ): Promise<Paginated<Agent>> {
-    return this.listData<Agent>('/agents', { ...params }, options);
+    return this.listData<Agent>('/agents', toAgentListQuery(params), options);
+  }
+
+  /**
+   * List all agents associated with the organization (`listAgents` spelling).
+   *
+   * Identical to {@link AgentResource.list}; provided so callers using the
+   * `listAgents` resource-method naming don't need to guess.
+   *
+   * @param params Optional filters and pagination parameters.
+   * @returns A paginated list of agent entities.
+   *
+   * @example
+   * ```ts
+   * const { data } = await astroid.agents.listAgents({ limit: 50, cursor: savedCursor });
+   * ```
+   */
+  async listAgents(
+    params: AgentListOptions = {},
+    options?: RequestOptionsExtras,
+  ): Promise<Paginated<Agent>> {
+    return this.list(params, options);
   }
 
   /**
@@ -190,8 +232,12 @@ export class AgentResource extends Resource {
    * console.log(deactivated.status); // 'ARCHIVED'
    * ```
    */
-  async deactivate(agentId: string): Promise<Agent> {
-    const res = await this.client.post<Agent>(`/agents/${encodeURIComponent(agentId)}/deactivate`);
+  async deactivate(agentId: string, options?: RequestOptionsExtras): Promise<Agent> {
+    const res = await this.client.post<Agent>(
+      `/agents/${encodeURIComponent(agentId)}/deactivate`,
+      undefined,
+      options,
+    );
     return res.data;
   }
 
@@ -292,6 +338,25 @@ export class AgentResource extends Resource {
       options,
     );
   }
+}
+
+/**
+ * Serialize the `GET /agents` list options into a query record.
+ *
+ * Only explicitly supplied values are copied, so `undefined` filters never
+ * become `?status=undefined`; an empty options object yields an empty record
+ * (the HTTP client then omits the querystring entirely).
+ */
+function toAgentListQuery(params: AgentListOptions = {}): Record<string, string | number> {
+  const query: Record<string, string | number> = {};
+  if (params.page !== undefined) query['page'] = params.page;
+  if (params.limit !== undefined) query['limit'] = params.limit;
+  if (params.cursor !== undefined) query['cursor'] = params.cursor;
+  if (params.status !== undefined) query['status'] = params.status;
+  if (params.role !== undefined) query['role'] = params.role;
+  if (params.tag !== undefined) query['tag'] = params.tag;
+  if (params.search !== undefined) query['search'] = params.search;
+  return query;
 }
 
 /**
