@@ -34,8 +34,9 @@
  * @module
  */
 
-import { ApiErrorCode, type ApiError } from '@astroid/types';
+import { ApiErrorCode, type ApiError as ApiErrorDto } from '@astroid/types';
 import {
+  ApiError,
   AstroidError,
   AuthenticationError,
   ForbiddenError,
@@ -117,7 +118,7 @@ export interface ErrorEnvelopeInput {
  * a flat top-level shape (`{ code, message }`). Returns `undefined` when no
  * usable envelope is present.
  */
-export function extractApiError(body: unknown): ApiError | undefined {
+export function extractApiError(body: unknown): ApiErrorDto | undefined {
   if (typeof body !== 'object' || body === null) return undefined;
   const obj = body as Record<string, unknown>;
 
@@ -213,7 +214,8 @@ export function mapStatusToError(
 
   // 1. Body code wins — it is the most specific signal.
   if (envelope) {
-    const ErrorClass = errorClassForCode(envelope.code);
+    const MappedErrorClass = errorClassForCode(envelope.code);
+    const ErrorClass = MappedErrorClass === AstroidError ? ApiError : MappedErrorClass;
     const details = { ...(envelope.details ?? {}), ...(context.details ?? {}) };
     return new ErrorClass(resolvedMessage, {
       code: envelope.code,

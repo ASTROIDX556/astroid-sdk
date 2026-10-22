@@ -10,6 +10,9 @@
 
 import { AstroidError, type AstroidErrorOptions } from './base.js';
 
+/** An API failure without a more specific error classification. */
+export class ApiError extends AstroidError {}
+
 /** 401 — missing/invalid credentials, expired token, or invalid API key. */
 export class AuthenticationError extends AstroidError {}
 
@@ -78,6 +81,9 @@ export class NetworkError extends AstroidError {
     return true;
   }
 }
+
+/** A transaction simulation failed before the transaction could be submitted. */
+export class TransactionSimulationError extends AstroidError {}
 
 /**
  * The caller-configured request deadline elapsed before the server responded.

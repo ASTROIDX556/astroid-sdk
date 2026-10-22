@@ -15,6 +15,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   AstroidError,
+  ApiError,
   AuthenticationError,
   AuthorizationError,
   ForbiddenError,
@@ -23,6 +24,7 @@ import {
   RateLimitError,
   InternalServerError,
   ServerError,
+  TransactionSimulationError,
   ValidationError,
   errorClassForStatus,
   statusCodeToCode,
@@ -235,6 +237,26 @@ describe('mapStatusToError (issue #279)', () => {
     expect(err.cause).toBe(cause);
   });
 
+  it('maps API payloads to API and transaction simulation errors', () => {
+    const apiError = mapStatusToError(502, undefined, {
+      body: {
+        error: {
+          code: 'UPSTREAM_FAILURE',
+          message: 'Backend unavailable',
+          details: { request: 'req_1' },
+        },
+      },
+    });
+    expect(apiError).toBeInstanceOf(ApiError);
+    expect(apiError.details).toEqual({ request: 'req_1' });
+
+    const simulationError = mapStatusToError(422, undefined, {
+      body: { error: { code: 'SIMULATION_FAILED', message: 'Simulation rejected' } },
+    });
+    expect(simulationError).toBeInstanceOf(TransactionSimulationError);
+    expect(simulationError.message).toBe('Simulation rejected');
+  });
+
   it('keeps stack traces intact', () => {
     const err = mapStatusToError(500, 'boom');
     expect(err.stack).toBeDefined();
@@ -264,6 +286,7 @@ describe('errorFromStatus (issue #279)', () => {
 describe('specialized error classes (issue #271 / #279)', () => {
   it('sets err.name to the exact class name for every subclass', () => {
     const errors: AstroidError[] = [
+      new ApiError('a', { code: 'API_ERROR' }),
       new AuthenticationError('a', { code: 'AUTHENTICATION_ERROR', statusCode: 401 }),
       new ForbiddenError('a', { code: 'FORBIDDEN', statusCode: 403 }),
       new AuthorizationError('a', { code: 'FORBIDDEN', statusCode: 403 }),
@@ -272,6 +295,7 @@ describe('specialized error classes (issue #271 / #279)', () => {
       new ConflictError('a', { code: 'CONFLICT', statusCode: 409 }),
       new RateLimitError('a', { code: 'RATE_LIMITED', statusCode: 429 }),
       new InternalServerError('a', { code: 'INTERNAL_ERROR', statusCode: 500 }),
+      new TransactionSimulationError('a', { code: 'SIMULATION_FAILED' }),
       new ServerError('a', { code: 'INTERNAL_ERROR', statusCode: 500 }),
     ];
     for (const err of errors) {

@@ -21,6 +21,7 @@ import * as compat from '../AstroidError.js';
  */
 const COMPAT_CLASS_EXPORTS = [
   'AstroidError',
+  'ApiError',
   'AuthenticationError',
   'AuthorizationError',
   'ForbiddenError',
@@ -35,6 +36,7 @@ const COMPAT_CLASS_EXPORTS = [
   'ApiRateLimitError',
   'NetworkError',
   'AstroidTimeoutError',
+  'TransactionSimulationError',
   'InternalServerError',
   'ServerError',
 ] as const;
