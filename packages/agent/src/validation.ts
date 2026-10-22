@@ -539,3 +539,53 @@ export function assertValidAgentId(agentId: unknown): asserts agentId is string 
     });
   }
 }
+
+/* -------------------------------------------------------------------------- */
+/* Batch status lookup                                                         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Validate the id list of a batch lookup and drop repeated ids.
+ *
+ * Every entry is checked before anything is sent, so one malformed id fails the
+ * whole call locally instead of costing a partial batch of requests. Ids that
+ * repeat are looked up once, in the order they first appear.
+ *
+ * @throws {AstroidValidationError} When `agentIds` is not an array or holds an
+ *   entry that is not a non-empty string.
+ */
+export function validateBatchAgentIds(agentIds: unknown): string[] {
+  if (!Array.isArray(agentIds)) {
+    fail('Agent validation failed: "agentIds" must be an array of agent ids.', {
+      field: 'agentIds',
+      expected: 'string[]',
+    });
+  }
+  const invalid: number[] = [];
+  agentIds.forEach((id, index) => {
+    if (!isValidAgentId(id)) invalid.push(index);
+  });
+  if (invalid.length > 0) {
+    fail('Agent validation failed: every entry of "agentIds" must be a non-empty string.', {
+      field: 'agentIds',
+      invalidIndexes: invalid,
+      expected: 'string[]',
+    });
+  }
+  return [...new Set(agentIds as string[])];
+}
+
+/**
+ * Assert that `concurrency` is a whole number of at least 1.
+ *
+ * @throws {AstroidValidationError} Otherwise.
+ */
+export function assertValidBatchConcurrency(concurrency: unknown): asserts concurrency is number {
+  if (typeof concurrency !== 'number' || !Number.isInteger(concurrency) || concurrency < 1) {
+    fail('Agent validation failed: "concurrency" must be a whole number of at least 1.', {
+      field: 'concurrency',
+      received: concurrency,
+      expected: 'integer >= 1',
+    });
+  }
+}

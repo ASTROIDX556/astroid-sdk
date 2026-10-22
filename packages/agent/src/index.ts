@@ -15,8 +15,13 @@
 export {
   AgentResource,
   AgentsResource,
+  DEFAULT_BATCH_STATUS_CONCURRENCY,
+  partitionAgentStatuses,
   type AgentListParams,
   type AgentCursorListParams,
+  type AgentStatusLookup,
+  type BatchAgentStatusOptions,
+  type PartitionedAgentStatuses,
 } from './agent.js';
 export { AstroidValidationError } from './errors.js';
 export {
