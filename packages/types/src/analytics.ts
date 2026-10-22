@@ -198,11 +198,19 @@ export interface AgentMetricsParams {
   endDate?: string;
   /** Bucket granularity for the report. */
   interval?: MetricsInterval;
+  /** Alias for `interval` used by the metrics endpoint. */
+  resolution?: MetricsInterval;
   /** Filter results to a single agent. */
   agentId?: string;
   /** Filter results to a single wallet. */
   walletId?: string;
 }
+
+/** Query filters for the global analytics overview. */
+export type GlobalAnalyticsParams = Pick<
+  AgentMetricsParams,
+  'startDate' | 'endDate' | 'resolution'
+>;
 
 /**
  * Query DTO for `GET /analytics/spending/summary`.
