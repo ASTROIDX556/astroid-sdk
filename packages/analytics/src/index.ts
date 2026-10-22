@@ -16,6 +16,7 @@ import type {
   AgentSpendingRow,
   AnalyticsCursorParams,
   AnalyticsListParams,
+  AnalyticsMetricsResponse,
   AnalyticsOverview,
   AnalyticsQuery,
   BudgetAnalytics,
@@ -30,7 +31,9 @@ import type {
   TransactionVolumeReport,
   TimeSeriesDataParams,
   TimeSeriesDataResponse,
+  MetricsQueryParams,
 } from '@astroid/types';
+import { getMetricsInRange } from './analytics.js';
 // Re-export the aggregated-metrics query helpers (issue #78) from the package
 // entry point so consumers can call them directly as well as through
 // {@link AnalyticsResource}. These were previously imported but never used,
@@ -40,9 +43,12 @@ export {
   AnalyticsQueryResource,
   getAgentExecutionCounts,
   getFeeExpenditure,
+  getMetricsInRange,
   getTransactionVolume,
   buildAnalyticsPath,
   buildAnalyticsQuery,
+  buildTimeRangePath,
+  buildTimeRangeQuery,
   resolveTimeRange,
   toIso8601,
   type AgentExecutionCountFilter,
@@ -107,6 +113,8 @@ export type {
   TimeSeriesDataPoint,
   TimeSeriesDataResponse,
   TimeSeriesMetric,
+  TimeRangeQueryParams,
+  MetricsQueryParams,
 } from '@astroid/types';
 
 /**
@@ -307,6 +315,31 @@ export class AnalyticsResource extends Resource {
       serializeTimeSeriesDataQuery(query),
       options,
     );
+  }
+
+  /**
+   * Strongly typed metrics query with explicit time-range filtering
+   * (`startTime`, `endTime`, `interval`) — issue #403.
+   *
+   * The range parameters are serialised into a `URLSearchParams` and appended
+   * to the `/analytics/metrics` endpoint request; invalid or missing dates and
+   * `undefined` fields are omitted so the query string stays compact.
+   *
+   * @example
+   * ```ts
+   * const report = await astroid.analytics.getMetrics({
+   *   startTime: '2026-01-01T00:00:00.000Z',
+   *   endTime: '2026-01-08T00:00:00.000Z',
+   *   interval: 'day',
+   *   metrics: ['transaction_volume'],
+   * });
+   * ```
+   */
+  async getMetrics(
+    query: MetricsQueryParams = {},
+    options?: RequestOptionsExtras,
+  ): Promise<AnalyticsMetricsResponse> {
+    return getMetricsInRange(this.client, query, options);
   }
 }
 

@@ -337,3 +337,42 @@ export interface TimeSeriesDataResponse {
   /** The bucketed data points, sorted chronologically. */
   points: TimeSeriesDataPoint[];
 }
+
+/* -------------------------------------------------------------------------- */
+/* Time-range query DTOs (issue #403)                                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Query DTO for analytics requests filtered by explicit time bounds.
+ *\ * `startTime`/`endTime` bound the reporting window (ISO-8601) and `interval`
+ * selects the aggregation bucket granularity, so dashboards can ask for views
+ * such as "last 24 hours, hourly" or "last 30 days, daily". Optional scope
+ * filters narrow the window to a single asset, wallet, or agent. `undefined`
+ * fields are omitted from the query string during serialisation.
+ */
+export interface TimeRangeQueryParams {
+  /** Inclusive start of the reporting window (ISO-8601). */
+  startTime?: string;
+  /** Exclusive end of the reporting window (ISO-8601). */
+  endTime?: string;
+  /** Aggregation interval (bucket granularity) for the response. */
+  interval?: MetricsInterval;
+  /** Filter results to a single asset code (e.g. `USDC`, `XLM`). */
+  asset?: string;
+  /** Filter results to a single wallet. */
+  walletId?: string;
+  /** Filter results to a single agent. */
+  agentId?: string;
+}
+
+/**
+ * Query DTO for `GET /analytics/metrics` — a time-range filtered request for
+ * one or more metric families, returned as strongly typed time-series data
+ * ({@link AnalyticsMetricsResponse}).
+ */
+export interface MetricsQueryParams extends TimeRangeQueryParams {
+  /** A single metric family to aggregate. */
+  metric?: TimeSeriesMetric;
+  /** Several metric families to aggregate in one request. */
+  metrics?: TimeSeriesMetric[];
+}

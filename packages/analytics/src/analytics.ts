@@ -18,7 +18,9 @@ import type { HttpClient, RequestOptionsExtras } from '@astroid/core';
 import type {
   AgentAnalytics,
   AnalyticsMetricsResponse,
+  MetricsQueryParams,
   Timeframe,
+  TimeRangeQueryParams,
   VolumeSummary,
 } from '@astroid/types';
 
@@ -181,6 +183,65 @@ export function buildAnalyticsPath(
 }
 
 /* -------------------------------------------------------------------------- */
+/* Time-range query serialization (issue #403)                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Serialise a {@link TimeRangeQueryParams} DTO into a `URLSearchParams`.
+ *
+ * Values are normalised and validated before serialisation: `startTime` and
+ * `endTime` are converted to ISO-8601 UTC (accepting `Date` instances too),
+ * unparseable dates and `undefined` fields are omitted, and `interval` is
+ * emitted verbatim so a bad input never produces `startTime=Invalid%20Date`
+ * on the wire.
+ *
+ * @example
+ * ```ts
+ * buildTimeRangeQuery({
+ *   startTime: '2026-01-01T00:00:00.000Z',
+ *   endTime: '2026-01-02T00:00:00.000Z',
+ *   interval: 'hour',
+ * }).toString();
+ * // "startTime=2026-01-01T00%3A00%3A00.000Z&endTime=2026-01-02T00%3A00%3A00.000Z&interval=hour"
+ * ```
+ */
+export function buildTimeRangeQuery(params: TimeRangeQueryParams): URLSearchParams {
+  const searchParams = new URLSearchParams();
+
+  const startTime = toIso8601(params.startTime as string | Date | undefined);
+  const endTime = toIso8601(params.endTime as string | Date | undefined);
+  if (startTime !== undefined) searchParams.set('startTime', startTime);
+  if (endTime !== undefined) searchParams.set('endTime', endTime);
+  if (params.interval !== undefined) searchParams.set('interval', params.interval);
+  if (params.asset !== undefined) searchParams.set('asset', params.asset);
+  if (params.walletId !== undefined) searchParams.set('walletId', params.walletId);
+  if (params.agentId !== undefined) searchParams.set('agentId', params.agentId);
+
+  return searchParams;
+}
+
+/**
+ * Build a full request path (route + serialised time-range query) for the
+ * metrics endpoint.
+ *
+ * @param params   Time-range and metric-selection query parameters.
+ * @param basePath API route prefix (default `'/analytics/metrics'`).
+ * @returns A path string such as `/analytics/metrics?startTime=…&interval=…`.
+ */
+export function buildTimeRangePath(
+  params: MetricsQueryParams = {},
+  basePath = '/analytics/metrics',
+): string {
+  const searchParams = buildTimeRangeQuery(params);
+  if (params.metric !== undefined) searchParams.set('metric', params.metric);
+  if (params.metrics !== undefined && params.metrics.length > 0) {
+    searchParams.set('metrics', params.metrics.join(','));
+  }
+  const query = searchParams.toString();
+  return query ? `${basePath}?${query}` : basePath;
+}
+
+/* -------------------------------------------------------------------------- */
 /* Query methods                                                               */
 /* -------------------------------------------------------------------------- */
 
@@ -245,6 +306,36 @@ export async function getAgentExecutionCounts(
 ): Promise<AgentAnalytics> {
   const path = buildAnalyticsPath(filter, undefined, '/analytics/agents');
   const res = await client.get<AgentAnalytics>(path, options);
+  return res.data;
+}
+
+/**
+ * Fetch strongly typed time-series metrics bounded by `startTime`/`endTime`
+ * and bucketed by `interval` (issue #403).
+ *
+ * @param client The HTTP client used to reach the analytics API.
+ * @param params Time-range plus optional metric/scope filters.
+ * @returns The {@link AnalyticsMetricsResponse} (bucketed points + summary).
+ *
+ * @example
+ * ```ts
+ * const report = await getMetricsInRange(client, {
+ *   startTime: '2026-01-01T00:00:00.000Z',
+ *   endTime: '2026-01-08T00:00:00.000Z',
+ *   interval: 'day',
+ *   metrics: ['transaction_volume'],
+ * });
+ * ```
+ */
+export async function getMetricsInRange(
+  client: HttpClient,
+  params: MetricsQueryParams = {},
+  options?: RequestOptionsExtras,
+): Promise<AnalyticsMetricsResponse> {
+  const res = await client.get<AnalyticsMetricsResponse>(
+    buildTimeRangePath(params),
+    options,
+  );
   return res.data;
 }
 
