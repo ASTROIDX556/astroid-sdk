@@ -24,16 +24,21 @@ export { checkBudgetLimit, type BudgetValidationResult } from './validation.js';
 
 export {
   assertValidThresholdPercent,
+  assertValidUtilizationThreshold,
   createBudgetAlert,
   deleteBudgetAlert,
   getBudgetAlert,
   isValidBudgetAlertChannel,
   listBudgetAlerts,
+  subscribeToBudgetAlerts,
   updateBudgetAlert,
   BudgetAlertValidationError,
   BUDGET_ALERT_THRESHOLDS,
   type BudgetAlert,
+  type BudgetAlertCallback,
   type BudgetAlertChannel,
+  type BudgetAlertSubscription,
+  type BudgetAlertSubscriptionOptions,
   type CreateBudgetAlertInput,
   type UpdateBudgetAlertInput,
   type ListBudgetAlertsParams,
@@ -80,11 +85,15 @@ import type {
   UpdateBudgetAlertInput,
   UpdateBudgetInput,
 } from '@astroid/types';
+import { type BudgetHttpClient, type BudgetRequestOptions } from './budget.js';
 import { validateSimulationRequest, type ValidateSimulationOptions } from './simulation.js';
 import {
   assertValidThresholdPercent,
   isValidBudgetAlertChannel,
   BudgetAlertValidationError,
+  subscribeToBudgetAlerts,
+  type BudgetAlertCallback,
+  type BudgetAlertSubscription,
 } from './alerts.js';
 
 /** Filters accepted by {@link BudgetResource.list}. */
@@ -648,6 +657,54 @@ export class BudgetResource extends Resource {
       `/v1/budgets/${encodeURIComponent(budgetId)}/alerts/${encodeURIComponent(alertId)}`,
       options,
     );
+  }
+
+  /**
+   * Subscribe to budget limit utilization alert milestones (issue #443).
+   *
+   * Registers a threshold alert (e.g. at 80% or 100% of the budget) delivering
+   * to a webhook URL, email address, or dashboard notification.
+   *
+   * @param budgetId         The budget to monitor.
+   * @param thresholdPercent Threshold percentage between 1 and 100.
+   * @param callback         Webhook URL string, callback function, or subscription options.
+   * @param options          Extra request options forwarded to the HTTP client.
+   * @returns The active {@link BudgetAlertSubscription} containing the alert record and an `.unsubscribe()` method.
+   * @throws {BudgetAlertValidationError} When parameters fail local validation.
+   *
+   * @example
+   * ```ts
+   * const sub = await astroid.budgets.subscribeToBudgetAlerts(
+   *   'bud_1',
+   *   80,
+   *   'https://agent.example.com/api/budget-webhook'
+   * );
+   *
+   * // To cancel subscription later:
+   * await sub.unsubscribe();
+   * ```
+   */
+  async subscribeToBudgetAlerts(
+    budgetId: string,
+    thresholdPercent: number,
+    callback: BudgetAlertCallback,
+    options?: RequestOptionsExtras,
+  ): Promise<BudgetAlertSubscription> {
+    const mergeOptions = (opts?: BudgetRequestOptions): RequestOptionsExtras | undefined => {
+      const merged = { ...options, ...(opts?.signal ? { signal: opts.signal } : {}) };
+      return Object.keys(merged).length > 0 ? merged : undefined;
+    };
+    const http: BudgetHttpClient = {
+      get: <T>(path: string, opts?: BudgetRequestOptions): Promise<T> =>
+        this.client.get<T>(path, mergeOptions(opts)).then((r) => r.data),
+      post: <T>(path: string, body?: unknown, opts?: BudgetRequestOptions): Promise<T> =>
+        this.client.post<T>(path, body, mergeOptions(opts)).then((r) => r.data),
+      patch: <T>(path: string, body?: unknown, opts?: BudgetRequestOptions): Promise<T> =>
+        this.client.patch<T>(path, body, mergeOptions(opts)).then((r) => r.data),
+      delete: <T>(path: string, opts?: BudgetRequestOptions): Promise<T> =>
+        this.client.delete<T>(path, mergeOptions(opts)).then((r) => r.data),
+    };
+    return subscribeToBudgetAlerts(http, budgetId, thresholdPercent, callback, options);
   }
 }
 

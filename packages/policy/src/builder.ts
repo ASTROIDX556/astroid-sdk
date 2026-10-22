@@ -450,6 +450,22 @@ export class PolicyBuilder {
     return this;
   }
 
+  /** Restrict transfers to a single asset (`XLM`, `USDC`, or `CODE:ISSUER`). Alias of {@link allowAsset}. */
+  restrictAsset(asset: string): this {
+    return this.allowAsset(asset);
+  }
+
+  /** Restrict transfers to the given assets. Alias of {@link allowAssets}. */
+  restrictAssets(...assets: string[]): this {
+    return this.allowAssets(...assets);
+  }
+
+  /** Specify whether transactions governed by this policy require approval. */
+  requiresApproval(required = true): this {
+    this.draft.configuration.requiresApproval = Boolean(required);
+    return this;
+  }
+
   /** Block a single asset. */
   denyAsset(asset: string): this {
     assertAsset(asset, 'blockedAssets');
@@ -520,6 +536,43 @@ export class PolicyBuilder {
       ...(window.timezone !== undefined ? { timezone: window.timezone } : {}),
     };
     return this;
+  }
+
+  /**
+   * Validate the currently configured draft rule without throwing.
+   *
+   * @returns A list of {@link PolicyValidationIssue}s found (empty when valid).
+   */
+  validate(): PolicyValidationIssue[] {
+    const inferred = inferPolicyType(this.draft.configuration);
+    const type = this.draft.type ?? inferred;
+    const draft: PolicyDraft = {
+      name: this.draft.name,
+      type: type ?? ('' as PolicyType),
+      configuration: { ...this.draft.configuration },
+      priority: this.draft.priority,
+      enabled: this.draft.enabled,
+      ...(this.draft.description !== undefined ? { description: this.draft.description } : {}),
+      ...(this.draft.agentId !== undefined ? { agentId: this.draft.agentId } : {}),
+    };
+
+    const issues = validatePolicyRule(draft);
+    if (!type && !issues.some((i) => i.field === 'type')) {
+      issues.push({
+        field: 'type',
+        message: 'PolicyBuilder requires at least one condition or an explicit type before build().',
+      });
+    }
+    return issues;
+  }
+
+  /**
+   * Check whether the builder's current configuration is valid and ready to build.
+   *
+   * @returns `true` if valid, `false` if any validation issues are present.
+   */
+  isValid(): boolean {
+    return this.validate().length === 0;
   }
 
   /**

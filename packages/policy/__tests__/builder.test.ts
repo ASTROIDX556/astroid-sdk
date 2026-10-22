@@ -115,6 +115,37 @@ describe('PolicyBuilder', () => {
     expect(() => new PolicyBuilder('Empty').build()).toThrowError(ValidationError);
   });
 
+  it('supports restrictAsset and restrictAssets fluent methods', () => {
+    const draft = new PolicyBuilder('Asset policy')
+      .restrictAsset('XLM')
+      .restrictAssets(`USDC:${ISSUER}`)
+      .build();
+
+    expect(draft.type).toBe('ALLOWED_ASSETS');
+    expect(draft.configuration.allowedAssets).toEqual(['XLM', `USDC:${ISSUER}`]);
+  });
+
+  it('supports requiresApproval', () => {
+    const draft = new PolicyBuilder('Approval required')
+      .maxAmount(1000)
+      .requiresApproval()
+      .build();
+
+    expect(draft.configuration.requiresApproval).toBe(true);
+  });
+
+  it('provides validate() and isValid() to inspect validity before building', () => {
+    const emptyBuilder = new PolicyBuilder('');
+    expect(emptyBuilder.isValid()).toBe(false);
+    const issues = emptyBuilder.validate();
+    expect(issues.some((i) => i.field === 'name')).toBe(true);
+    expect(issues.some((i) => i.field === 'type')).toBe(true);
+
+    const validBuilder = new PolicyBuilder('Valid rule').maxAmount(50);
+    expect(validBuilder.isValid()).toBe(true);
+    expect(validBuilder.validate()).toEqual([]);
+  });
+
   it('rejects a minAmount greater than maxAmount', () => {
     expect(() => new PolicyBuilder('Bad').maxAmount(10).minAmount(20)).toThrowError(
       ValidationError,
