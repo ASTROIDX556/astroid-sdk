@@ -12,6 +12,7 @@
 
 export {
   AstroidError,
+  ApiError,
   setIncludeStackInErrors,
   getIncludeStackInErrors,
   AuthenticationError,
@@ -27,6 +28,7 @@ export {
   RateLimitError,
   ApiRateLimitError,
   NetworkError,
+  TransactionSimulationError,
   AstroidTimeoutError,
   InternalServerError,
   ServerError,

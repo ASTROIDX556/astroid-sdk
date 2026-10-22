@@ -7,7 +7,7 @@
  * structured `details`.
  */
 
-import { ApiErrorCode, type ApiError } from '@astroid/types';
+import { ApiErrorCode, type ApiError as ApiErrorDto } from '@astroid/types';
 export {
   errorClassForStatus,
   statusCodeToCode,
@@ -48,6 +48,7 @@ import { AstroidError } from './base.js';
 /* -------------------------------------------------------------------------- */
 
 export {
+  ApiError,
   AuthenticationError,
   AuthorizationError,
   ForbiddenError,
@@ -61,11 +62,13 @@ export {
   RateLimitError,
   ApiRateLimitError,
   NetworkError,
+  TransactionSimulationError,
   AstroidTimeoutError,
   ServerError,
   InternalServerError,
 } from './classes.js';
 import {
+  ApiError,
   AuthenticationError,
   AstroidTimeoutError,
   ForbiddenError,
@@ -78,6 +81,7 @@ import {
   ApprovalRequiredError,
   RateLimitError,
   NetworkError,
+  TransactionSimulationError,
   InternalServerError,
 } from './classes.js';
 
@@ -134,6 +138,8 @@ export function errorClassForCode(code: string): typeof AstroidError {
       return NetworkError;
     case ApiErrorCode.REQUEST_TIMEOUT:
       return AstroidTimeoutError;
+    case 'SIMULATION_FAILED':
+      return TransactionSimulationError;
     case ApiErrorCode.INTERNAL_ERROR:
     case ApiErrorCode.SERVICE_UNAVAILABLE:
       return InternalServerError;
@@ -187,10 +193,11 @@ export interface NormalizeErrorContext {
  * ```
  */
 export function fromApiError(
-  apiError: ApiError,
+  apiError: ApiErrorDto,
   context: NormalizeErrorContext = {},
 ): AstroidError {
-  const ErrorClass = errorClassForCode(apiError.code);
+  const MappedErrorClass = errorClassForCode(apiError.code);
+  const ErrorClass = MappedErrorClass === AstroidError ? ApiError : MappedErrorClass;
   const details = { ...(apiError.details ?? {}), ...(context.details ?? {}) };
   return new ErrorClass(apiError.message, {
     code: apiError.code,
