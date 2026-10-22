@@ -243,6 +243,9 @@ export function wireRefreshManagerToHttpClient(
   refreshFn?: (refreshToken: string) => Promise<AuthTokens>,
 ): void {
   const refreshFunction = refreshFn ?? refreshManager.getRefreshFn();
+  if (typeof refreshFunction !== "function") {
+    throw new Error("Refresh function is not configured.");
+  }
   client.set401Handler(async () => {
     try {
       await refreshManager.refresh();
