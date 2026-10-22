@@ -7,6 +7,7 @@
 import { AuthenticationError } from '@astroid/errors';
 import type { AuthFailureEvent, AuthFailureReason, AuthTokens } from '@astroid/types';
 import type { HttpClient, Middleware, PreparedRequest } from '@astroid/core';
+import { RefreshManager, wireRefreshManagerToHttpClient } from './refresh.js';
 
 // Re-exported so `@astroid/auth` consumers can name the failure-event types
 // without reaching into `@astroid/types` (issue #237).
@@ -467,16 +468,7 @@ export function wireSessionToHttpClient(
     return;
   }
 
-  client.set401Handler(async () => {
-    try {
-      await sessionManager.refreshSession(refreshFn);
-      const token = sessionManager.getAccessToken();
-      if (token) client.setAccessToken(token);
-      return true;
-    } catch {
-      return false;
-    }
-  });
+  wireRefreshManagerToHttpClient(client, new RefreshManager({ sessionManager, refreshFn }));
 }
 
 /**
