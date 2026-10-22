@@ -349,9 +349,14 @@ export class Astroid {
     // by all concurrent 401s, plus a middleware that queues requests issued
     // while a refresh is in flight so they don't race it with a stale token.
     const refreshTokens = async (refreshToken: string): Promise<AuthTokens> => {
-      const res = await this.http.post<AuthTokens>('/auth/refresh', { refreshToken });
-      this.setAccessToken(res.data.accessToken);
-      return res.data;
+      try {
+        const res = await this.http.post<AuthTokens>('/auth/refresh', { refreshToken });
+        this.setAccessToken(res.data.accessToken);
+        return res.data;
+      } catch (error) {
+        this.setAccessToken(undefined);
+        throw error;
+      }
     };
 
     this.use(createSessionMiddleware(this.sessionManager, refreshTokens));
