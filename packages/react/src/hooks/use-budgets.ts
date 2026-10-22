@@ -7,7 +7,7 @@ import {
 } from '@tanstack/react-query';
 import { queryKeys, useAstroidClient } from '../hooks.js';
 import type { BudgetListParams } from '@astroid/client';
-import type { Budget, CreateBudgetInput, Paginated, UpdateBudgetInput } from '@astroid/types';
+import type { Budget, CreateBudgetInput, Paginated } from '@astroid/types';
 
 // `useBudget` / `useBudgetUtilization` live in their own module (issue #74);
 // re-exported here so the long-standing `use-budgets.ts` import path keeps
@@ -61,43 +61,6 @@ export function useCreateBudget(): UseMutationResult<Budget, Error, CreateBudget
   return useMutation({
     mutationFn: (input: CreateBudgetInput) => astroid.budgets.create(input),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.budgets.all });
-    },
-  });
-}
-
-/** Variables for {@link useUpdateBudget}. */
-export interface UpdateBudgetVariables {
-  /** The budget to update. */
-  id: string;
-  /** The fields to patch. */
-  params: UpdateBudgetInput;
-}
-
-/**
- * Mutation hook to update a budget's limit, period, rollover, or enabled state.
- *
- * On success the budget's detail and utilization queries — plus every cached
- * list — are invalidated so the UI converges on the authoritative state.
- *
- * @returns A TanStack Query mutation with `mutate({ id, params })`, `isPending`,
- *   `error`, etc.
- *
- * @example
- * ```tsx
- * const updateBudget = useUpdateBudget();
- * updateBudget.mutate({ id: 'bud_abc123', params: { limitAmount: '2500' } });
- * ```
- */
-export function useUpdateBudget(): UseMutationResult<Budget, Error, UpdateBudgetVariables> {
-  const astroid = useAstroidClient();
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({ id, params }: UpdateBudgetVariables) => astroid.budgets.update(id, params),
-    onSuccess: (_data, { id }) => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.budgets.detail(id) });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.budgets.utilization(id) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.budgets.all });
     },
   });

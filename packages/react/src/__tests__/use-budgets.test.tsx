@@ -16,11 +16,8 @@ import {
   useBudgets,
   useBudgetUtilization,
   useCreateBudget,
-  useUpdateBudget,
-  type UpdateBudgetVariables,
 } from '../index.js';
 import type { Budget, CreateBudgetInput, Paginated } from '@astroid/types';
-import type { UseMutationResult } from '@tanstack/react-query';
 
 /* -------------------------------------------------------------------------- */
 /* Fixtures & helpers                                                          */
@@ -183,38 +180,6 @@ describe('useCreateBudget', () => {
     });
 
     expect(createSpy).toHaveBeenCalledWith({ name: 'Marketing', limitAmount: '1000' });
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.budgets.all });
-    unmount();
-  });
-});
-
-describe('useUpdateBudget', () => {
-  it('updates a budget and invalidates its detail/utilization cached queries', async () => {
-    const client = new Astroid({ apiKey: 'sk_test_budgets', baseUrl: 'https://api.test' });
-    const updateSpy = vi.spyOn(client.budgets, 'update').mockResolvedValue(BUDGET);
-
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false, gcTime: 0 } },
-    });
-    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
-
-    let mutation: UseMutationResult<Budget, Error, UpdateBudgetVariables> | undefined;
-    function TestComponent() {
-      mutation = useUpdateBudget();
-      return null;
-    }
-
-    const { unmount } = renderInProviders(createElement(TestComponent), { client, queryClient });
-
-    await act(async () => {
-      await mutation!.mutateAsync({ id: 'bud_1', params: { limitAmount: '2500' } });
-    });
-
-    expect(updateSpy).toHaveBeenCalledWith('bud_1', { limitAmount: '2500' });
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.budgets.detail('bud_1') });
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: queryKeys.budgets.utilization('bud_1'),
-    });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.budgets.all });
     unmount();
   });

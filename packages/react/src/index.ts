@@ -74,9 +74,8 @@ export {
 export {
   useBudgets,
   useCreateBudget,
-  useUpdateBudget,
-  type UpdateBudgetVariables,
 } from './hooks/use-budgets.js';
+export { useUpdateBudget, type UpdateBudgetVariables } from './hooks/useUpdateBudget.js';
 export {
   useBudget,
   useBudgetUtilization,
