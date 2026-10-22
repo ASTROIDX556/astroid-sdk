@@ -11,6 +11,7 @@
 
 import { Resource, type RequestOptionsExtras } from '@astroid/core';
 import type {
+  AssetBalance,
   CreateWalletInput,
   FundWalletInput,
   ImportWalletInput,
@@ -38,6 +39,62 @@ export {
  * `@astroid/wallet` can name the balance shapes without a second import.
  */
 export type { WalletBalance, AssetBalance, WalletBalanceQuery } from '@astroid/types';
+
+/** An asset balance with a locale-formatted amount for display. */
+export interface FormattedAssetBalance extends AssetBalance {
+  formattedBalance: string;
+}
+
+/** A wallet balance snapshot with display-formatted asset amounts. */
+export interface FormattedWalletBalance extends Omit<WalletBalance, 'balances'> {
+  balances: FormattedAssetBalance[];
+}
+
+/**
+ * Format every asset amount in a wallet snapshot for display without
+ * converting the decimal amount to a JavaScript number. Grouping is localized,
+ * while all fractional digits from the API response are preserved.
+ *
+ * @param balance The wallet's exact balance snapshot.
+ * @param locale Locale used for digit grouping and the decimal separator.
+ * @returns A copy of the snapshot with a `formattedBalance` on each asset.
+ *
+ * @example
+ * ```ts
+ * const formatted = formatWalletBalances(await astroid.wallets.balance('wlt_123'));
+ * formatted.balances[0]?.formattedBalance; // "1,234.0000001"
+ * ```
+ */
+export function formatWalletBalances(
+  balance: WalletBalance,
+  locale = 'en-US',
+): FormattedWalletBalance {
+  const integerFormatter = new Intl.NumberFormat(locale, {
+    maximumFractionDigits: 0,
+    useGrouping: true,
+  });
+  const decimalSeparator = new Intl.NumberFormat(locale)
+    .formatToParts(1.1)
+    .find((part) => part.type === 'decimal')?.value ?? '.';
+
+  return {
+    ...balance,
+    balances: balance.balances.map((assetBalance) => {
+      const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(assetBalance.balance);
+      let formattedBalance = assetBalance.balance;
+
+      if (match) {
+        const [, sign, integer, fraction] = match;
+        formattedBalance = `${sign}${integerFormatter.format(BigInt(integer!))}`;
+        if (fraction !== undefined) {
+          formattedBalance += `${decimalSeparator}${fraction}`;
+        }
+      }
+
+      return { ...assetBalance, formattedBalance };
+    }),
+  };
+}
 
 export { SecureKeystore, type EncryptedPayload } from './keystore.js';
 
