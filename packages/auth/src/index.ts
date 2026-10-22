@@ -25,6 +25,8 @@ import type {
 } from '@astroid/types';
 import type { SessionManager } from './session.js';
 
+export type { TokenStorageAdapter } from './storage.js';
+export { InMemoryTokenStorage } from './storage.js';
 export type {
   TokenStorage,
   SessionAuthMode,
