@@ -7,6 +7,7 @@
 import { AuthenticationError } from '@astroid/errors';
 import type { AuthFailureEvent, AuthFailureReason, AuthTokens } from '@astroid/types';
 import type { HttpClient, Middleware, PreparedRequest } from '@astroid/core';
+import { RefreshManager } from './refresh.js';
 
 // Re-exported so `@astroid/auth` consumers can name the failure-event types
 // without reaching into `@astroid/types` (issue #237).
@@ -531,7 +532,7 @@ export function createSessionMiddleware(
 
       return req;
     },
-    async onError(error: unknown, _req: PreparedRequest): Promise<void> {
+    async onError(error: Error | unknown, _req: PreparedRequest): Promise<void> {
       if (error instanceof AuthenticationError && error.status === 401) {
         // Issue #237: only treat this as a new authentication failure while
         // the session still holds credentials. A refresh that just failed has
@@ -582,11 +583,14 @@ export function wireRefreshManagerToHttpClient(
   refreshManager: RefreshManager,
   refreshFn?: (refreshToken: string) => Promise<AuthTokens>
 ): void {
+  if (refreshFn === undefined) {
+    throw new Error("Refresh function is required.");
+  }
 
   client.set401Handler(async () => {
     try {
       await refreshManager.refresh();
-      const token = refreshManager.sessionManager.getAccessToken();
+      const token =      refreshManager.getSessionManager().getAccessToken();
       if (token) client.setAccessToken(token);
       return true;
     } catch {
