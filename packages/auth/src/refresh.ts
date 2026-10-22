@@ -9,10 +9,10 @@
  * @packageDocumentation
  */
 
-import type { AuthTokens } from '@astroid/types';
+import type { AuthTokens, AuthFailureReason } from '@astroid/types';
 import type { SessionManager } from './session.js';
 import { AuthenticationError } from '@astroid/errors';
-import { isTokenExpired } from './session.js';
+import { getTokenExpiration, isTokenExpired } from './session.js';
 
 /**
  * Options for constructing a RefreshManager.
@@ -75,16 +75,6 @@ export class RefreshManager {
     return this.skipPaths;
   }
 
-  /** The session manager owning the token store. */
-  getSessionManager(): SessionManager {
-    return this.sessionManager;
-  }
-
-  /** The refresh function used to exchange refresh tokens for fresh tokens. */
-  getRefreshFn(): (refreshToken: string) => Promise<AuthTokens> {
-    return this.refreshFn;
-  }
-
   /**
    * Refresh the access token using the stored refresh token.
    *
@@ -99,7 +89,7 @@ export class RefreshManager {
    *   or the refresh operation fails.
    */
   async refresh(): Promise<AuthTokens> {
-    if (this.sessionManager.mode === 'apiKey') {
+    if (this.sessionManager.authMode === 'apiKey') {
       throw new AuthenticationError(
         'API key authentication does not support token refresh',
         { code: 'API_KEY_MODE', status: 401 },
@@ -238,15 +228,16 @@ export class RefreshManager {
  *   the RefreshManager's configured refreshFn will be used.
  */
 export function wireRefreshManagerToHttpClient(
-  client: HttpClient,
+  client: import('@astroid/core').HttpClient,
   refreshManager: RefreshManager,
   refreshFn?: (refreshToken: string) => Promise<AuthTokens>,
 ): void {
-  const refreshFunction = refreshFn ?? refreshManager.getRefreshFn();
+  const refreshFunction = refreshFn ?? refreshManager.refreshFn;
+
   client.set401Handler(async () => {
     try {
       await refreshManager.refresh();
-      const token = refreshManager.getSessionManager().getAccessToken();
+      const token = refreshManager.sessionManager.getAccessToken();
       if (token) client.setAccessToken(token);
       return true;
     } catch {
