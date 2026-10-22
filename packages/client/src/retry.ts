@@ -23,6 +23,7 @@ export {
   isRetryableStatus,
   parseRetryAfter,
   sleep,
+  type RetryOptions,
   type RetryConfig,
   type RetryMiddlewareOptions,
 } from '@astroid/core';

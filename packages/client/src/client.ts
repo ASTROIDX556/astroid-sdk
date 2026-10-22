@@ -15,6 +15,8 @@ export type {
   AstroidClientConfig,
   AstroidClientOptions,
   ClientOptions,
+  RetryOptions,
+  RetryConfig,
   AstroidPlugin,
   EventListener,
   Unsubscribe,

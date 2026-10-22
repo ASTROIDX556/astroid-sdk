@@ -22,14 +22,14 @@ describe('Exponential Backoff & Retry Logic in Client & Middleware', () => {
     expect(backoffDelay(10, config, mockRandomMax)).toBe(1000);
   });
 
-  it('isRetryableStatus retries only the default 429 / 502 / 503 / 504 set', () => {
+  it('isRetryableStatus retries only the default 429 / 500 / 502 / 503 / 504 set', () => {
     expect(isRetryableStatus(429)).toBe(true);
+    expect(isRetryableStatus(500)).toBe(true);
     expect(isRetryableStatus(502)).toBe(true);
     expect(isRetryableStatus(503)).toBe(true);
     expect(isRetryableStatus(504)).toBe(true);
 
     // Not retried by default (configurable via `retryableStatuses`).
-    expect(isRetryableStatus(500)).toBe(false);
     expect(isRetryableStatus(400)).toBe(false);
     expect(isRetryableStatus(401)).toBe(false);
     expect(isRetryableStatus(403)).toBe(false);

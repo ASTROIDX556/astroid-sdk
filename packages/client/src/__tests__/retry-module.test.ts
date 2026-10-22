@@ -21,6 +21,7 @@ describe('@astroid/client retry module', () => {
 
   it('classifies transient statuses only', () => {
     expect(isRetryableStatus(429)).toBe(true);
+    expect(isRetryableStatus(500)).toBe(true);
     expect(isRetryableStatus(503)).toBe(true);
     expect(isRetryableStatus(504)).toBe(true);
     expect(isRetryableStatus(400)).toBe(false);

@@ -29,13 +29,15 @@ export function backoffDelay(
 }
 
 /**
- * HTTP statuses retried by default: rate limiting (`429`) and the gateway /
- * transient server errors (`502`, `503`, `504`).
+ * HTTP statuses retried by default: rate limiting (`429`), internal server
+ * errors (`500`), and the gateway / transient server errors (`502`, `503`,
+ * `504`).
  *
- * Every other status — including `4xx` client errors and `500` — is treated as
- * non-transient unless the caller supplies their own `retryableStatuses`.
+ * Every other status — including the remaining `4xx` client errors and other
+ * `5xx` codes — is treated as non-transient unless the caller supplies their
+ * own `retryableStatuses`.
  */
-export const DEFAULT_RETRYABLE_STATUSES: readonly number[] = [429, 502, 503, 504];
+export const DEFAULT_RETRYABLE_STATUSES: readonly number[] = [429, 500, 502, 503, 504];
 
 /**
  * Parse a `Retry-After` response header into a non-negative number of seconds.

@@ -17,8 +17,9 @@
  *   `Retry-After` header (seconds) and waits at least that long before the
  *   next attempt, capped at `maxDelayMs`.
  * - **Configurable retry predicate**: the default retryable status set
- *   (`429` and any `5xx`) can be replaced per-instance with an explicit
- *   `retryableStatusCodes` list or a custom `shouldRetryStatus` function.
+ *   (`429`, `500`, `502`, `503`, `504`) can be replaced per-instance with an
+ *   explicit `retryableStatusCodes` list or a custom `shouldRetryStatus`
+ *   function.
  * - **Visibility via `onRetry` callback**: consumers can log, trace, or
  *   surface retry events without instrumenting low-level transports.
  *
@@ -120,8 +121,8 @@ export interface RetryMiddlewareConfig extends RetryMiddlewareOptions {
 
   /**
    * The HTTP status codes that warrant a retry. When omitted, the SDK-wide
-   * default applies: `429` and any `5xx`. Pass an explicit list such as
-   * `[429, 502, 503, 504]` to restrict retries to those statuses.
+   * default applies: `429`, `500`, `502`, `503` and `504`. Pass an explicit
+   * list such as `[429, 503]` to restrict retries to those statuses.
    * `shouldRetryStatus` takes precedence when both are supplied.
    */
   retryableStatusCodes?: number[];
@@ -141,8 +142,9 @@ export interface RetryMiddlewareConfig extends RetryMiddlewareOptions {
 
   /**
    * Custom predicate deciding whether a given HTTP status code is retryable.
-   * Defaults to the SDK-wide {@link isRetryableStatus}: `429` and any `5xx`
-   * (all other `4xx` client errors are never retried).
+   * Defaults to the SDK-wide {@link isRetryableStatus}: `429`, `500`, `502`,
+   * `503` and `504` (all other statuses, including remaining `4xx` client
+   * errors, are never retried).
    */
   shouldRetryStatus?: (status: number) => boolean;
 
