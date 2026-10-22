@@ -404,6 +404,9 @@ importers:
       '@astroid/types':
         specifier: workspace:*
         version: link:../types
+      '@astroid/wallet':
+        specifier: workspace:*
+        version: link:../wallet
     devDependencies:
       '@tanstack/react-query':
         specifier: 5.62.11

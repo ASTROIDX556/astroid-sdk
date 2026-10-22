@@ -10,6 +10,7 @@ export * from './webhooks.js';
 export * from './budget.js';
 export * from './ai.js';
 export * from './transaction-simulation.js';
+export * from './transaction.js';
 export * from './schemas.js';
 
 // Agent resource DTOs and helpers. `AgentEntity`/`Agent`, `AgentStatus` and

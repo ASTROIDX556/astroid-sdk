@@ -51,6 +51,16 @@ export interface SessionManagerConfig {
    * never break the auth flow.
    */
   onAuthFailure?: AuthFailureCallback;
+  /**
+   * Fired when the session can no longer be renewed — a failed refresh, a
+   * missing/expired refresh token, or a `401 Unauthorized` escalation.
+   *
+   * Unlike {@link SessionManagerConfig.onAuthFailure}, this callback carries no
+   * payload: it is the "your session is over, send the user back to the login
+   * screen" hook. It runs after the credentials have been cleared, and its
+   * errors are swallowed so a failing listener can never break the auth flow.
+   */
+  onSessionExpired?: () => void | Promise<void>;
 }
 
 /** Standard JWT payload claims. */
@@ -129,6 +139,7 @@ export class SessionManager {
   private readonly apiKeyHeader: string;
   private readonly onTokenUpdate?: (tokens: AuthTokens) => void | Promise<void>;
   private readonly onAuthFailure?: AuthFailureCallback;
+  private readonly onSessionExpired?: () => void | Promise<void>;
   private activeRefreshPromise: Promise<AuthTokens> | null = null;
 
   constructor(config: SessionManagerConfig = {}) {
@@ -144,6 +155,7 @@ export class SessionManager {
     this.authMode = config.mode ?? (config.apiKey && !config.accessToken ? 'apiKey' : 'jwt');
     this.onTokenUpdate = config.onTokenUpdate;
     this.onAuthFailure = config.onAuthFailure;
+    this.onSessionExpired = config.onSessionExpired;
   }
 
   /** The authentication strategy this session operates in. */
@@ -329,6 +341,18 @@ export class SessionManager {
     error: unknown,
   ): Promise<void> {
     await this.clearTokens();
+
+    // The "session is over" hook runs first: it is the coarse signal a UI
+    // uses to bounce the user back to the login screen.
+    if (this.onSessionExpired) {
+      try {
+        await this.onSessionExpired();
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn('Failed to execute onSessionExpired callback:', err);
+      }
+    }
+
     if (!this.onAuthFailure) return;
     const event: AuthFailureEvent = {
       reason,

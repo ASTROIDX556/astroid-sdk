@@ -5,6 +5,7 @@ export * from './feeBump.js';
 export * from './decoder.js';
 export * from './simulation.js';
 export * from './submit.js';
+export * from './status.js';
 export * from './history.js';
 export * from './validation.js';
 export * from './validator.js';

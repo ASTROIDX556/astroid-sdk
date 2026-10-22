@@ -7,6 +7,7 @@ import {
 } from '@tanstack/react-query';
 import { queryKeys, useAstroidClient } from '../hooks.js';
 import { walletBalancesKeys } from './useWalletBalances.js';
+import { walletBalanceKeys } from './useWalletBalance.js';
 import type {
   CreateWalletInput,
   ImportWalletInput,
@@ -16,7 +17,6 @@ import type {
   TransferInput,
   UpdateWalletInput,
   Wallet,
-  WalletBalance,
 } from '@astroid/types';
 
 /**
@@ -66,46 +66,17 @@ export function useWallets(params?: PaginationParams): UseQueryResult<Paginated<
   });
 }
 
-/** Options for the `useWalletBalance` hook. */
-export interface UseWalletBalanceOptions {
-  /** Whether the query is enabled. Set to `false` to pause. Defaults to `true`. */
-  enabled?: boolean;
-  /** Polling interval in milliseconds. Set to `0` or omit to disable polling. */
-  refetchInterval?: number;
-}
-
 /**
- * Fetch live on-chain balances for a wallet.
- *
- * The query is disabled until a non-empty `walletId` is provided, so the hook
- * is safe to call with an `undefined` id (e.g. while an agent is still being
- * loaded).
- *
- * @param walletId The wallet whose balances to fetch.
- * @param options  Optional enabled flag and polling interval.
- * @returns        A TanStack Query result with `data` (a {@link WalletBalance}),
- *   `isLoading`, `error`, etc.
- *
- * @example
- * ```tsx
- * const { data } = useWalletBalance('wal_abc123', { refetchInterval: 10_000 });
- * return <ul>{data?.balances.map((b) => <li key={b.asset}>{b.asset}: {b.balance}</li>)}</ul>;
- * ```
+ * The `useWalletBalance` hook lives in its own module so it can own the
+ * balance query-key namespace; it is re-exported here for convenience.
  */
-export function useWalletBalance(
-  walletId: string | undefined,
-  options: UseWalletBalanceOptions = {},
-): UseQueryResult<WalletBalance, Error> {
-  const astroid = useAstroidClient();
-  const { enabled = true, refetchInterval } = options;
-
-  return useQuery({
-    queryKey: queryKeys.wallets.balance(walletId ?? ''),
-    queryFn: () => astroid.wallets.balance(walletId as string),
-    enabled: Boolean(walletId) && enabled,
-    refetchInterval,
-  });
-}
+export {
+  useWalletBalance,
+  walletBalanceKeys,
+  isStellarPublicKey,
+  type UseWalletBalanceOptions,
+  type UseWalletBalanceResult,
+} from './useWalletBalance.js';
 
 /** Variables for the `transfer` wallet mutation. */
 export interface TransferVariables {
@@ -188,6 +159,10 @@ export function useTransfer(
       if (invalidateOnSuccess) {
         void queryClient.invalidateQueries({
           queryKey: queryKeys.wallets.balance(variables.walletId),
+        });
+        // Keep the dedicated balance-stream query (issue #400) fresh too.
+        void queryClient.invalidateQueries({
+          queryKey: walletBalanceKeys.byId(variables.walletId),
         });
         void queryClient.invalidateQueries({
           queryKey: queryKeys.wallets.detail(variables.walletId),
@@ -309,6 +284,10 @@ export function useWalletMutation(
           });
           void queryClient.invalidateQueries({
             queryKey: queryKeys.wallets.balance(variables.walletId),
+          });
+          // Keep the dedicated balance-stream query (issue #400) fresh too.
+          void queryClient.invalidateQueries({
+            queryKey: walletBalanceKeys.byId(variables.walletId),
           });
           // Keep the multi-asset balance sync (issue #252) fresh after mutations.
           void queryClient.invalidateQueries({

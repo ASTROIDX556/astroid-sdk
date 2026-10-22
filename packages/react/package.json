@@ -28,7 +28,8 @@
   },
   "dependencies": {
     "@astroid/client": "workspace:*",
-    "@astroid/types": "workspace:*"
+    "@astroid/types": "workspace:*",
+    "@astroid/wallet": "workspace:*"
   },
   "peerDependencies": {
     "@tanstack/react-query": ">=5.0.0",

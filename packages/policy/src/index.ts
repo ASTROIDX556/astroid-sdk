@@ -10,6 +10,8 @@ import type {
   PolicyRule,
   TransactionDetails,
   PolicyRuleSimulationResult,
+  PolicyEvaluationOutcome,
+  PolicyEvaluationRequest,
   PolicyUpdateSimulationRequest,
   PolicyUpdateSimulationResult,
 } from '@astroid/types';
@@ -17,6 +19,7 @@ import type {
 import { simulatePolicy as evaluatePolicyRules } from './simulator.js';
 import type { PolicySimulationReport, SimulatedTransaction } from './simulator.js';
 import { simulatePolicy } from './simulate-policy.js';
+import { simulatePolicyRuleEvaluation } from './rule-evaluation.js';
 import { simulatePolicyUpdate } from './simulate-policy-update.js';
 import { simulatePolicyEvaluation } from './simulation.js';
 import {
@@ -60,6 +63,18 @@ export {
   POLICY_SIMULATE_UPDATE_PATH,
   type PolicyUpdateSimulationHttpClient,
 } from './simulate-policy-update.js';
+
+/**
+ * Policy rule evaluation helper — evaluates a **single proposed rule** against
+ * a proposed transaction (`POST /policies/simulate-rule`), plus the local
+ * payload validation and the defensive response parser that back it.
+ */
+export {
+  simulatePolicyRuleEvaluation,
+  toPolicyEvaluationOutcome,
+  validatePolicyEvaluationRequest,
+  POLICY_SIMULATE_RULE_PATH,
+} from './rule-evaluation.js';
 
 /**
  * Single-policy simulation helper — a dry-run against one policy by id
@@ -145,6 +160,8 @@ export type {
   PolicyUpdateSimulationOutcome,
   PolicyUpdateSimulationImpact,
   PolicyUpdateSimulationResult,
+  PolicyEvaluationRequest,
+  PolicyEvaluationOutcome,
   SimulatePolicyRequest,
   Paginated,
 } from '@astroid/types';
@@ -462,6 +479,45 @@ export class PolicyResource extends Resource {
       this.client,
       assertPolicySimulationRequest(policyOrRequest) as PolicySimulationRequest,
     );
+  }
+
+  /**
+   * Evaluate a **single proposed policy rule** against a proposed transaction,
+   * without committing anything (issue #401).
+   *
+   * This is the check an autonomous agent runs immediately before it signs: the
+   * rule and the transaction payload are sent to the policy evaluation
+   * endpoint, and the verdict comes back as a strict
+   * {@link PolicyEvaluationOutcome} — the allow/deny decision, the checks that
+   * failed, the rules that were triggered and the risk score.
+   *
+   * A rule violation is **not** an error: `allowed` is `false` and
+   * `violatedRules` lists the failed checks. Only a malformed payload, a
+   * transport failure, or a response carrying no decision at all rejects.
+   *
+   * @param request The rule to evaluate and the transaction to evaluate it against.
+   * @returns       The evaluation outcome.
+   * @throws        `ValidationError` when the payload is malformed;
+   *                `NetworkError` / typed API errors when the request fails.
+   *
+   * @example
+   * ```ts
+   * const outcome = await astroid.policies.simulatePolicyRule({
+   *   rule: { name: 'treasury-only', allowedRecipients: ['GABC…'] },
+   *   transaction: { asset: 'USDC', amount: '250', recipientAddress: 'GXYZ…' },
+   * });
+   *
+   * if (!outcome.allowed) {
+   *   for (const violation of outcome.violatedRules) {
+   *     console.warn(violation.rule, violation.explanation);
+   *   }
+   * }
+   * ```
+   */
+  async simulatePolicyRule(
+    request: PolicyEvaluationRequest,
+  ): Promise<PolicyEvaluationOutcome> {
+    return simulatePolicyRuleEvaluation(this.client, request);
   }
 
   /**
