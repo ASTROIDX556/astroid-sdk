@@ -661,3 +661,8 @@ export function bumpFee(options: FeeBumpOptions): FeeBumpResult {
     networkPassphrase,
   };
 }
+
+/**
+ * Alias for {@link bumpFee} matching issue #440 function naming conventions.
+ */
+export const buildFeeBumpTransaction = bumpFee;

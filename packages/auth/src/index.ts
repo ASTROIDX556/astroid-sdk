@@ -44,6 +44,20 @@ export {
   wireSessionToHttpClient,
   createSessionMiddleware,
 } from './auth.js';
+export {
+  TokenRotator,
+  rotateTokens,
+  shouldRotateToken,
+  isTokenExpiring,
+  type TokenRotatorConfig,
+  type RotateTokensOptions,
+} from './rotation.js';
+export {
+  validateScope,
+  validateScopes,
+  matchScope,
+  isValidScopeString,
+} from './scopes.js';
 
 /** The full result of a login/register: tokens plus the resolved session. */
 export interface AuthResult extends AuthTokens {
