@@ -13,6 +13,7 @@ import type { Budget, CreateBudgetInput, Paginated, UpdateBudgetInput } from '@a
 // re-exported here so the long-standing `use-budgets.ts` import path keeps
 // working for existing consumers.
 export { useBudget, useBudgetUtilization, type UseBudgetQueryOptions } from './use-budget.js';
+export { useBudgetAlerts, budgetAlertKeys, type UseBudgetAlertsOptions } from './useBudgetAlerts.js';
 
 /**
  * Fetch a paginated list of budgets.
