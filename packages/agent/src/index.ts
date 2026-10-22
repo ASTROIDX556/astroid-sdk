@@ -23,6 +23,8 @@ export {
   // CreateAgentDto guards
   validateCreateAgentParams,
   isValidCreateAgentParams,
+  validateAgentConfig,
+  isValidAgentConfig,
   // UpdateAgentDto guards
   validateUpdateAgentParams,
   isValidUpdateAgentParams,
