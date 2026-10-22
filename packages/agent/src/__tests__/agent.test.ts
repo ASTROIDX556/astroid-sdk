@@ -325,7 +325,7 @@ describe('AgentResource CRUD', () => {
       const result = await resource.deactivate('agt_1');
 
       expect(result).toEqual(deactivated);
-      expect(http.post).toHaveBeenCalledWith('/agents/agt_1/deactivate', undefined, undefined);
+      expect(http.post).toHaveBeenCalledWith('/agents/agt_1/deactivate');
     });
 
     it('percent-encodes slashes in the agent id for deactivate', async () => {
@@ -333,7 +333,7 @@ describe('AgentResource CRUD', () => {
 
       await resource.deactivate('agt/special');
 
-      expect(http.post).toHaveBeenCalledWith('/agents/agt%2Fspecial/deactivate', undefined, undefined);
+      expect(http.post).toHaveBeenCalledWith('/agents/agt%2Fspecial/deactivate');
     });
   });
 
