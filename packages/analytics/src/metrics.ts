@@ -100,4 +100,5 @@ export class AnalyticsResource {
 /**
  * Helper function for backward compatibility with existing aggregateTransactionMetrics
  */
-export { aggregateTransactionMetrics } from './aggregations.js';
+export { aggregateTransactionMetrics, aggregateTimeSeriesMetrics } from './aggregations.js';
+

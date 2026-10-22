@@ -71,16 +71,23 @@ export {
   type JsonExportOptions,
 } from './exporter.js';
 
-// Local pure aggregation helpers (issue #269): decimal-safe transaction
-// telemetry and time-series query builders. Re-exported explicitly —
-// `metrics.ts` also defines an `AnalyticsResource` class, so it stays out of
-// the entrypoint to avoid a duplicate-export ambiguity.
+// Local pure aggregation helpers (issues #269, #442): decimal-safe transaction
+// telemetry, time-series metrics aggregation, and query builders.
+// Re-exported explicitly — `metrics.ts` also defines an `AnalyticsResource`
+// class, so it stays out of the entrypoint to avoid duplicate-export ambiguity.
 export {
   aggregateTransactionMetrics,
+  aggregateTimeSeriesMetrics,
   type AggregateGranularity,
   type AggregateTelemetryOptions,
   type AggregatedTelemetry,
   type TransactionTelemetryBucket,
+  type TimeSeriesResolution,
+  type AggregateTimeSeriesOptions,
+  type AggregatedTimeSeriesBucket,
+  type AggregatedTimeSeriesResult,
+  type TimeSeriesInputPoint,
+  type TimeSeriesMetricsInput,
 } from './aggregations.js';
 
 export {
@@ -94,7 +101,7 @@ export {
   type TimeSeriesQueryParams,
 } from './time-series.js';
 
-// Publicly re-export the metrics aggregation DTOs (issue #86) so consumers can
+// Publicly re-export the metrics aggregation DTOs (issues #86, #442) so consumers can
 // name them without reaching into `@astroid/types`.
 export type {
   MetricsInterval,
@@ -115,6 +122,10 @@ export type {
   TimeSeriesMetric,
   TimeRangeQueryParams,
   MetricsQueryParams,
+  TimeSeriesResolution as TypesTimeSeriesResolution,
+  AggregateTimeSeriesOptions as TypesAggregateTimeSeriesOptions,
+  AggregatedTimeSeriesBucket as TypesAggregatedTimeSeriesBucket,
+  AggregatedTimeSeriesResult as TypesAggregatedTimeSeriesResult,
 } from '@astroid/types';
 
 /**
