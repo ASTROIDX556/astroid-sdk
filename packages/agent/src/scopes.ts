@@ -12,6 +12,7 @@
  */
 
 import type { Agent } from '@astroid/types';
+import { AuthorizationError } from '@astroid/errors';
 
 /**
  * Normalized scope string.
@@ -113,7 +114,6 @@ export function validateAgentScopes(agent: ScopedAgent, requiredScopes: Scope[])
   const missing = requiredScopes.filter((scope) => !hasAgentScope(agent, scope));
 
   if (missing.length > 0) {
-    const { AuthorizationError } = require('@astroid/errors');
     throw new AuthorizationError(
       `Agent ${agent.id} lacks required scope(s): ${missing.join(', ')}`,
       {

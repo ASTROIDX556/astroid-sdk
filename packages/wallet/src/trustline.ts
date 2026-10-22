@@ -10,6 +10,7 @@
 
 import type { AssetBalance } from '@astroid/types';
 import { TrustlineMissingError } from '@astroid/errors';
+import type { WalletResource } from './index.js';
 
 /**
  * Normalized asset identifier used for trustline lookups.
@@ -77,10 +78,7 @@ export type TrustlineErrorCodeValue = (typeof TrustlineErrorCode)[keyof typeof T
  * ```
  */
 export async function verifyAssetTrustline(
-  walletResource: Pick<
-    import('./index.js').WalletResource,
-    'getWalletBalances'
-  >,
+  walletResource: Pick<WalletResource, 'getWalletBalances'>,
   walletId: string,
   assetCode: string,
   issuer: string,
@@ -149,10 +147,7 @@ function findMatchingBalance(
  * @returns `true` when the trustline is present.
  */
 export async function hasAssetTrustline(
-  walletResource: Pick<
-    import('./index.js').WalletResource,
-    'getWalletBalances'
-  >,
+  walletResource: Pick<WalletResource, 'getWalletBalances'>,
   walletId: string,
   assetCode: string,
   issuer: string,
