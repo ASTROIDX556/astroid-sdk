@@ -1,7 +1,7 @@
 import re
 
 # 1. Modify useAgents.ts: change onSettled to onSuccess for the invalidation
-with open('packages/react/src/hooks/useAgents.ts', 'r') as f:
+with ope('packages/react/src/hooks/useAgents.ts', 'r') as f:
     content = f.read()
 
 content = content.replace("    onSettled: () => {\n      // Invalidate so TanStack Query re-fetches the authoritative state.\n      void queryClient.invalidateQueries({ queryKey: queryKeys.agents.all });\n    },", "    onSuccess: () => {\n      // Invalidate so TanStack Query re-fetches the authoritative state.\n      void queryClient.invalidateQueries({ queryKey: queryKeys.agents.all });\n    },")
