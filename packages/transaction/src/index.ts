@@ -10,6 +10,7 @@ export * from './history.js';
 export * from './validation.js';
 export * from './validator.js';
 export * from './fee-estimation.js';
+export * from './fee-optimizer.js';
 export * from './format.js';
 export * from './validate.js';
 export * from './budget-delegation.js';
