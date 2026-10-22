@@ -182,6 +182,7 @@ export class AgentResource extends Resource {
    * until re-activated.
    *
    * @param agentId The unique agent ID.
+   * @param options Optional per-request options (signal, timeout, headers).
    * @returns The deactivated agent entity.
    *
    * @example
@@ -190,8 +191,12 @@ export class AgentResource extends Resource {
    * console.log(deactivated.status); // 'ARCHIVED'
    * ```
    */
-  async deactivate(agentId: string): Promise<Agent> {
-    const res = await this.client.post<Agent>(`/agents/${encodeURIComponent(agentId)}/deactivate`);
+  async deactivate(agentId: string, options?: RequestOptionsExtras): Promise<Agent> {
+    const res = await this.client.post<Agent>(
+      `/agents/${encodeURIComponent(agentId)}/deactivate`,
+      undefined,
+      options,
+    );
     return res.data;
   }
 
