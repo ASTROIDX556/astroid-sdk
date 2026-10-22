@@ -12,6 +12,7 @@ export * from './validator.js';
 export * from './fee-estimation.js';
 export * from './format.js';
 export * from './validate.js';
+export * from './memo.js';
 export * from './budget-delegation.js';
 export * from './policy-builders.js';
 export * from './policy-submitter.js';
