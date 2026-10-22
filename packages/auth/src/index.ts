@@ -39,7 +39,10 @@ export {
   getTokenExpiration,
   isTokenExpired,
   SessionManager,
+  createRefreshManager,
+  wireRefreshManagerToHttpClient,
 } from './session.js';
+export type { RefreshManager } from './session.js';
 export {
   wireSessionToHttpClient,
   createSessionMiddleware,

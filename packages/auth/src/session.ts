@@ -547,3 +547,54 @@ export function createSessionMiddleware(
     },
   };
 }
+
+/**
+ * Creates a RefreshManager instance for the given session manager and refresh function.
+ *
+ * @param sessionManager The session manager owning the token store.
+ * @param refreshFn Function to exchange a refresh token for fresh tokens.
+ * @param skipPaths URL paths to skip when triggering a refresh (default: auth endpoints).
+ * @returns A configured RefreshManager instance.
+ */
+export function createRefreshManager(
+  sessionManager: SessionManager,
+  refreshFn: (refreshToken: string) => Promise<AuthTokens>,
+  skipPaths: readonly string[] = ['/auth/refresh', '/auth/login', '/auth/register']
+): RefreshManager {
+  return new RefreshManager({
+    sessionManager,
+    refreshFn,
+    skipPaths,
+  });
+}
+
+/**
+ * Wire a RefreshManager to an HttpClient so that 401 Unauthorized responses
+ * trigger automatic token refresh and the failed request is retried with the
+ * new credentials.
+ *
+ * @param client The HttpClient to integrate with.
+ * @param refreshManager The RefreshManager instance.
+ * @param refreshFn Optional override for the refresh function.
+ */
+export function wireRefreshManagerToHttpClient(
+  client: HttpClient,
+  refreshManager: RefreshManager,
+  refreshFn?: (refreshToken: string) => Promise<AuthTokens>
+): void {
+  const refreshFunction = refreshFn ?? refreshManager.refreshFn;
+
+  client.set401Handler(async () => {
+    try {
+      await refreshManager.refresh();
+      const token = refreshManager.sessionManager.getAccessToken();
+      if (token) client.setAccessToken(token);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+}
+
+/** @module */
+export type { RefreshManager } from "./refresh.js";
