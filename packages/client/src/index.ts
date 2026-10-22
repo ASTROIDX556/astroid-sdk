@@ -30,6 +30,7 @@ import {
   type AstroidClientConfig as CoreClientConfig,
   type Middleware,
   type QueryValue,
+  type RequestOptions,
   type RequestOptionsExtras,
   type RetryConfig,
 } from '@astroid/core';
@@ -50,6 +51,7 @@ import {
   createDebugLogger,
   createInterceptorMiddleware,
   type DebugLoggerOptions,
+  type ErrorInterceptor,
   type RequestInterceptor,
   type ResponseInterceptor,
 } from './interceptors.js';
@@ -153,6 +155,12 @@ export interface AstroidClientConfig extends CoreClientConfig {
    */
   responseInterceptors?: ResponseInterceptor[];
   /**
+   * Error interceptors executed, in order, when a request fails. Each receives
+   * the error and the failed request's options, and may return a replacement
+   * error or return nothing to keep the current one.
+   */
+  errorInterceptors?: ErrorInterceptor[];
+  /**
    * Enable the built-in debug logger. Pass `true` for defaults or a
    * {@link DebugLoggerOptions} object to tune the log sink, body inclusion, and
    * header redaction.
@@ -199,11 +207,7 @@ export class AiResource {
     intent: PaymentIntent,
     options?: RequestOptionsExtras,
   ): Promise<PaymentIntentResult> {
-    const res = await this.client.post<PaymentIntentResult>(
-      '/ai/request-payment',
-      intent,
-      options,
-    );
+    const res = await this.client.post<PaymentIntentResult>('/ai/request-payment', intent, options);
     return res.data;
   }
 
@@ -281,6 +285,14 @@ class TypedEmitter {
   }
 }
 
+/** Remove the first occurrence of `item` from `list`, reporting whether it was present. */
+function removeFrom<T>(list: T[], item: T): boolean {
+  const index = list.indexOf(item);
+  if (index === -1) return false;
+  list.splice(index, 1);
+  return true;
+}
+
 /**
  * The Astroid SDK client. Construct once and reuse; it is safe to share across
  * requests. Each resource namespace shares the one underlying {@link HttpClient},
@@ -307,6 +319,9 @@ export class Astroid {
 
   private readonly emitter = new TypedEmitter();
   private readonly plugins: AstroidPlugin[] = [];
+  private readonly requestInterceptors: RequestInterceptor[] = [];
+  private readonly responseInterceptors: ResponseInterceptor[] = [];
+  private readonly errorInterceptors: ErrorInterceptor[] = [];
 
   constructor(config: AstroidClientConfig | HttpClient) {
     this.http = config instanceof HttpClient ? config : new HttpClient(normalizeConfig(config));
@@ -398,17 +413,38 @@ export class Astroid {
         : clientConfig?.debug && typeof clientConfig.debug === 'object'
           ? createDebugLogger(clientConfig.debug)
           : undefined;
-    const requestInterceptors = [
+    this.requestInterceptors.push(
       ...(clientConfig?.requestInterceptors ?? []),
       ...(debugInterceptors ? [debugInterceptors.requestInterceptor] : []),
-    ];
-    const responseInterceptors = [
+    );
+    this.responseInterceptors.push(
       ...(clientConfig?.responseInterceptors ?? []),
       ...(debugInterceptors ? [debugInterceptors.responseInterceptor] : []),
-    ];
-    if (requestInterceptors.length > 0 || responseInterceptors.length > 0) {
-      this.http.use(createInterceptorMiddleware({ requestInterceptors, responseInterceptors }));
-    }
+    );
+    this.errorInterceptors.push(...(clientConfig?.errorInterceptors ?? []));
+    // Errors thrown by the middleware pipeline bypass `onError`, so error
+    // interceptors wrap `request()` itself to see every failure.
+    const request = this.http.request.bind(this.http);
+    this.http.request = async <TData>(options: RequestOptions) => {
+      try {
+        return await request<TData>(options);
+      } catch (err) {
+        let current: unknown = err;
+        for (const interceptor of [...this.errorInterceptors]) {
+          const next = await interceptor(current, options);
+          if (next !== undefined) current = next;
+        }
+        throw current;
+      }
+    };
+    // Always registered: the interceptor arrays are live, so interceptors added
+    // later via `addRequestInterceptor` and friends take effect immediately.
+    this.http.use(
+      createInterceptorMiddleware({
+        requestInterceptors: this.requestInterceptors,
+        responseInterceptors: this.responseInterceptors,
+      }),
+    );
 
     // Auto-register the error parser middleware so all responses are routed
     // through the rich error mapping layer.
@@ -419,6 +455,62 @@ export class Astroid {
   use(middleware: Middleware): this {
     this.http.use(middleware);
     return this;
+  }
+
+  /**
+   * Add a request interceptor. It runs after the interceptors already
+   * registered, before each request is dispatched. Returns `this` for chaining.
+   *
+   * @example
+   * ```ts
+   * astroid.addRequestInterceptor((config) => ({
+   *   ...config,
+   *   headers: { ...config.headers, 'x-correlation-id': crypto.randomUUID() },
+   * }));
+   * ```
+   */
+  addRequestInterceptor(interceptor: RequestInterceptor): this {
+    this.requestInterceptors.push(interceptor);
+    return this;
+  }
+
+  /**
+   * Remove a request interceptor previously added by reference.
+   *
+   * @returns `true` when the interceptor was registered and has been removed.
+   */
+  removeRequestInterceptor(interceptor: RequestInterceptor): boolean {
+    return removeFrom(this.requestInterceptors, interceptor);
+  }
+
+  /** Add a response interceptor. Returns `this` for chaining. */
+  addResponseInterceptor(interceptor: ResponseInterceptor): this {
+    this.responseInterceptors.push(interceptor);
+    return this;
+  }
+
+  /**
+   * Remove a response interceptor previously added by reference.
+   *
+   * @returns `true` when the interceptor was registered and has been removed.
+   */
+  removeResponseInterceptor(interceptor: ResponseInterceptor): boolean {
+    return removeFrom(this.responseInterceptors, interceptor);
+  }
+
+  /** Add an error interceptor. Returns `this` for chaining. */
+  addErrorInterceptor(interceptor: ErrorInterceptor): this {
+    this.errorInterceptors.push(interceptor);
+    return this;
+  }
+
+  /**
+   * Remove an error interceptor previously added by reference.
+   *
+   * @returns `true` when the interceptor was registered and has been removed.
+   */
+  removeErrorInterceptor(interceptor: ErrorInterceptor): boolean {
+    return removeFrom(this.errorInterceptors, interceptor);
   }
 
   /**
@@ -754,6 +846,7 @@ export {
   type ResponseConfig,
   type RequestInterceptor,
   type ResponseInterceptor,
+  type ErrorInterceptor,
   type InterceptorOptions,
   type DebugLogger,
   type DebugLoggerOptions,
