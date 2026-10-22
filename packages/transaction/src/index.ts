@@ -15,4 +15,6 @@ export * from './validate.js';
 export * from './budget-delegation.js';
 export * from './policy-builders.js';
 export * from './policy-submitter.js';
+export * from './batch.js';
 export { TransactionsResource, TransactionResource, type ProposalListParams } from './resource.js';
+
