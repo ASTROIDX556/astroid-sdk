@@ -72,6 +72,11 @@ export {
   type UseAgentWalletBalanceOptions,
 } from './hooks/useAgentWalletBalance.js';
 export {
+  useAgentBudget,
+  agentBudgetKeys,
+  type UseAgentBudgetOptions,
+} from './hooks/useAgentBudget.js';
+export {
   useBudgets,
   useCreateBudget,
   useUpdateBudget,
