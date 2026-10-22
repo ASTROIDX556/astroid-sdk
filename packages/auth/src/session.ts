@@ -582,7 +582,6 @@ export function wireRefreshManagerToHttpClient(
   refreshManager: RefreshManager,
   refreshFn?: (refreshToken: string) => Promise<AuthTokens>
 ): void {
-  const refreshFunction = refreshFn ?? refreshManager.refreshFn;
 
   client.set401Handler(async () => {
     try {
