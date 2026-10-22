@@ -3,6 +3,16 @@ export * from './common.js';
 export * from './asset.js';
 export * from './entities.js';
 export * from './dto.js';
+/**
+ * Policy condition matchers, rule definitions, simulation request/response
+ * DTOs and decision reason codes.
+ *
+ * @see {@link PolicyCondition}
+ * @see {@link PolicyRule}
+ * @see {@link PolicySimulationRequest}
+ * @see {@link PolicySimulationResult}
+ * @see {@link PolicyReasonCode}
+ */
 export * from './policy.js';
 export * from './analytics.js';
 export * from './agent-events.js';

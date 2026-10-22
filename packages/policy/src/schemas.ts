@@ -20,6 +20,7 @@ import type {
   PolicyEvaluationRequest,
   PolicyEvaluationResult,
 } from '@astroid/types';
+import { POLICY_REASON_CODE_VALUES } from '@astroid/types';
 
 // Enums
 const PolicyTypeSchema = z.enum([
@@ -38,6 +39,8 @@ const PolicyTypeSchema = z.enum([
   'EMERGENCY_LOCK',
   'COMPOSITE',
 ]);
+
+const PolicyReasonCodeSchema = z.enum(POLICY_REASON_CODE_VALUES);
 
 export const PolicyAllowedHoursSchema: z.ZodType<PolicyAllowedHours> = z.object({
   startHour: z.number().int().min(0).max(23),
@@ -158,6 +161,7 @@ export const PolicyViolationDetailSchema: z.ZodType<PolicyViolationDetail> = z.o
   policyId: z.string(),
   policyType: PolicyTypeSchema,
   message: z.string(),
+  reasonCode: PolicyReasonCodeSchema.optional(),
   limit: z.union([z.number(), z.string()]).optional(),
   actual: z.union([z.number(), z.string()]).optional(),
 });
@@ -167,6 +171,7 @@ export const PolicyViolationSchema: z.ZodType<PolicyViolation> = z.object({
   policyName: z.string(),
   policyType: PolicyTypeSchema,
   message: z.string(),
+  reasonCode: PolicyReasonCodeSchema.optional(),
   limit: z.union([z.number(), z.string()]).optional(),
   actual: z.union([z.number(), z.string()]).optional(),
 });
@@ -191,6 +196,9 @@ export const PolicyBudgetImpactSchema: z.ZodType<PolicyBudgetImpact> = z.object(
 
 export const PolicySimulationResultSchema: z.ZodType<PolicySimulationResult> = z.object({
   allowed: z.boolean(),
+  denied: z.boolean().optional(),
+  decision: z.enum(['ALLOWED', 'DENIED']).optional(),
+  reasonCode: PolicyReasonCodeSchema.optional(),
   violations: z.array(PolicyViolationDetailSchema),
   requiredApprovals: z.array(z.string()),
   risk: PolicyRiskAssessmentSchema,

@@ -8,12 +8,197 @@
 
 import type { PolicyType } from './enums.js';
 
+/* -------------------------------------------------------------------------- */
+/* Policy conditions and decision reasons                                      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The condition families a {@link PolicyCondition} can express.
+ *
+ * These mirror the API's {@link PolicyType} values and add the local-evaluation
+ * families (`ALLOWED_HOURS`, `REQUIRED_SIGNATURES`). Descriptive aliases such as
+ * `MAX_AMOUNT_PER_TRANSACTION` and `ALLOWED_DESTINATION_ACCOUNTS` are accepted
+ * as well so payloads written against the REST documentation type-check
+ * verbatim alongside the canonical enum values.
+ */
+export type PolicyConditionType =
+  | PolicyType
+  | 'MAX_AMOUNT_PER_TRANSACTION'
+  | 'MIN_AMOUNT_PER_TRANSACTION'
+  | 'ALLOWED_DESTINATION_ACCOUNTS'
+  | 'BLOCKED_DESTINATION_ACCOUNTS'
+  | 'ALLOWED_HOURS'
+  | 'REQUIRED_SIGNATURES';
+
+/** Comparison operators accepted by numeric policy conditions. */
+export type PolicyConditionOperator =
+  | 'EQ'
+  | 'NEQ'
+  | 'GT'
+  | 'GTE'
+  | 'LT'
+  | 'LTE'
+  | 'IN'
+  | 'NOT_IN'
+  | 'BETWEEN';
+
+/** An absolute date range during which a {@link PolicyCondition} applies. */
+export interface PolicyConditionTimeWindow {
+  /** Inclusive start, as an ISO-8601 date-time string. */
+  start: string;
+  /** Exclusive end, as an ISO-8601 date-time string. */
+  end: string;
+  /** IANA timezone used to interpret the window. Defaults to UTC. */
+  timezone?: string;
+}
+
+/**
+ * A single matcher inside a {@link PolicyRule}.
+ *
+ * A condition combines a `type` with the fields relevant to that family:
+ *
+ * - **Spend limits** — `maxAmount` / `minAmount` (per transaction),
+ *   `dailyLimit` / `weeklyLimit` / `monthlyLimit` (rolling windows).
+ * - **Destination accounts** — `allowedRecipients` / `blockedRecipients`
+ *   (aliases: `allowedDestinationAccounts` / `blockedDestinationAccounts`).
+ * - **Time windows** — `timeWindow` for an absolute range, or `allowedHours`
+ *   for a recurring time-of-day window with an optional timezone.
+ * - **Assets and signatures** — `allowedAssets` / `blockedAssets` and
+ *   `requiredSignatures`.
+ *
+ * Fields are optional so the same shape can describe every condition family
+ * and forward-compatible API extensions. Consumers should switch on `type`
+ * before reading family-specific fields.
+ *
+ * @example
+ * ```ts
+ * const maxPerTransaction: PolicyCondition = {
+ *   type: 'MAX_AMOUNT',
+ *   maxAmount: '250.00',
+ *   asset: 'USDC',
+ * };
+ *
+ * const destinations: PolicyCondition = {
+ *   type: 'ALLOWED_RECIPIENTS',
+ *   allowedRecipients: ['GABC…', 'GDEF…'],
+ * };
+ * ```
+ */
+export interface PolicyCondition {
+  /** The condition family this matcher belongs to. */
+  type: PolicyConditionType;
+  /** Stable identifier used to correlate violations back to the matcher. */
+  id?: string;
+  /** Human-readable description surfaced in simulation explanations. */
+  description?: string;
+  /** Comparison operator for numeric or set-based matchers. */
+  operator?: PolicyConditionOperator;
+  /** Maximum amount allowed per transaction (decimal string or number). */
+  maxAmount?: number | string;
+  /** Alias for {@link PolicyCondition.maxAmount}. */
+  amount?: number | string;
+  /** Minimum amount required per transaction (decimal string or number). */
+  minAmount?: number | string;
+  /** Asset identifier the limit applies to (`XLM`, `USDC`, `CODE:ISSUER`). */
+  asset?: string;
+  /** Asset identifiers the transaction may use. */
+  allowedAssets?: string[];
+  /** Asset identifiers the transaction may not use. */
+  blockedAssets?: string[];
+  /** Case-insensitive destination allowlist (Stellar or federated addresses). */
+  allowedRecipients?: string[];
+  /** Alias for {@link PolicyCondition.allowedRecipients}. */
+  allowedDestinationAccounts?: string[];
+  /** Case-insensitive destination denylist (Stellar or federated addresses). */
+  blockedRecipients?: string[];
+  /** Alias for {@link PolicyCondition.blockedRecipients}. */
+  blockedDestinationAccounts?: string[];
+  /** Absolute date range during which the action is permitted. */
+  timeWindow?: PolicyConditionTimeWindow;
+  /** Recurring time-of-day window during which the action is permitted. */
+  allowedHours?: PolicyAllowedHours;
+  /** Rolling daily spend cap (decimal string or number). */
+  dailyLimit?: number | string;
+  /** Rolling weekly spend cap (decimal string or number). */
+  weeklyLimit?: number | string;
+  /** Rolling monthly spend cap (decimal string or number). */
+  monthlyLimit?: number | string;
+  /** Minimum total signing weight required for the action. */
+  requiredSignatures?: number;
+  /** Arbitrary caller/API metadata attached to the condition. */
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * The machine-readable reason codes returned by a policy simulation.
+ *
+ * A decision is allowed (`ALLOWED`) or denied with one or more specific
+ * reasons, so an autonomous agent can branch without parsing prose.
+ */
+export const POLICY_REASON_CODE_VALUES = [
+  'ALLOWED',
+  'POLICY_DISABLED',
+  'EMERGENCY_LOCK',
+  'MAX_AMOUNT_EXCEEDED',
+  'MIN_AMOUNT_NOT_MET',
+  'ASSET_NOT_ALLOWED',
+  'ASSET_BLOCKED',
+  'RECIPIENT_NOT_ALLOWED',
+  'RECIPIENT_BLOCKED',
+  'OUTSIDE_TIME_WINDOW',
+  'DAILY_LIMIT_EXCEEDED',
+  'WEEKLY_LIMIT_EXCEEDED',
+  'MONTHLY_LIMIT_EXCEEDED',
+  'BUDGET_EXCEEDED',
+  'INSUFFICIENT_SIGNATURES',
+  'APPROVAL_REQUIRED',
+  'RISK_THRESHOLD_EXCEEDED',
+  'VALIDATION_FAILED',
+  'UNKNOWN',
+] as const;
+
+/** A machine-readable policy decision reason code. */
+export type PolicyReasonCode = (typeof POLICY_REASON_CODE_VALUES)[number];
+
+/** The headline outcome of a policy simulation. */
+export type PolicySimulationDecision = 'ALLOWED' | 'DENIED';
+
+/**
+ * Non-throwing type guard for {@link PolicyReasonCode}.
+ *
+ * @param value The value to check.
+ * @returns     `true` when `value` is a known reason code.
+ */
+export function isPolicyReasonCode(value: unknown): value is PolicyReasonCode {
+  return (
+    typeof value === 'string' && (POLICY_REASON_CODE_VALUES as readonly string[]).includes(value)
+  );
+}
+
+/**
+ * Whether a simulation result represents a denied transaction.
+ *
+ * Prefers the explicit `denied` flag when the API supplied one and otherwise
+ * falls back to negating `allowed`, so the helper is safe for payloads produced
+ * by older API versions.
+ *
+ * @param result A simulation result (or any `{ allowed, denied? }` payload).
+ * @returns      `true` when the transaction was denied.
+ */
+export function isPolicySimulationDenied(
+  result: Pick<PolicySimulationResult, 'allowed' | 'denied'>,
+): boolean {
+  return result.denied ?? !result.allowed;
+}
+
 /** A single policy rule breach reported by a client-side simulation. */
 export interface PolicyViolation {
   policyId: string;
   policyName: string;
   policyType: PolicyType;
   message: string;
+  /** Machine-readable reason for the breach. */
+  reasonCode?: PolicyReasonCode;
   /** The configured limit that was breached, when applicable. */
   limit?: number | string;
   /** The actual value that breached the limit, when applicable. */
@@ -62,6 +247,8 @@ export interface PolicyViolationDetail {
   policyId: string;
   policyType: PolicyType;
   message: string;
+  /** Machine-readable reason for the breach (e.g. `MAX_AMOUNT_EXCEEDED`). */
+  reasonCode?: PolicyReasonCode;
   limit?: number | string;
   actual?: number | string;
 }
@@ -94,6 +281,23 @@ export interface PolicyBudgetImpact {
 export interface PolicySimulationResult {
   /** Whether the transaction complies with every evaluated rule. */
   allowed: boolean;
+  /**
+   * Whether the transaction was denied.
+   *
+   * The API always reports a decision; this is optional on the TypeScript
+   * interface so payloads from older API versions remain assignable. Use
+   * {@link isPolicySimulationDenied} when you need a guaranteed boolean.
+   */
+  denied?: boolean;
+  /** The headline decision in enum form (`ALLOWED` or `DENIED`). */
+  decision?: PolicySimulationDecision;
+  /**
+   * The primary machine-readable reason for the decision.
+   *
+   * `ALLOWED` for an allow; the first blocking violation's reason code for a
+   * denial. Detailed codes are also available on each violation.
+   */
+  reasonCode?: PolicyReasonCode;
   /** The rule breaches that blocked the transaction (empty when `allowed`). */
   violations: PolicyViolationDetail[];
   /** Roles whose approval is required before the transaction may proceed. */
@@ -318,6 +522,8 @@ export interface PolicyRuleBreach {
    * `MAX_AMOUNT`). Falls back to the policy type, then `POLICY_RULE`.
    */
   rule: string;
+  /** Machine-readable reason code, when the API reported one. */
+  reasonCode?: PolicyReasonCode;
   /** Human-readable explanation of the breach. */
   message: string;
   /** The configured limit that was breached, when applicable. */
@@ -442,8 +648,25 @@ export type PolicyRuleCheck = 'address' | 'time' | 'signatures' | 'none';
 export interface PolicyRule {
   /** Stable rule name reported in the evaluation results. */
   name: string;
+  /** Optional caller-owned identifier for the rule. */
+  id?: string;
+  /** Human-readable description of what the rule enforces. */
+  description?: string;
   /** Whether the rule runs. Defaults to `true`; disabled rules are skipped. */
   enabled?: boolean;
+  /** Evaluation priority (lower values run first), when scoped to a policy. */
+  priority?: number;
+  /** The policy family this rule belongs to, when known. */
+  type?: PolicyType;
+  /**
+   * Structured condition matchers evaluated by the rule.
+   *
+   * Conditions are additive with the shorthand constraints below, so a rule can
+   * mix API-style matchers (`maxAmount`, destination allowlists, time windows)
+   * with the local-evaluation shorthand (`allowedRecipients`, `allowedHours`,
+   * `requiredSignatures`).
+   */
+  conditions?: PolicyCondition[];
   /** Case-insensitive destination allowlist (Stellar or federated addresses). */
   allowedRecipients?: string[];
   /** Case-insensitive destination denylist (Stellar or federated addresses). */
@@ -496,4 +719,3 @@ export interface PolicyEvaluationResult {
   /** Names of the rules that failed, de-duplicated and in first-failure order. */
   failedRuleNames: string[];
 }
-
