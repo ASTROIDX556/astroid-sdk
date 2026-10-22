@@ -15,7 +15,10 @@ import type {
   TransactionFeeEstimate,
   TransactionListParams,
   TransactionSimulationOutcome,
+  TransactionStatusVerification,
 } from '@astroid/types';
+
+import { checkTransactionStatus, type TransactionStatusOptions } from './status.js';
 
 /** Filters accepted by {@link TransactionsResource.list}. */
 export type ProposalListParams = PaginationParams & {
@@ -75,6 +78,24 @@ export class TransactionsResource extends Resource {
   }): Promise<TransactionFeeEstimate> {
     const res = await this.client.post<TransactionFeeEstimate>('/transactions/estimate-fee', input);
     return res.data;
+  }
+
+  /**
+   * Verify the status of a transaction.
+   *
+   * Fetches the transaction record and derives whether it succeeded and
+   * whether it is final (terminal status **and** enough confirmations).
+   *
+   * @param transactionId The transaction record id.
+   * @param options The confirmations required for finality.
+   * @returns The structured status verification.
+   */
+  async verifyStatus(
+    transactionId: string,
+    options: TransactionStatusOptions = {},
+  ): Promise<TransactionStatusVerification> {
+    const record = await this.get(transactionId);
+    return checkTransactionStatus(record, options);
   }
 
   /**

@@ -36,17 +36,22 @@ export {
 export {
   useWallet,
   useWallets,
-  useWalletBalance,
   useTransfer,
   useWalletMutation,
   type WalletMutationVariables,
   type WalletMutationResult,
   type TransferVariables,
-  type UseWalletBalanceOptions,
   type WalletMutationOptions,
   type UseTransferOptions,
   type UseWalletMutationOptions,
 } from './hooks/useWallets.js';
+export {
+  useWalletBalance,
+  walletBalanceKeys,
+  isStellarPublicKey,
+  type UseWalletBalanceOptions,
+  type UseWalletBalanceResult,
+} from './hooks/useWalletBalance.js';
 export {
   useWalletBalances,
   useInvalidateWalletBalances,

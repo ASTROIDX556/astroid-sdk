@@ -17,6 +17,7 @@ import type {
   PolicySimulationResult,
   PolicyRuleCheck,
   PolicyRuleEvaluation,
+  PolicyEvaluationRequest,
   PolicyEvaluationResult,
 } from '@astroid/types';
 
@@ -211,6 +212,13 @@ export const PolicyRuleEvaluationSchema: z.ZodType<PolicyRuleEvaluation> = z.obj
   explanation: z.string().optional(),
 });
 
+export const PolicyEvaluationRequestSchema: z.ZodType<PolicyEvaluationRequest> = z.object({
+  rule: PolicyRuleSchema,
+  transaction: TransactionDetailsSchema,
+  policyId: z.string().optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});
+
 export const PolicyEvaluationResultSchema: z.ZodType<PolicyEvaluationResult> = z.object({
   allowed: z.boolean(),
   passed: z.boolean(),
@@ -269,4 +277,16 @@ export function assertPolicyCreateInput(input: unknown): PolicyCreateInput {
  */
 export function assertPolicySimulationRequest(input: unknown): PolicySimulationRequest {
   return assertSchema(PolicySimulationRequestSchema, input, 'Policy simulation request');
+}
+
+/**
+ * Validate a policy rule evaluation request against
+ * {@link PolicyEvaluationRequestSchema} before any network call.
+ *
+ * @param input The evaluation request to check.
+ * @returns The parsed request.
+ * @throws {ValidationError} With `fieldErrors` naming every offending field.
+ */
+export function assertPolicyEvaluationRequest(input: unknown): PolicyEvaluationRequest {
+  return assertSchema(PolicyEvaluationRequestSchema, input, 'Policy evaluation request');
 }

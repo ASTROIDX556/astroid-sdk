@@ -33,6 +33,12 @@ export {
   type TransactionLike,
 } from './signing.js';
 
+/**
+ * Balance DTOs re-exported from `@astroid/types` so consumers of
+ * `@astroid/wallet` can name the balance shapes without a second import.
+ */
+export type { WalletBalance, AssetBalance, WalletBalanceQuery } from '@astroid/types';
+
 export { SecureKeystore, type EncryptedPayload } from './keystore.js';
 
 // Wallet key management & Ed25519 message signing utilities (issue #235).

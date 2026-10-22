@@ -126,6 +126,70 @@ export interface PolicyRuleSimulationResult {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Policy rule evaluation (issue #401)                                         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A request to evaluate a **single policy rule** against a proposed
+ * transaction (issue #401).
+ *
+ * This is the pre-flight check an autonomous agent runs before it signs: "if
+ * this rule were in force, would this action be allowed?". The rule and the
+ * transaction payload are both sent verbatim — amounts stay decimal strings so
+ * no precision is lost on the way to the policy engine.
+ *
+ * @example
+ * ```ts
+ * const request: PolicyEvaluationRequest = {
+ *   rule: {
+ *     name: 'treasury-only',
+ *     allowedRecipients: ['GABC…'],
+ *     requiredSignatures: 2,
+ *   },
+ *   transaction: {
+ *     asset: 'USDC',
+ *     amount: '250.00',
+ *     recipientAddress: 'GABC…',
+ *   },
+ * };
+ * ```
+ */
+export interface PolicyEvaluationRequest {
+  /** The policy rule to evaluate. */
+  rule: PolicyRule;
+  /** The proposed transaction the rule is evaluated against. */
+  transaction: TransactionDetails;
+  /** The policy the rule belongs to, when the caller knows it. */
+  policyId?: string;
+  /** Arbitrary caller metadata, echoed back by the API. */
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * The outcome of evaluating a policy rule against a transaction (issue #401).
+ *
+ * A violation is **not** an error: the evaluation resolves normally with
+ * `allowed: false` and the failed checks listed in `violatedRules`, so an agent
+ * can branch on a machine-readable reason instead of catching an exception.
+ */
+export interface PolicyEvaluationOutcome {
+  /** The policy the evaluation was scoped to, when the API reported one. */
+  policyId?: string;
+  /** Whether the transaction satisfies the evaluated rule. */
+  allowed: boolean;
+  /** Alias of {@link PolicyEvaluationOutcome.allowed} (deny/allow wording). */
+  denied: boolean;
+  /** The names of the rules the transaction triggered. */
+  triggeredRuleIds: string[];
+  /** The individual checks that failed, each with a human-readable reason. */
+  violatedRules: PolicyRuleEvaluation[];
+  /** The 0..1 risk score reported by the API; `0` when none was reported. */
+  riskScore: number;
+  /** Human-readable summary of the evaluation. */
+  explanation: string;
+}
+
+/* -------------------------------------------------------------------------- */
 /* Policy update simulation (issue #249)                                       */
 /* -------------------------------------------------------------------------- */
 

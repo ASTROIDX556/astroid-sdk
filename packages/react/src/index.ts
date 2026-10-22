@@ -6,7 +6,6 @@ export {
   invalidateQueries,
   useWallets,
   useWallet,
-  useWalletBalance,
   useTransfer,
   useWalletMutation,
   useAgents,
@@ -20,7 +19,6 @@ export {
   type WalletMutationVariables,
   type WalletMutationResult,
   type TransferVariables,
-  type UseWalletBalanceOptions,
   type WalletMutationOptions,
   type UseTransferOptions,
   type UseWalletMutationOptions,
@@ -28,6 +26,13 @@ export {
   type UpdateAgentStatusVariables,
   type UpdateAgentMetadataVariables,
 } from './hooks.js';
+export {
+  useWalletBalance,
+  walletBalanceKeys,
+  isStellarPublicKey,
+  type UseWalletBalanceOptions,
+  type UseWalletBalanceResult,
+} from './hooks/useWalletBalance.js';
 export {
   snapshotAgentCache,
   rollbackAgentCache,
