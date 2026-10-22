@@ -228,7 +228,7 @@ export class RefreshManager {
  *   the RefreshManager's configured refreshFn will be used.
  */
 export function wireRefreshManagerToHttpClient(
-  client: import('@astroid/core').HttpClient,
+  client: HttpClient,
   refreshManager: RefreshManager,
   refreshFn?: (refreshToken: string) => Promise<AuthTokens>,
 ): void {
