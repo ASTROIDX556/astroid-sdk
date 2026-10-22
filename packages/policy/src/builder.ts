@@ -882,8 +882,18 @@ export class PolicyRuleBuilder {
         issues: [{ field: 'type', message: 'Policy type is required.' }],
       };
     }
-    const { type, ...rest } = candidate;
-    return { valid: true, rule: { ...rest, type } };
+    // Rebuild explicitly (rather than spreading the rest and appending `type`)
+    // so the serialized payload keeps the conventional key order.
+    const rule: PolicyDraft = {
+      name: candidate.name,
+      type: candidate.type,
+      configuration: candidate.configuration,
+      priority: candidate.priority,
+      enabled: candidate.enabled,
+      ...(candidate.description !== undefined ? { description: candidate.description } : {}),
+      ...(candidate.agentId !== undefined ? { agentId: candidate.agentId } : {}),
+    };
+    return { valid: true, rule };
   }
 
   /**
