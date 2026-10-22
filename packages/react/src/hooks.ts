@@ -59,6 +59,11 @@ export {
   type UseWalletBalancesOptions,
   type UseWalletBalancesResult,
 } from './hooks/useWalletBalances.js';
+export {
+  usePolicyEvaluation,
+  policyEvaluationKeys,
+  type UsePolicyEvaluationOptions,
+} from './hooks/usePolicyEvaluation.js';
 
 /**
  * Retrieve the active {@link Astroid} client instance from the React context.
@@ -118,6 +123,8 @@ export const queryKeys = {
     all: ['astroid', 'policies'] as const,
     list: (params?: object) => ['astroid', 'policies', 'list', params ?? {}] as const,
     detail: (id: string) => ['astroid', 'policies', 'detail', id] as const,
+    evaluation: (id: string, input?: object) =>
+      ['astroid', 'policies', 'evaluation', id, input ?? {}] as const,
   },
   budgets: {
     all: ['astroid', 'budgets'] as const,

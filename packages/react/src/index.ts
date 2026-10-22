@@ -94,6 +94,11 @@ export {
   useDeletePolicy,
   type UpdatePolicyVariables,
 } from './hooks/use-policies.js';
+export {
+  usePolicyEvaluation,
+  policyEvaluationKeys,
+  type UsePolicyEvaluationOptions,
+} from './hooks/usePolicyEvaluation.js';
 export { useTransactions, useTransaction, useCreateTransaction } from './hooks/use-transactions.js';
 export {
   useAgentList,
