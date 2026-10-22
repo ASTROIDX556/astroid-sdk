@@ -71,6 +71,21 @@ export {
   type JsonExportOptions,
 } from './exporter.js';
 
+// Observability export formatters: Prometheus text exposition and OTLP/JSON.
+// Both are pure serialisers over the shared {@link MetricSample} model.
+export {
+  toPrometheusFormat,
+  toOpenTelemetryFormat,
+  type MetricLabelValue,
+  type MetricSample,
+  type MetricType,
+  type OpenTelemetryAttribute,
+  type OpenTelemetryAttributeValue,
+  type OpenTelemetryDataPoint,
+  type OpenTelemetryExportRequest,
+  type OpenTelemetryMetric,
+} from './formatters.js';
+
 // Local pure aggregation helpers (issue #269): decimal-safe transaction
 // telemetry and time-series query builders. Re-exported explicitly —
 // `metrics.ts` also defines an `AnalyticsResource` class, so it stays out of
