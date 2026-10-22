@@ -445,40 +445,55 @@ export class PolicyResource extends Resource {
    * });
    * ```
    */
-  async simulatePolicy(input: PolicySimulationRequest): Promise<PolicySimulationResult>;
+  async simulatePolicy(
+    input: PolicySimulationRequest,
+    options?: RequestOptionsExtras,
+  ): Promise<PolicySimulationResult>;
   async simulatePolicy(
     policyId: string,
     input: PolicySimulationInput,
+    options?: RequestOptionsExtras,
   ): Promise<PolicySimulationEvaluation>;
   /**
    * Simulate a proposed policy rule against a target transaction payload.
    *
    * @param rule        The proposed policy rule to evaluate.
    * @param transaction The target transaction/transfer payload.
+   * @param options     Extra request options (e.g. `signal`, `timeoutMs`).
    * @returns           The simulation result indicating if it was allowed/denied.
    */
   async simulatePolicy(
     rule: PolicyRule,
     transaction: TransactionDetails,
+    options?: RequestOptionsExtras,
   ): Promise<PolicyRuleSimulationResult>;
   async simulatePolicy(
     policyOrRequest: string | PolicySimulationRequest | PolicyRule,
-    input?: PolicySimulationInput | TransactionDetails,
+    input?: PolicySimulationInput | TransactionDetails | RequestOptionsExtras,
+    options?: RequestOptionsExtras,
   ): Promise<PolicySimulationResult | PolicySimulationEvaluation | PolicyRuleSimulationResult> {
     if (typeof policyOrRequest === 'string') {
-      return this.simulatePolicyAgainst(policyOrRequest, input as PolicySimulationInput);
+      return simulatePolicy(this.client, policyOrRequest, input as PolicySimulationInput, options);
     }
-    if (input) {
-      const res = await this.client.post<PolicyRuleSimulationResult>('/policies/simulate-rule', {
-        rule: policyOrRequest,
-        transaction: input,
-      });
+    if (
+      typeof policyOrRequest === 'object' &&
+      policyOrRequest !== null &&
+      'name' in policyOrRequest &&
+      !('asset' in policyOrRequest)
+    ) {
+      const res = await this.client.post<PolicyRuleSimulationResult>(
+        '/policies/simulate-rule',
+        { rule: policyOrRequest as PolicyRule, transaction: input as TransactionDetails },
+        options,
+      );
       return res.data;
     }
-    return simulatePolicy(
-      this.client,
-      assertPolicySimulationRequest(policyOrRequest) as PolicySimulationRequest,
-    );
+    const request = assertPolicySimulationRequest(policyOrRequest) as PolicySimulationRequest;
+    const reqOptions = (options ??
+      (typeof input === 'object' && input !== null && ('signal' in input || 'timeoutMs' in input || 'headers' in input)
+        ? input
+        : undefined)) as RequestOptionsExtras | undefined;
+    return simulatePolicy(this.client, request, reqOptions);
   }
 
   /**

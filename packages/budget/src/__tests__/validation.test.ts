@@ -447,3 +447,170 @@ describe('checkBudgetLimit', () => {
     });
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* Tests for Issue #429 Structured Spending Validation Helpers                */
+/* -------------------------------------------------------------------------- */
+
+import {
+  validateRemainingAllowance,
+  validateDailyLimit,
+  validateAssetSpendingCap,
+  validateBudgetSpending,
+} from '../validation.js';
+
+describe('Issue #429 — Structured Budget Spending Validation Helpers', () => {
+  describe('validateRemainingAllowance', () => {
+    it('allows spending when within remaining allowance', () => {
+      const budget = makeBudget({ limitAmount: '500.00', spent: '100.00', currency: 'USDC' });
+      const result = validateRemainingAllowance(budget, { asset: 'USDC', amount: '250.00' });
+
+      expect(result.allowed).toBe(true);
+      expect(result.violations).toHaveLength(0);
+      expect(result.remainingAllowance).toBe('150');
+      expect(result.spentInWindow).toBe('100.00');
+    });
+
+    it('allows spending exactly matching the remaining allowance (exact limit boundary)', () => {
+      const budget = makeBudget({ limitAmount: '500.00', spent: '100.00', currency: 'USDC' });
+      const result = validateRemainingAllowance(budget, { asset: 'USDC', amount: '400.00' });
+
+      expect(result.allowed).toBe(true);
+      expect(result.violations).toHaveLength(0);
+      expect(result.remainingAllowance).toBe('0');
+    });
+
+    it('denies spending when exceeding remaining allowance by a tiny fraction (precision test)', () => {
+      const budget = makeBudget({ limitAmount: '500.00', spent: '100.00', currency: 'USDC' });
+      const result = validateRemainingAllowance(budget, { asset: 'USDC', amount: '400.0000001' });
+
+      expect(result.allowed).toBe(false);
+      expect(result.violations).toHaveLength(1);
+      expect(result.violations[0]?.type).toBe('REMAINING_ALLOWANCE_EXCEEDED');
+      expect(result.explanation).toContain('exceeds remaining allowance');
+    });
+
+    it('handles disabled budget safely', () => {
+      const budget = makeBudget({ limitAmount: '500.00', spent: '0', currency: 'USDC', enabled: false });
+      const result = validateRemainingAllowance(budget, { asset: 'USDC', amount: '10.00' });
+
+      expect(result.allowed).toBe(false);
+      expect(result.violations[0]?.type).toBe('DISABLED_BUDGET');
+    });
+
+    it('handles asset currency mismatch safely', () => {
+      const budget = makeBudget({ limitAmount: '500.00', spent: '0', currency: 'USDC' });
+      const result = validateRemainingAllowance(budget, { asset: 'XLM', amount: '10.00' });
+
+      expect(result.allowed).toBe(false);
+      expect(result.violations[0]?.type).toBe('CURRENCY_MISMATCH');
+    });
+
+    it('handles malformed / non-numeric amounts', () => {
+      const budget = makeBudget({ limitAmount: '500.00', spent: '0', currency: 'USDC' });
+      const result = validateRemainingAllowance(budget, { asset: 'USDC', amount: 'invalid-amount' });
+
+      expect(result.allowed).toBe(false);
+      expect(result.violations[0]?.type).toBe('INVALID_AMOUNT');
+    });
+  });
+
+  describe('validateDailyLimit', () => {
+    it('allows spending within daily limit', () => {
+      const budget = makeBudget({ period: 'DAILY', limitAmount: '200.00', spent: '50.00', currency: 'USDC' });
+      const result = validateDailyLimit(budget, { asset: 'USDC', amount: '100.00' });
+
+      expect(result.allowed).toBe(true);
+      expect(result.remainingAllowance).toBe('50');
+    });
+
+    it('denies spending exceeding daily limit', () => {
+      const budget = makeBudget({ period: 'DAILY', limitAmount: '200.00', spent: '150.00', currency: 'USDC' });
+      const result = validateDailyLimit(budget, { asset: 'USDC', amount: '100.00' });
+
+      expect(result.allowed).toBe(false);
+      expect(result.violations[0]?.type).toBe('DAILY_LIMIT_EXCEEDED');
+    });
+
+    it('filters history within active daily window', () => {
+      const budget = makeBudget({ period: 'DAILY', limitAmount: '200.00', currency: 'USDC' });
+      const now = new Date('2025-06-15T12:00:00Z');
+      const spentHistory = [
+        makeEntry({ amount: '50.00', createdAt: '2025-06-15T08:00:00Z' }), // Today
+        makeEntry({ amount: '100.00', createdAt: '2025-06-14T20:00:00Z' }), // Yesterday
+      ];
+
+      const result = validateDailyLimit(budget, { asset: 'USDC', amount: '120.00' }, spentHistory, {
+        dailyLimit: '200.00',
+        now,
+      });
+
+      expect(result.allowed).toBe(true);
+      expect(result.spentInWindow).toBe('50');
+    });
+  });
+
+  describe('validateAssetSpendingCap', () => {
+    it('allows spending when under asset-specific cap', () => {
+      const assetCaps = { XLM: '1000.00', USDC: '500.00' };
+      const currentSpentByAsset = { XLM: '400.00' };
+
+      const result = validateAssetSpendingCap({ asset: 'XLM', amount: '500.00' }, assetCaps, currentSpentByAsset);
+
+      expect(result.allowed).toBe(true);
+      expect(result.remainingAllowance).toBe('100');
+    });
+
+    it('denies spending when exceeding asset-specific cap', () => {
+      const assetCaps = { XLM: '1000.00', USDC: '500.00' };
+      const currentSpentByAsset = { XLM: '800.00' };
+
+      const result = validateAssetSpendingCap({ asset: 'XLM', amount: '300.00' }, assetCaps, currentSpentByAsset);
+
+      expect(result.allowed).toBe(false);
+      expect(result.violations[0]?.type).toBe('ASSET_CAP_EXCEEDED');
+    });
+
+    it('passes when no cap is defined for asset', () => {
+      const assetCaps = { USDC: '500.00' };
+
+      const result = validateAssetSpendingCap({ asset: 'XLM', amount: '10000.00' }, assetCaps);
+
+      expect(result.allowed).toBe(true);
+      expect(result.violations).toHaveLength(0);
+    });
+  });
+
+  describe('validateBudgetSpending (comprehensive)', () => {
+    it('passes when all limit checks pass', () => {
+      const budget = makeBudget({ limitAmount: '1000.00', spent: '200.00', currency: 'USDC', period: 'DAILY' });
+      const assetCaps = { USDC: '500.00' };
+
+      const result = validateBudgetSpending(
+        budget,
+        { asset: 'USDC', amount: '100.00' },
+        { assetCaps, currentSpentByAsset: { USDC: '200.00' } },
+      );
+
+      expect(result.allowed).toBe(true);
+      expect(result.violations).toHaveLength(0);
+    });
+
+    it('aggregates multiple violations when multiple limits are breached', () => {
+      const budget = makeBudget({ limitAmount: '200.00', spent: '180.00', currency: 'USDC', period: 'DAILY' });
+      const assetCaps = { USDC: '200.00' };
+
+      const result = validateBudgetSpending(
+        budget,
+        { asset: 'USDC', amount: '50.00' },
+        { dailyLimit: '200.00', assetCaps, currentSpentByAsset: { USDC: '180.00' } },
+      );
+
+      expect(result.allowed).toBe(false);
+      expect(result.violations.length).toBeGreaterThanOrEqual(2);
+      const violationTypes = result.violations.map((v) => v.type);
+      expect(violationTypes).toContain('REMAINING_ALLOWANCE_EXCEEDED');
+      expect(violationTypes).toContain('DAILY_LIMIT_EXCEEDED');
+    });
+  });
+});

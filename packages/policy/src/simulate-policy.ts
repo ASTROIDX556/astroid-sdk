@@ -14,7 +14,15 @@
  */
 
 import type { AstroidResponse, RequestOptionsExtras } from '@astroid/core';
-import type { PolicySimulationRequest, PolicySimulationResult } from '@astroid/types';
+import type {
+  PolicySimulationEvaluation,
+  PolicySimulationInput,
+  PolicySimulationRequest,
+  PolicySimulationResult,
+} from '@astroid/types';
+import { ValidationError } from '@astroid/errors';
+import { PolicySimulationRequestSchema } from './schemas.js';
+import { simulatePolicyEvaluation } from './simulation.js';
 
 /** The path of the server-side policy simulation endpoint. */
 export const POLICY_SIMULATE_PATH = '/policies/simulate';
@@ -34,20 +42,17 @@ export interface PolicySimulationHttpClient {
 }
 
 /**
- * Simulate a proposed transaction against the organization's policy rules.
+ * Simulate a proposed transaction against a single policy by ID.
  *
- * The request combines the transaction payload (`asset`, `amount`,
- * `recipientAddress`, …) with the rules to evaluate: pass `policyIds` to check
- * specific policies, or `walletId` / `agentId` to evaluate every enabled policy
- * in scope. Nothing is committed — the endpoint is a pure dry-run.
+ * Runs local payload validation and sends the dry-run request to
+ * `POST /policies/{policyId}/simulate`. Returns a {@link PolicySimulationEvaluation}
+ * describing whether the transaction complies with the specific policy.
  *
- * @param client  The transport used to reach the API (an `HttpClient` satisfies it).
- * @param input   The transaction payload plus the policy rules to evaluate against.
- * @param options Extra request options (e.g. `signal`, `timeoutMs`) forwarded to
- *                the transport.
- * @returns       The decision, the breached rules, required approvals, risk and
- *                budget impact. A rejection resolves normally with `allowed: false`.
- * @throws        `NetworkError` / typed API errors when the request itself fails.
+ * @param client   The transport used to reach the API (`HttpClient` or `@astroid/client`).
+ * @param policyId The ID of the policy to evaluate against.
+ * @param input    The transaction payload (`asset`, `amount`, `recipientAddress`, etc.).
+ * @param options  Extra request options (e.g. `signal`, `timeoutMs`).
+ * @returns        Detailed simulation evaluation containing decision, rule breaches, risk score, and budget impact.
  *
  * @example
  * ```ts
@@ -55,27 +60,67 @@ export interface PolicySimulationHttpClient {
  * import { simulatePolicy } from '@astroid/policy';
  *
  * const http = new HttpClient({ apiKey: process.env.ASTROID_API_KEY! });
- *
- * const result = await simulatePolicy(http, {
- *   walletId: 'w_1',
+ * const evaluation = await simulatePolicy(http, 'pol_123', {
  *   asset: 'USDC',
- *   amount: '250',
+ *   amount: '100.00',
  *   recipientAddress: 'GABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUVW',
  * });
- *
- * if (!result.allowed) {
- *   for (const violation of result.violations) console.warn(violation.message);
+
+ * if (!evaluation.allowed) {
+ *   console.warn(evaluation.explanation);
  * }
  * ```
  */
-import { ValidationError } from '@astroid/errors';
-import { PolicySimulationRequestSchema } from './schemas.js';
+export async function simulatePolicy(
+  client: PolicySimulationHttpClient,
+  policyId: string,
+  input: PolicySimulationInput,
+  options?: RequestOptionsExtras,
+): Promise<PolicySimulationEvaluation>;
 
+/**
+ * Simulate a proposed transaction against an organization's active policy rules.
+ *
+ * Combines the transaction payload with the rules to evaluate (scoped by `walletId`, `agentId`,
+ * or `policyIds`). Sends the dry-run request to `POST /policies/simulate` and returns
+ * a {@link PolicySimulationResult}.
+ *
+ * @param client  The transport used to reach the API (`HttpClient` or `@astroid/client`).
+ * @param input   The transaction payload plus policy scoping (`walletId`, `agentId`, or `policyIds`).
+ * @param options Extra request options (e.g. `signal`, `timeoutMs`).
+ * @returns       Simulation decision, rule violations, required approvals, risk assessment, and budget impact.
+ *
+ * @example
+ * ```ts
+ * const result = await simulatePolicy(http, {
+ *   walletId: 'w_1',
+ *   asset: 'USDC',
+ *   amount: '250.00',
+ *   recipientAddress: 'GABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUVW',
+ * });
+ * ```
+ */
 export async function simulatePolicy(
   client: PolicySimulationHttpClient,
   input: PolicySimulationRequest,
   options?: RequestOptionsExtras,
-): Promise<PolicySimulationResult> {
+): Promise<PolicySimulationResult>;
+
+export async function simulatePolicy(
+  client: PolicySimulationHttpClient,
+  policyIdOrRequest: string | PolicySimulationRequest,
+  inputOrOptions?: PolicySimulationInput | RequestOptionsExtras,
+  options?: RequestOptionsExtras,
+): Promise<PolicySimulationResult | PolicySimulationEvaluation> {
+  if (typeof policyIdOrRequest === 'string') {
+    const policyId = policyIdOrRequest;
+    const input = inputOrOptions as PolicySimulationInput;
+    return simulatePolicyEvaluation(client, policyId, input, options);
+  }
+
+  const input = policyIdOrRequest as PolicySimulationRequest;
+  const reqOptions = inputOrOptions as RequestOptionsExtras | undefined;
+
   const validation = PolicySimulationRequestSchema.safeParse(input);
   if (!validation.success) {
     throw new ValidationError('Validation failed for PolicySimulationRequest', {
@@ -86,6 +131,6 @@ export async function simulatePolicy(
     });
   }
 
-  const res = await client.post<PolicySimulationResult>(POLICY_SIMULATE_PATH, input, options);
+  const res = await client.post<PolicySimulationResult>(POLICY_SIMULATE_PATH, input, reqOptions);
   return res.data;
 }
