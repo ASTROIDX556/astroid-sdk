@@ -41,6 +41,19 @@ export type { WalletBalance, AssetBalance, WalletBalanceQuery } from '@astroid/t
 
 export { SecureKeystore, type EncryptedPayload } from './keystore.js';
 
+// Stellar amount conversion, formatting & validation utilities (issue #453).
+export {
+  STELLAR_DECIMALS,
+  STROOPS_PER_UNIT,
+  toBaseUnits,
+  fromBaseUnits,
+  formatAmount,
+  isValidStellarAmount,
+  type FromBaseUnitsOptions,
+  type FormatAmountOptions,
+  type FormatRoundingMode,
+} from './utils.js';
+
 // Wallet key management & Ed25519 message signing utilities (issue #235).
 export {
   isValidPublicKey,
