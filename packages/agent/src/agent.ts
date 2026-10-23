@@ -1,4 +1,5 @@
 import { Resource, type RequestOptionsExtras } from '@astroid/core';
+import { NotFoundError } from '@astroid/errors';
 import type {
   Agent,
   AgentEventSubscription,
@@ -16,6 +17,8 @@ import type {
 } from '@astroid/types';
 import {
   assertValidAgentId,
+  assertValidBatchConcurrency,
+  validateBatchAgentIds,
   validateCreateAgentParams,
   validateUpdateAgentParams,
 } from './validation.js';
@@ -31,6 +34,39 @@ export type AgentListParams = ListAgentsParams;
  * `order`) understood by every Astroid list endpoint.
  */
 export type AgentCursorListParams = Omit<AgentListParams, 'page'> & CursorPaginationParams;
+
+/** Status requests {@link AgentResource.batchStatus} keeps in flight at once by default. */
+export const DEFAULT_BATCH_STATUS_CONCURRENCY = 5;
+
+/** Options accepted by {@link AgentResource.batchStatus}. */
+export interface BatchAgentStatusOptions extends RequestOptionsExtras {
+  /**
+   * Most status requests in flight at once, a whole number of at least 1.
+   * Defaults to {@link DEFAULT_BATCH_STATUS_CONCURRENCY}.
+   */
+  concurrency?: number;
+}
+
+/**
+ * The outcome of looking up one agent in a batch.
+ *
+ * `not_found` means the API answered 404 for that id; `error` is any other
+ * failure (network, timeout, 5xx, permissions), kept so the caller can decide
+ * whether to retry just that id.
+ */
+export type AgentStatusLookup =
+  | { agentId: string; ok: true; status: AgentStatusMetrics }
+  | { agentId: string; ok: false; reason: 'not_found' | 'error'; error: unknown };
+
+/** {@link AgentStatusLookup} results split by outcome; see {@link partitionAgentStatuses}. */
+export interface PartitionedAgentStatuses {
+  /** Metrics for every agent that was found, keyed by agent id. */
+  statuses: Map<string, AgentStatusMetrics>;
+  /** Ids the API does not know. */
+  missing: string[];
+  /** Ids whose lookup failed for another reason, with the error. */
+  failed: Array<{ agentId: string; error: unknown }>;
+}
 
 /**
  * Resource methods for managing AI agents on Astroid.
@@ -219,6 +255,68 @@ export class AgentResource extends Resource {
   }
 
   /**
+   * Fetch the status metrics of several agents in one call.
+   *
+   * The API documents `GET /agents/:id/status` and no multi-agent route, so
+   * this runs one lookup per distinct id with at most `concurrency` of them in
+   * flight, and returns once every id has an outcome. A missing or failing
+   * agent never rejects the whole call: it comes back as a `not_found` or
+   * `error` entry next to the agents that succeeded. Results follow the order
+   * the ids first appear in, and an id passed twice is looked up once.
+   *
+   * Malformed input (a non-array, a blank or non-string id, a bad
+   * `concurrency`) throws an {@link AstroidValidationError} before any request
+   * is sent. If `options.signal` aborts, the call rejects with the abort reason
+   * and starts no further lookups.
+   *
+   * @param agentIds The agent ids to look up. An empty list resolves to `[]`.
+   * @param options `concurrency`, plus the usual timeout, signal and headers.
+   * @returns One {@link AgentStatusLookup} per distinct id. Pass it to
+   *   {@link partitionAgentStatuses} to split it by outcome.
+   *
+   * @example
+   * ```ts
+   * const results = await astroid.agents.batchStatus(['agt_1', 'agt_2', 'agt_3']);
+   * const { statuses, missing, failed } = partitionAgentStatuses(results);
+   * ```
+   */
+  async batchStatus(
+    agentIds: readonly string[],
+    options: BatchAgentStatusOptions = {},
+  ): Promise<AgentStatusLookup[]> {
+    const { concurrency = DEFAULT_BATCH_STATUS_CONCURRENCY, ...requestOptions } = options;
+    const ids = validateBatchAgentIds(agentIds);
+    assertValidBatchConcurrency(concurrency);
+
+    const results: AgentStatusLookup[] = new Array(ids.length);
+    let next = 0;
+    const worker = async (): Promise<void> => {
+      while (next < ids.length) {
+        if (requestOptions.signal?.aborted) {
+          throw requestOptions.signal.reason ?? new Error('The batch status lookup was aborted.');
+        }
+        const index = next++;
+        const agentId = ids[index] as string;
+        results[index] = await this.lookupStatus(agentId, requestOptions);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(concurrency, ids.length) }, worker));
+    return results;
+  }
+
+  /** One batch lookup: the metrics, or why there are none. Never throws. */
+  private async lookupStatus(
+    agentId: string,
+    options: RequestOptionsExtras,
+  ): Promise<AgentStatusLookup> {
+    try {
+      return { agentId, ok: true, status: await this.status(agentId, options) };
+    } catch (error) {
+      return { agentId, ok: false, reason: isNotFound(error) ? 'not_found' : 'error', error };
+    }
+  }
+
+  /**
    * Fetch paginated execution logs for an agent.
    *
    * @param agentId The unique agent ID.
@@ -292,6 +390,39 @@ export class AgentResource extends Resource {
       options,
     );
   }
+}
+
+/**
+ * Split {@link AgentResource.batchStatus} results by outcome.
+ *
+ * `statuses` is keyed by agent id, so a dashboard can render each agent it asked
+ * about from one lookup and show `missing` and `failed` ids separately.
+ */
+export function partitionAgentStatuses(
+  results: readonly AgentStatusLookup[],
+): PartitionedAgentStatuses {
+  const partitioned: PartitionedAgentStatuses = { statuses: new Map(), missing: [], failed: [] };
+  for (const result of results) {
+    if (result.ok) {
+      partitioned.statuses.set(result.agentId, result.status);
+    } else if (result.reason === 'not_found') {
+      partitioned.missing.push(result.agentId);
+    } else {
+      partitioned.failed.push({ agentId: result.agentId, error: result.error });
+    }
+  }
+  return partitioned;
+}
+
+/** True for a typed not-found error or any error that carries HTTP status 404. */
+function isNotFound(error: unknown): boolean {
+  if (error instanceof NotFoundError) return true;
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    ((error as { status?: unknown }).status === 404 ||
+      (error as { statusCode?: unknown }).statusCode === 404)
+  );
 }
 
 /**
