@@ -45,3 +45,15 @@ export {
   isValidAgentMetadata,
 } from './validation.js';
 export { AgentClient } from './client.js';
+export {
+  hasAgentScope,
+  validateAgentScopes,
+  getMissingScopes,
+  hasAnyScope,
+  isScopedAgent,
+  extractScopes,
+  toScopedAgent,
+  scopeMatches,
+  type Scope,
+  type ScopedAgent,
+} from './scopes.js';
