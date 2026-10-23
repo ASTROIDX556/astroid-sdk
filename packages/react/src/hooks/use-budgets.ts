@@ -48,7 +48,6 @@ export function useBudgets(params?: BudgetListParams): UseQueryResult<Paginated<
 }
 
 
-
 /** Variables for {@link useUpdateBudget}. */
 export interface UpdateBudgetVariables {
   /** The budget to update. */
