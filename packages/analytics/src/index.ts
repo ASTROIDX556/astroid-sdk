@@ -94,6 +94,35 @@ export {
   type TimeSeriesQueryParams,
 } from './time-series.js';
 
+// Telemetry event tracking (issue #380): non-blocking, batching analytics
+// client with graceful failure handling and zero-overhead disabled mode.
+export {
+  AnalyticsClient,
+  normalizeAnalyticsEvent,
+  generateEventId,
+  DEFAULT_ANALYTICS_ENDPOINT,
+  DEFAULT_MAX_BATCH_SIZE,
+  DEFAULT_MAX_QUEUE_SIZE,
+  DEFAULT_FLUSH_INTERVAL_MS,
+  DEFAULT_MAX_RETRIES_PER_BATCH,
+  type AnalyticsClientOptions,
+  type AnalyticsFlushResult,
+  type AnalyticsQueueStats,
+  type AnalyticsTransport,
+} from './client.js';
+
+// Wire DTOs for telemetry events, re-exported so consumers can name them
+// without reaching into `@astroid/types`.
+export type {
+  AnalyticsEvent,
+  AnalyticsEventBatch,
+  AnalyticsEventBatchAck,
+  AnalyticsEventContext,
+  AnalyticsEventInput,
+  AnalyticsEventPropertyValue,
+  AnalyticsEventSeverity,
+} from '@astroid/types';
+
 // Publicly re-export the metrics aggregation DTOs (issue #86) so consumers can
 // name them without reaching into `@astroid/types`.
 export type {
