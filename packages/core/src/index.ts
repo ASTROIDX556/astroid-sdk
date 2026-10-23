@@ -13,6 +13,8 @@ export { AstroidTimeoutError } from './timeout-error.js';
 export {
   resolveConfig,
   DEFAULT_BASE_URL,
+  DEFAULT_TIMEOUT_MS,
+  normalizeTimeoutMs,
   type AstroidClientConfig,
   type ResolvedConfig,
   type AuthConfig,
@@ -35,8 +37,24 @@ export {
 } from './http-types.js';
 export { Resource, type ListRequestOptions, type RequestOptionsExtras } from './resource.js';
 export { buildUrl, buildQueryString } from './url.js';
-export { backoffDelay, isRetryableStatus, sleep } from './backoff.js';
-export { paginate, collect, type PageFetcher } from './pagination.js';
+export {
+  backoffDelay,
+  isRetryableStatus,
+  parseRetryAfter,
+  sleep,
+  DEFAULT_RETRYABLE_STATUSES,
+} from './backoff.js';
+export {
+  paginate,
+  paginateCursor,
+  normalizeCursorPage,
+  collect,
+  MAX_CURSOR_PAGES,
+  type PageFetcher,
+  type CursorPageFetcher,
+  type PaginateCursorOptions,
+  type CursorPage,
+} from './pagination.js';
 export {
   OfflineQueue,
   MemoryQueueStorage,
@@ -54,3 +72,4 @@ export {
   type LogSink,
   type RetryMiddlewareOptions,
 } from './middleware.js';
+export * from './errors.js';

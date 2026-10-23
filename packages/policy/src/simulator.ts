@@ -53,9 +53,34 @@ type Evaluator = (policy: Policy, tx: SimulatedTransaction) => PolicyViolation |
 /* Decimal-safe amount helpers                                                 */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Expand a numeric string into plain decimal notation, converting any
+ * exponent form (`1e-7`, `1e+21`) into the equivalent fixed-point decimal.
+ *
+ * `String(1e-7)` produces `'1e-7'`, which `BigInt` cannot parse — so the
+ * fixed-point conversion below would throw a `SyntaxError` for legitimate
+ * sub-unit amounts or very large whale transfers. Non-exponent input is
+ * returned unchanged (including malformed strings, which then fail loudly in
+ * `BigInt` as before).
+ */
+function toPlainDecimal(value: number | string): string {
+  const text = String(value).trim();
+  const match = /^([+-]?)(\d+)(?:\.(\d+))?[eE]([+-]?\d+)$/.exec(text);
+  if (!match) return text;
+
+  const [, sign = '', intPart = '', fracPart = '', expPart = ''] = match;
+  const exponent = Number(expPart);
+  const digits = intPart + fracPart;
+  const point = intPart.length + exponent;
+
+  if (point <= 0) return `${sign}0.${'0'.repeat(-point)}${digits}`;
+  if (point >= digits.length) return `${sign}${digits}${'0'.repeat(point - digits.length)}`;
+  return `${sign}${digits.slice(0, point)}.${digits.slice(point)}`;
+}
+
 /** Scale a decimal string/number to an integer using BigInt arithmetic. */
 function toScaled(value: number | string, scale: number): bigint {
-  const [intPart = '0', fracPart = ''] = String(value).split('.');
+  const [intPart = '0', fracPart = ''] = toPlainDecimal(value).split('.');
   const frac = fracPart.padEnd(scale, '0').slice(0, scale);
   return BigInt(intPart) * 10n ** BigInt(scale) + BigInt(frac || '0');
 }
@@ -97,15 +122,28 @@ function sumSpend(spent: number | string | undefined, amount: number | string): 
 /* -------------------------------------------------------------------------- */
 
 /** The asset code portion of an asset identifier (`USDC:G...` -> `USDC`). */
-function assetCode(asset: string): string {
-  return asset.split(':')[0]?.trim().toUpperCase() ?? '';
+function parseAsset(asset: string): { code: string; issuer?: string } {
+  const [code = '', issuer] = asset.split(':');
+  return {
+    code: code.trim().toUpperCase(),
+    ...(issuer !== undefined ? { issuer: issuer.trim().toUpperCase() } : {}),
+  };
 }
 
-/** Case-insensitive asset matching: by code, and by code+issuer when given. */
+/**
+ * Case-insensitive asset matching that honours a pinned issuer.
+ *
+ * A code-only rule (`USDC`) matches any issuer of that code; a rule that pins
+ * an issuer (`USDC:G…`) requires the exact same issuer. This prevents a policy
+ * scoped to one trustline from being satisfied by the same code issued by a
+ * different (potentially malicious) issuer.
+ */
 function assetMatches(configured: string, txAsset: string): boolean {
-  const wanted = configured.trim();
-  if (wanted.toUpperCase() === txAsset.trim().toUpperCase()) return true;
-  return assetCode(wanted) === assetCode(txAsset);
+  const wanted = parseAsset(configured);
+  const actual = parseAsset(txAsset);
+  if (wanted.code === '' || wanted.code !== actual.code) return false;
+  if (wanted.issuer === undefined) return true;
+  return actual.issuer === wanted.issuer;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -363,11 +401,20 @@ export function simulatePolicyLocal(
 
     for (const op of decodedTx.operations) {
       const opAsset = op.asset || (config.asset as string | undefined);
-      const opAmount = typeof op.amount === 'string' ? parseFloat(op.amount) : typeof op.amount === 'number' ? op.amount : 0;
+      const opAmount =
+        typeof op.amount === 'string'
+          ? parseFloat(op.amount)
+          : typeof op.amount === 'number'
+            ? op.amount
+            : 0;
       const opDest = op.destination || op.recipient || '';
 
       // 1. Asset Allowlist rule
-      const allowedAssets = config.allowedAssets || (policy.type === 'ALLOWED_ASSETS' && Array.isArray(config.assets) ? config.assets : undefined);
+      const allowedAssets =
+        config.allowedAssets ||
+        (policy.type === 'ALLOWED_ASSETS' && Array.isArray(config.assets)
+          ? config.assets
+          : undefined);
       if (Array.isArray(allowedAssets) && allowedAssets.length > 0) {
         if (opAsset && !allowedAssets.includes(opAsset)) {
           violations.push({
@@ -393,7 +440,12 @@ export function simulatePolicyLocal(
       }
 
       // 3. Max Amount Limit rule
-      const maxAmount = typeof config.maxAmount === 'number' ? config.maxAmount : typeof config.limit === 'number' ? config.limit : undefined;
+      const maxAmount =
+        typeof config.maxAmount === 'number'
+          ? config.maxAmount
+          : typeof config.limit === 'number'
+            ? config.limit
+            : undefined;
       if (typeof maxAmount === 'number' && maxAmount > 0) {
         if (opAmount > maxAmount) {
           violations.push({
@@ -408,7 +460,12 @@ export function simulatePolicyLocal(
       }
 
       // 4. Destination Denylist rule
-      const blockedRecipients = config.blockedRecipients || config.destinationDenylist || (policy.type === 'BLOCKED_RECIPIENTS' && Array.isArray(config.recipients) ? config.recipients : undefined);
+      const blockedRecipients =
+        config.blockedRecipients ||
+        config.destinationDenylist ||
+        (policy.type === 'BLOCKED_RECIPIENTS' && Array.isArray(config.recipients)
+          ? config.recipients
+          : undefined);
       if (Array.isArray(blockedRecipients) && blockedRecipients.length > 0) {
         if (opDest && blockedRecipients.includes(opDest)) {
           violations.push({

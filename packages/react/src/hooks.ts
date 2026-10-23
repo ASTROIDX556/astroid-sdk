@@ -1,5 +1,11 @@
 import { useContext } from 'react';
-import { useMutation, useQuery, type UseMutationResult, type UseQueryResult } from '@tanstack/react-query';
+import {
+  useMutation,
+  useQuery,
+  type QueryClient,
+  type UseMutationResult,
+  type UseQueryResult,
+} from '@tanstack/react-query';
 import { AstroidClientContext } from './provider.js';
 import type { Astroid } from '@astroid/client';
 import type {
@@ -10,19 +16,49 @@ import type {
   PolicySimulationResult,
 } from '@astroid/types';
 
-export { useCreateAgent, useUpdateAgent, useDeleteAgent } from './hooks/useAgents.js';
-export { useAgentStatus, agentStatusKeys, type UseAgentStatusOptions } from './hooks/useAgentStatus.js';
+export {
+  useCreateAgent,
+  useUpdateAgent,
+  useUpdateAgentStatus,
+  useUpdateAgentMetadata,
+  useDeleteAgent,
+  type UpdateAgentVariables,
+  type UpdateAgentStatusVariables,
+  type UpdateAgentMetadataVariables,
+} from './hooks/useAgents.js';
+export {
+  snapshotAgentCache,
+  rollbackAgentCache,
+  invalidateAgentQueries,
+  type OptimisticCacheEntry,
+  type OptimisticAgentContext,
+} from './hooks/optimistic-agent.js';
 export {
   useWallet,
   useWallets,
-  useWalletBalance,
   useTransfer,
   useWalletMutation,
   type WalletMutationVariables,
   type WalletMutationResult,
   type TransferVariables,
-  type UseWalletBalanceOptions,
+  type WalletMutationOptions,
+  type UseTransferOptions,
+  type UseWalletMutationOptions,
 } from './hooks/useWallets.js';
+export {
+  useWalletBalance,
+  walletBalanceKeys,
+  isStellarPublicKey,
+  type UseWalletBalanceOptions,
+  type UseWalletBalanceResult,
+} from './hooks/useWalletBalance.js';
+export {
+  useWalletBalances,
+  useInvalidateWalletBalances,
+  walletBalancesKeys,
+  type UseWalletBalancesOptions,
+  type UseWalletBalancesResult,
+} from './hooks/useWalletBalances.js';
 
 /**
  * Retrieve the active {@link Astroid} client instance from the React context.
@@ -47,24 +83,125 @@ export function useAstroidClient(): Astroid {
 }
 
 /**
- * Query key factory for TanStack Query caching and invalidation.
+ * Centralized query key factory for TanStack Query caching and invalidation.
+ *
+ * All keys are prefixed with `'astroid'` and namespaced by resource domain.
+ * Keys are stable (`as const`) so TanStack Query's structural equality
+ * comparison works correctly for cache lookups and invalidation.
+ *
+ * @example
+ * ```ts
+ * // Exact key for a single wallet detail:
+ * queryKeys.wallets.detail('wal_abc123')
+ * // => ['astroid', 'wallets', 'detail', 'wal_abc123']
+ *
+ * // Invalidate all wallet queries:
+ * queryClient.invalidateQueries({ queryKey: queryKeys.wallets.all });
+ *
+ * // Invalidate just the wallet list:
+ * queryClient.invalidateQueries({ queryKey: queryKeys.wallets.list() });
+ * ```
  */
 export const queryKeys = {
   wallets: {
     all: ['astroid', 'wallets'] as const,
-    list: (params?: PaginationParams) => ['astroid', 'wallets', 'list', params ?? {}] as const,
+    list: (params?: object) => ['astroid', 'wallets', 'list', params ?? {}] as const,
     detail: (id: string) => ['astroid', 'wallets', 'detail', id] as const,
     balance: (id: string) => ['astroid', 'wallets', 'detail', id, 'balance'] as const,
   },
   agents: {
     all: ['astroid', 'agents'] as const,
-    list: (params?: PaginationParams) => ['astroid', 'agents', 'list', params ?? {}] as const,
+    list: (params?: object) => ['astroid', 'agents', 'list', params ?? {}] as const,
     detail: (id: string) => ['astroid', 'agents', 'detail', id] as const,
   },
   policies: {
     all: ['astroid', 'policies'] as const,
+    list: (params?: object) => ['astroid', 'policies', 'list', params ?? {}] as const,
+    detail: (id: string) => ['astroid', 'policies', 'detail', id] as const,
+  },
+  budgets: {
+    all: ['astroid', 'budgets'] as const,
+    list: (params?: object) => ['astroid', 'budgets', 'list', params ?? {}] as const,
+    detail: (id: string) => ['astroid', 'budgets', 'detail', id] as const,
+    utilization: (id: string) => ['astroid', 'budgets', 'detail', id, 'utilization'] as const,
+  },
+  transactions: {
+    all: ['astroid', 'transactions'] as const,
+    list: (params?: object) => ['astroid', 'transactions', 'list', params ?? {}] as const,
+    detail: (id: string) => ['astroid', 'transactions', 'detail', id] as const,
   },
 } as const;
+
+/**
+ * Invalidation helpers for typed cache invalidation by resource domain.
+ *
+ * These helpers provide a clean API for invalidating queries by resource type
+ * or specific entity ID, without requiring callers to know the key structure.
+ *
+ * @example
+ * ```ts
+ * // After a mutation, invalidate the agents list:
+ * await invalidateQueries.agents(queryClient);
+ *
+ * // Invalidate a specific agent's detail:
+ * await invalidateQueries.agent(queryClient, 'agent_abc123');
+ * ```
+ */
+export const invalidateQueries = {
+  /** Invalidate all queries for a specific resource domain. */
+  all: (
+    queryClient: QueryClient,
+    domain: 'wallets' | 'agents' | 'policies' | 'budgets' | 'transactions',
+  ) => {
+    return queryClient.invalidateQueries({ queryKey: queryKeys[domain].all });
+  },
+  /** Invalidate the list query for a specific resource domain. */
+  wallets: (queryClient: QueryClient, params?: object) => {
+    return queryClient.invalidateQueries({ queryKey: queryKeys.wallets.list(params) });
+  },
+  agents: (queryClient: QueryClient, params?: object) => {
+    return queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(params) });
+  },
+  policies: (queryClient: QueryClient, params?: object) => {
+    return queryClient.invalidateQueries({ queryKey: queryKeys.policies.list(params) });
+  },
+  budgets: (queryClient: QueryClient, params?: object) => {
+    return queryClient.invalidateQueries({ queryKey: queryKeys.budgets.list(params) });
+  },
+  /** Invalidate a specific wallet's detail and related queries. */
+  wallet: (queryClient: QueryClient, id: string) => {
+    return Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.wallets.detail(id) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.wallets.balance(id) }),
+    ]);
+  },
+  /** Invalidate a specific agent's detail and related queries. */
+  agent: (queryClient: QueryClient, id: string) => {
+    return Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(id) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.all }),
+    ]);
+  },
+  /** Invalidate a specific policy's detail. */
+  policy: (queryClient: QueryClient, id: string) => {
+    return queryClient.invalidateQueries({ queryKey: queryKeys.policies.detail(id) });
+  },
+  /** Invalidate a specific budget's detail and utilization. */
+  budget: (queryClient: QueryClient, id: string) => {
+    return Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.detail(id) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.utilization(id) }),
+    ]);
+  },
+  /** Invalidate the transaction history list. */
+  transactions: (queryClient: QueryClient, params?: object) => {
+    return queryClient.invalidateQueries({ queryKey: queryKeys.transactions.list(params) });
+  },
+  /** Invalidate a specific transaction's detail. */
+  transaction: (queryClient: QueryClient, id: string) => {
+    return queryClient.invalidateQueries({ queryKey: queryKeys.transactions.detail(id) });
+  },
+};
 
 /**
  * Fetch a paginated list of agents.
@@ -91,6 +228,27 @@ export function useAgent(id: string | undefined): UseQueryResult<Agent, Error> {
 
 /**
  * Mutation hook to simulate a policy against a proposed transaction.
+ *
+ * Wraps {@link PolicyResource.simulatePolicy} with TanStack Query so components
+ * get `isPending`/`isSuccess`/`isError`, the resolved simulation `data`, and the
+ * `error` for free. Per-call `onSuccess`/`onError` callbacks can be passed to
+ * `mutate` for component-level handling.
+ *
+ * @returns A TanStack Query mutation over a {@link PolicySimulationRequest}.
+ *
+ * @example
+ * ```tsx
+ * const simulate = useSimulatePolicy();
+ *
+ * simulate.mutate(
+ *   { walletId: 'wal_abc', asset: 'USDC', amount: '1500' },
+ *   {
+ *     onSuccess: (result) =>
+ *       result.allowed ? approve() : showViolations(result.violations),
+ *     onError: (error) => toast.error(error.message),
+ *   },
+ * );
+ * ```
  */
 export function useSimulatePolicy(): UseMutationResult<
   PolicySimulationResult,
@@ -99,6 +257,6 @@ export function useSimulatePolicy(): UseMutationResult<
 > {
   const astroid = useAstroidClient();
   return useMutation({
-    mutationFn: (params: PolicySimulationRequest) => astroid.policies.simulate(params),
+    mutationFn: (params: PolicySimulationRequest) => astroid.policies.simulatePolicy(params),
   });
 }

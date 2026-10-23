@@ -76,6 +76,16 @@ export interface DecodedTxPayload {
   sourceAccount: string;
   sequenceNumber: string;
   fee: string;
+  /**
+   * The hex-encoded Stellar hash of the decoded envelope.
+   *
+   * Computed from the envelope's signature base, so it is only the *real*
+   * transaction hash when `networkPassphrase` matches the network the
+   * envelope was built for.
+   */
+  hash?: string;
+  /** Whether the decoded envelope is a fee-bump transaction. */
+  isFeeBump?: boolean;
   memo: {
     type: string;
     value: string | null;
@@ -209,6 +219,8 @@ export function decodeTransactionXDR(xdr: string, networkPassphrase: string): De
     sourceAccount: innerTx.source,
     sequenceNumber: innerTx.sequence,
     fee: innerTx.fee,
+    hash: tx.hash().toString('hex'),
+    isFeeBump: tx instanceof FeeBumpTransaction,
     memo: {
       type: innerTx.memo ? innerTx.memo.type : 'none',
       value: memoValue,

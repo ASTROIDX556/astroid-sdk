@@ -20,19 +20,34 @@
 
 import type {
   Budget,
+  BudgetAlert,
   BudgetAllocationState,
   BudgetAllocationStatus,
   BudgetAllocationThresholds,
   BudgetHistoryEntry,
   BudgetHistoryQueryParams,
   BudgetMetrics,
+  BudgetSimulationRequest,
+  BudgetUtilization,
+  BudgetCheckResult,
   ConsumeBudgetInput,
+  CreateBudgetAlertInput,
   CreateBudgetInput,
   DecimalString,
+  ListBudgetAlertsParams,
   PaginatedResponse,
   PaginationParams,
+  UpdateBudgetAlertInput,
   UpdateBudgetInput,
 } from '@astroid/types';
+import { ValidationError } from '@astroid/errors';
+import {
+  createBudgetAlert,
+  listBudgetAlerts,
+  getBudgetAlert,
+  updateBudgetAlert,
+  deleteBudgetAlert,
+} from './alerts.js';
 
 /* -------------------------------------------------------------------------- */
 /* Transport                                                                   */
@@ -66,6 +81,12 @@ export interface ListBudgetsParams extends PaginationParams {
   parentBudgetId?: string;
   /** Only enabled / disabled budgets. */
   enabled?: boolean;
+}
+
+/** One budget and the fields to change in a batch update. */
+export interface BatchBudgetUpdateInput {
+  budgetId: string;
+  input: UpdateBudgetInput;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -200,6 +221,15 @@ export function deriveAllocationStatus(
 const BASE_PATH = '/v1/budgets';
 
 /**
+ * Options for {@link BudgetClient.getBudgetUtilization}: an optional abort
+ * signal plus custom utilization threshold boundaries.
+ */
+export interface BudgetUtilizationOptions extends BudgetAllocationThresholds {
+  /** Optional abort signal forwarded to the transport. */
+  signal?: AbortSignal;
+}
+
+/**
  * Typed wrapper over the Astroid budget endpoints.
  *
  * @example
@@ -219,26 +249,197 @@ export class BudgetClient {
     this.http = http;
   }
 
-  /** Create a new budget. */
+  /**
+   * Create a new budget.
+   *
+   * Budget amounts are decimal strings (e.g. `"5000.00"`) so values never
+   * round-trip through IEEE-754 floats and lose precision.
+   *
+   * @param input The budget to create (name + decimal-string `limitAmount`).
+   * @returns The created {@link Budget}.
+   *
+   * @example
+   * ```ts
+   * import { Astroid } from '@astroid/client';
+   * import { BudgetClient } from '@astroid/budget';
+   *
+   * const budgets = new BudgetClient(new Astroid({ apiKey }) as any);
+   * const budget = await budgets.create({ name: 'Q3 Ops', limitAmount: '5000.00' });
+   * ```
+   */
   async create(input: CreateBudgetInput): Promise<Budget> {
     return this.http.post<Budget>(BASE_PATH, input);
   }
 
-  /** Retrieve a single budget by id. */
+  /**
+   * Create a new budget (`createBudget` spelling).
+   *
+   * Identical to {@link BudgetClient.create}; provided so callers using the
+   * `createBudget` / `getBudget` / `listBudgets` / `updateBudget` /
+   * `getBudgetUtilization` / `resetBudget` naming from the API reference
+   * don't need to guess the shorthand.
+   *
+   * @param input The budget to create (name + decimal-string `limitAmount`).
+   * @returns The created {@link Budget}.
+   *
+   * @example
+   * ```ts
+   * const budget = await budgets.createBudget({ name: 'Q3 Ops', limitAmount: '5000.00' });
+   * ```
+   */
+  async createBudget(input: CreateBudgetInput): Promise<Budget> {
+    return this.create(input);
+  }
+
+  /**
+   * Retrieve a single budget by id.
+   *
+   * @param budgetId The budget id.
+   * @returns The {@link Budget}.
+   *
+   * @example
+   * ```ts
+   * const budget = await budgets.get('bud_1');
+   * ```
+   */
   async get(budgetId: string, options?: { signal?: AbortSignal }): Promise<Budget> {
     return this.http.get<Budget>(`${BASE_PATH}/${encodeURIComponent(budgetId)}`, {
       ...(options?.signal ? { signal: options.signal } : {}),
     });
   }
 
-  /** List budgets with optional filters and pagination. */
+  /**
+   * Alias of {@link get} that matches the SDK's `getBudget` resource naming.
+   *
+   * @example
+   * ```ts
+   * const budget = await budgets.getBudget('bud_1');
+   * ```
+   */
+  async getBudget(budgetId: string, options?: { signal?: AbortSignal }): Promise<Budget> {
+    return this.get(budgetId, options);
+  }
+
+  /**
+   * List budgets with optional filters and pagination.
+   *
+   * @param params Optional `agentId` / `parentBudgetId` / `enabled` filters plus pagination.
+   * @returns A paginated list of {@link Budget} records.
+   *
+   * @example
+   * ```ts
+   * const page = await budgets.list({ agentId: 'agt_1', limit: 25 });
+   * for (const b of page.data) console.log(b.id, b.limitAmount);
+   * ```
+   */
   async list(params?: ListBudgetsParams): Promise<PaginatedResponse<Budget>> {
     return this.http.get<PaginatedResponse<Budget>>(BASE_PATH, { query: toBudgetQuery(params) });
   }
 
-  /** Update an existing budget. */
+  /**
+   * Alias of {@link list} that matches the SDK's `listBudgets` resource naming.
+   *
+   * @example
+   * ```ts
+   * const page = await budgets.listBudgets({ agentId: 'agt_1', limit: 25 });
+   * ```
+   */
+  async listBudgets(params?: ListBudgetsParams): Promise<PaginatedResponse<Budget>> {
+    return this.list(params);
+  }
+
+  /**
+   * Simulate a prospective spend against a budget before executing it.
+   *
+   * The server evaluates the request against the budget's limit, active
+   * window and policy rules, returning whether the spend is allowed and the
+   * resulting headroom.
+   *
+   * @example
+   * ```ts
+   * const result = await budgets.simulateBudgetCheck('bud_1', {
+   *   asset: 'USDC',
+   *   amount: '250',
+   * });
+   * if (!result.allowed) {
+   *   throw new Error(result.explanation);
+   * }
+   * ```
+   */
+  async simulateBudgetCheck(
+    budgetId: string,
+    request: BudgetSimulationRequest,
+  ): Promise<BudgetCheckResult> {
+    return this.http.post<BudgetCheckResult>(
+      `${BASE_PATH}/${encodeURIComponent(budgetId)}/simulate`,
+      request,
+    );
+  }
+
+  /**
+   * Update an existing budget.
+   *
+   * @param budgetId The budget to update.
+   * @param input The mutable budget fields (limit, period, rollover, enabled).
+   * @returns The updated {@link Budget}.
+   *
+   * @example
+   * ```ts
+   * const updated = await budgets.update('bud_1', { limitAmount: '7500.00' });
+   * ```
+   */
   async update(budgetId: string, input: UpdateBudgetInput): Promise<Budget> {
     return this.http.patch<Budget>(`${BASE_PATH}/${encodeURIComponent(budgetId)}`, input);
+  }
+
+  /**
+   * Alias of {@link update} that matches the SDK's `updateBudget` resource
+   * naming.
+   *
+   * Spending limits and other monetary fields are sent as **decimal strings**
+   * (e.g. `"7500.00"`) so amounts never round-trip through IEEE-754 floats and
+   * lose precision.
+   *
+   * @param budgetId The budget to update.
+   * @param input    The mutable budget fields (limit, period, rollover, enabled).
+   * @returns        The updated {@link Budget}.
+   *
+   * @example
+   * ```ts
+   * const updated = await budgets.updateBudget('bud_1', { limitAmount: '7500.00' });
+   * ```
+   */
+  async updateBudget(budgetId: string, input: UpdateBudgetInput): Promise<Budget> {
+    return this.update(budgetId, input);
+  }
+
+  /** Update multiple budgets in one request. An empty batch is a no-op. */
+  async batchUpdateBudgets(updates: readonly BatchBudgetUpdateInput[]): Promise<Budget[]> {
+    if (!Array.isArray(updates)) {
+      throw new ValidationError('updates must be an array.', {
+        code: 'INVALID_BUDGET_BATCH',
+      });
+    }
+    if (updates.length === 0) return [];
+
+    const budgetIds = new Set<string>();
+    for (const update of updates) {
+      const budgetId = update?.budgetId;
+      if (typeof budgetId !== 'string' || budgetId.trim() === '') {
+        throw new ValidationError('Each budget update requires a non-empty budgetId.', {
+          code: 'INVALID_BUDGET_BATCH',
+        });
+      }
+      if (budgetIds.has(budgetId)) {
+        throw new ValidationError(`Budget "${budgetId}" appears more than once in the batch.`, {
+          code: 'INVALID_BUDGET_BATCH',
+          details: { budgetId },
+        });
+      }
+      budgetIds.add(budgetId);
+    }
+
+    return this.http.patch<Budget[]>(`${BASE_PATH}/batch`, { updates });
   }
 
   /** Delete a budget. */
@@ -246,9 +447,56 @@ export class BudgetClient {
     await this.http.delete<void>(`${BASE_PATH}/${encodeURIComponent(budgetId)}`);
   }
 
-  /** Record consumption against a budget, returning the updated budget. */
+  /**
+   * Record consumption against a budget, returning the updated budget.
+   *
+   * The consumed `amount` is a decimal string (e.g. `"25.00"`).
+   *
+   * @param budgetId The budget to draw from.
+   * @param input The decimal-string `amount` plus optional `transactionId` / `reason`.
+   * @returns The updated {@link Budget}.
+   *
+   * @example
+   * ```ts
+   * const updated = await budgets.consume('bud_1', { amount: '25.00' });
+   * ```
+   */
   async consume(budgetId: string, input: ConsumeBudgetInput): Promise<Budget> {
     return this.http.post<Budget>(`${BASE_PATH}/${encodeURIComponent(budgetId)}/consume`, input);
+  }
+
+  /**
+   * Reset a budget's consumption for the current period back to zero.
+   *
+   * @param budgetId The budget to reset.
+   * @returns The reset {@link Budget} (spent back to `"0"`).
+   *
+   * @example
+   * ```ts
+   * const reset = await budgets.reset('bud_1');
+   * ```
+   */
+  async reset(budgetId: string): Promise<Budget> {
+    return this.http.post<Budget>(`${BASE_PATH}/${encodeURIComponent(budgetId)}/reset`);
+  }
+
+  /**
+   * Reset a budget's consumption (`resetBudget` spelling).
+   *
+   * Identical to {@link BudgetClient.reset}; provided to match the
+   * `createBudget` / `getBudget` / `listBudgets` / `updateBudget` /
+   * `getBudgetUtilization` / `resetBudget` resource naming.
+   *
+   * @param budgetId The budget to reset.
+   * @returns The reset {@link Budget}.
+   *
+   * @example
+   * ```ts
+   * const reset = await budgets.resetBudget('bud_1');
+   * ```
+   */
+  async resetBudget(budgetId: string): Promise<Budget> {
+    return this.reset(budgetId);
   }
 
   /**
@@ -256,6 +504,15 @@ export class BudgetClient {
    *
    * Supports keyset (`cursor`) or offset (`page`) pagination plus `from` / `to`
    * date filters, a `transactionId` filter and `minAmount` / `maxAmount` bounds.
+   *
+   * @param budgetId The budget whose history to page.
+   * @param params Optional pagination and amount/date filters.
+   * @returns A paginated list of {@link BudgetHistoryEntry} records.
+   *
+   * @example
+   * ```ts
+   * const page = await budgets.history('bud_1', { limit: 25 });
+   * ```
    */
   async history(
     budgetId: string,
@@ -267,17 +524,38 @@ export class BudgetClient {
     );
   }
 
-  /** Fetch the server-computed metrics for a budget. */
+  /**
+   * Fetch the server-computed metrics for a budget.
+   *
+   * @param budgetId The budget to inspect.
+   * @returns The {@link BudgetMetrics} snapshot (utilization, spent, remaining).
+   *
+   * @example
+   * ```ts
+   * const metrics = await budgets.metrics('bud_1');
+   * console.log(metrics.utilization, metrics.remaining);
+   * ```
+   */
   async metrics(budgetId: string): Promise<BudgetMetrics> {
     return this.http.get<BudgetMetrics>(`${BASE_PATH}/${encodeURIComponent(budgetId)}/metrics`);
   }
 
   /**
-   * Check how much of a budget's allocation is consumed.
+   * Check how much of a budget's allocation is consumed locally.
    *
    * Fetches the budget and derives a {@link BudgetAllocationStatus} locally. Pass
    * `prospectiveSpend` to test whether an upcoming charge would exceed the
    * remaining allowance.
+   *
+   * @param budgetId The budget to inspect.
+   * @param options Threshold overrides and an optional prospective spend.
+   * @returns The derived {@link BudgetAllocationStatus}.
+   *
+   * @example
+   * ```ts
+   * const status = await budgets.allocationStatus('bud_1', { prospectiveSpend: '100.00' });
+   * if (status.wouldExceed) throw new Error('over budget');
+   * ```
    */
   async allocationStatus(
     budgetId: string,
@@ -285,5 +563,138 @@ export class BudgetClient {
   ): Promise<BudgetAllocationStatus> {
     const budget = await this.get(budgetId);
     return deriveAllocationStatus(budget, options);
+  }
+
+  /**
+   * Fetch the current utilization snapshot for a budget.
+   *
+   * Queries the server-side utilization endpoint, which evaluates the budget's
+   * active window and returns the limit, amount spent, headroom and utilization
+   * percentage as decimal-safe values (see {@link BudgetUtilization}).
+   *
+   * Pass `warnAt` / `criticalAt` to have the client re-bucket the returned
+   * {@link BudgetUtilization.state} from its `percent` against custom threshold
+   * boundaries instead of the server defaults (`80` / `95`). This is the same
+   * classification used by {@link classifyAllocation}, so agents can enforce
+   * their own velocity limits without a second round-trip.
+   *
+   * @param budgetId The budget to inspect.
+   * @param options  Optional abort signal and threshold overrides.
+   * @returns        The current {@link BudgetUtilization} snapshot.
+   *
+   * @example
+   * ```ts
+   * const u = await budgets.getBudgetUtilization('bud_1', { warnAt: 70 });
+   * if (u.state === 'critical' || u.state === 'exhausted') pauseAgent();
+   * ```
+   */
+  async getBudgetUtilization(
+    budgetId: string,
+    options: BudgetUtilizationOptions = {},
+  ): Promise<BudgetUtilization> {
+    const { signal, ...thresholds } = options;
+    const utilization = await this.http.get<BudgetUtilization>(
+      `${BASE_PATH}/${encodeURIComponent(budgetId)}/utilization`,
+      signal ? { signal } : {},
+    );
+
+    if (thresholds.warnAt !== undefined || thresholds.criticalAt !== undefined) {
+      return { ...utilization, state: classifyAllocation(utilization.percent, thresholds) };
+    }
+
+    return utilization;
+  }
+
+  /**
+   * Create a budget threshold alert subscription.
+   *
+   * @param budgetId The budget to attach the alert to.
+   * @param input    Threshold percentage, notification channel, and destination.
+   */
+  async createAlert(budgetId: string, input: CreateBudgetAlertInput): Promise<BudgetAlert> {
+    return createBudgetAlert(this.http, budgetId, input);
+  }
+
+  /** Alias of {@link createAlert} for threshold-explicit naming. */
+  async createThresholdAlert(
+    budgetId: string,
+    input: CreateBudgetAlertInput,
+  ): Promise<BudgetAlert> {
+    return this.createAlert(budgetId, input);
+  }
+
+  /**
+   * List threshold alerts configured on a budget.
+   *
+   * @param budgetId The budget whose alerts to list.
+   * @param params   Optional status and channel filters and pagination.
+   */
+  async listAlerts(
+    budgetId: string,
+    params?: ListBudgetAlertsParams,
+  ): Promise<PaginatedResponse<BudgetAlert>> {
+    return listBudgetAlerts(this.http, budgetId, params);
+  }
+
+  /** Alias of {@link listAlerts} for threshold-explicit naming. */
+  async listThresholdAlerts(
+    budgetId: string,
+    params?: ListBudgetAlertsParams,
+  ): Promise<PaginatedResponse<BudgetAlert>> {
+    return this.listAlerts(budgetId, params);
+  }
+
+  /**
+   * Retrieve a single budget alert by id.
+   *
+   * @param budgetId The budget id.
+   * @param alertId  The alert id.
+   */
+  async getAlert(budgetId: string, alertId: string): Promise<BudgetAlert> {
+    return getBudgetAlert(this.http, budgetId, alertId);
+  }
+
+  /** Alias of {@link getAlert} for threshold-explicit naming. */
+  async getThresholdAlert(budgetId: string, alertId: string): Promise<BudgetAlert> {
+    return this.getAlert(budgetId, alertId);
+  }
+
+  /**
+   * Update a budget threshold alert subscription.
+   *
+   * @param budgetId The budget id.
+   * @param alertId  The alert id.
+   * @param input    Updated threshold percent, channel, destination, or status.
+   */
+  async updateAlert(
+    budgetId: string,
+    alertId: string,
+    input: UpdateBudgetAlertInput,
+  ): Promise<BudgetAlert> {
+    return updateBudgetAlert(this.http, budgetId, alertId, input);
+  }
+
+  /** Alias of {@link updateAlert} for threshold-explicit naming. */
+  async updateThresholdAlert(
+    budgetId: string,
+    alertId: string,
+    input: UpdateBudgetAlertInput,
+  ): Promise<BudgetAlert> {
+    return this.updateAlert(budgetId, alertId, input);
+  }
+
+  /**
+   * Delete a budget threshold alert subscription.
+   *
+   * @param budgetId The budget id.
+   * @param alertId  The alert id to delete.
+   */
+  async deleteAlert(budgetId: string, alertId: string): Promise<void> {
+    return deleteBudgetAlert(this.http, budgetId, alertId);
+  }
+
+  /** Alias of {@link deleteAlert} for threshold-explicit naming. */
+  async deleteThresholdAlert(budgetId: string, alertId: string): Promise<void> {
+    return this.deleteAlert(budgetId, alertId);
   }
 }
