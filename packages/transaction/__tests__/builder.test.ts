@@ -1,9 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
-import { Account, Keypair, Networks, Operation, TransactionBuilder } from '@stellar/stellar-base';
+import {
+  Account,
+  FeeBumpTransaction,
+  Keypair,
+  Networks,
+  Operation,
+  TransactionBuilder,
+} from '@stellar/stellar-base';
 import { ValidationError } from '@astroid/errors';
 
 import {
+  buildAgentTransferTransaction,
   buildPaymentTransaction,
   buildTransaction,
   encodeTransaction,
@@ -117,6 +125,101 @@ describe('buildPaymentTransaction', () => {
       expect(err).toBeInstanceOf(ValidationError);
       expect((err as ValidationError).code).toBe('INVALID_NETWORK_PASSPHRASE');
     }
+  });
+});
+
+describe('buildAgentTransferTransaction', () => {
+  it('builds a payment with the account sequence and serializes to XDR', () => {
+    const source = Keypair.random();
+    const destination = Keypair.random().publicKey();
+    const tx = buildAgentTransferTransaction({
+      source: new Account(source.publicKey(), '41'),
+      networkPassphrase: Networks.TESTNET,
+      destination,
+      asset: 'XLM',
+      amount: '2.5',
+    });
+
+    const decoded = TransactionBuilder.fromXDR(encodeTransaction(tx), Networks.TESTNET);
+    expect(decoded.source).toBe(source.publicKey());
+    expect(decoded.sequence).toBe('42');
+    expect(decoded.operations[0]!.type).toBe('payment');
+  });
+
+  it('wraps the payment in a fee-bump envelope when a sponsor is provided', () => {
+    const sponsor = Keypair.random();
+    const tx = buildAgentTransferTransaction({
+      source: new Account(Keypair.random().publicKey(), '1'),
+      networkPassphrase: Networks.TESTNET,
+      destination: Keypair.random().publicKey(),
+      asset: 'XLM',
+      amount: '1',
+      feeBump: {
+        feeSource: { publicKey: sponsor.publicKey(), secretKey: sponsor.secret() },
+      },
+    });
+
+    expect(tx).toBeInstanceOf(FeeBumpTransaction);
+    const decoded = TransactionBuilder.fromXDR(encodeTransaction(tx), Networks.TESTNET);
+    expect(decoded).toBeInstanceOf(FeeBumpTransaction);
+  });
+
+  it('validates invalid transfer parameters through the shared payment builder', () => {
+    expect(() =>
+      buildAgentTransferTransaction({
+        source: new Account(Keypair.random().publicKey(), '1'),
+        networkPassphrase: Networks.TESTNET,
+        destination: 'invalid',
+        asset: 'XLM',
+        amount: '1',
+      }),
+    ).toThrowError(ValidationError);
+  });
+});
+
+describe('buildPaymentTransaction — memo types', () => {
+  const HEX_32 = 'ab'.repeat(32);
+
+  function buildWithMemo(memo: Record<string, unknown>) {
+    const account = new Account(Keypair.random().publicKey(), '1');
+    return buildPaymentTransaction({
+      source: account,
+      networkPassphrase: Networks.TESTNET,
+      destination: Keypair.random().publicKey(),
+      asset: 'XLM',
+      amount: '1',
+      ...memo,
+    });
+  }
+
+  it('attaches a hash memo', () => {
+    const tx = buildWithMemo({ memoHash: HEX_32 });
+    const decoded = TransactionBuilder.fromXDR(tx.toXDR(), Networks.TESTNET);
+    expect(decoded.memo.type).toBe('hash');
+    expect(Buffer.from(decoded.memo.value as Buffer).toString('hex')).toBe(HEX_32);
+  });
+
+  it('attaches a return memo', () => {
+    const tx = buildWithMemo({ memoReturn: HEX_32 });
+    const decoded = TransactionBuilder.fromXDR(tx.toXDR(), Networks.TESTNET);
+    expect(decoded.memo.type).toBe('return');
+  });
+
+  it('attaches an id memo', () => {
+    const tx = buildWithMemo({ memoId: 42 });
+    const decoded = TransactionBuilder.fromXDR(tx.toXDR(), Networks.TESTNET);
+    expect(decoded.memo.type).toBe('id');
+    expect(String(decoded.memo.value)).toBe('42');
+  });
+
+  it('rejects a malformed hash memo', () => {
+    expect(() => buildWithMemo({ memoHash: 'not-hex' })).toThrowError(ValidationError);
+  });
+
+  it('rejects more than one memo option', () => {
+    expect(() => buildWithMemo({ memoText: 'hi', memoHash: HEX_32 })).toThrowError(
+      ValidationError,
+    );
   });
 });
 

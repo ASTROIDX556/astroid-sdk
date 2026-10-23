@@ -26,12 +26,33 @@ import type {
   WalletStatus,
   WalletType,
 } from './enums.js';
+import type { PolicyAllowedHours } from './policy.js';
 
 /** ISO-8601 timestamp string (UTC). */
 export type IsoDateTime = string;
 
 /** A decimal monetary amount serialised as a string to preserve precision. */
 export type DecimalString = string;
+
+/**
+ * Stellar asset code, such as `XLM` or `USDC`.
+ *
+ * @example
+ * ```ts
+ * const assetCode: StellarAssetCode = 'USDC';
+ * ```
+ */
+export type StellarAssetCode = string;
+
+/**
+ * Stellar account public key, conventionally beginning with `G`.
+ *
+ * @example
+ * ```ts
+ * const issuer: StellarPublicKey = 'G...'; // Replace with a valid public key.
+ * ```
+ */
+export type StellarPublicKey = string;
 
 /** 1. Organization — the multi-tenant root. */
 export interface Organization {
@@ -85,7 +106,7 @@ export interface Wallet {
   id: string;
   organizationId: string;
   agentId?: string | null;
-  stellarAddress: string;
+  stellarAddress: StellarPublicKey;
   label?: string | null;
   walletType: WalletType;
   network: StellarNetwork;
@@ -97,16 +118,16 @@ export interface Wallet {
 
 /** A single asset balance on a wallet. */
 export interface AssetBalance {
-  asset: string;
+  asset: StellarAssetCode;
   balance: DecimalString;
   /** Optional issuer for non-native Stellar assets. */
-  issuer?: string | null;
+  issuer?: StellarPublicKey | null;
 }
 
 /** The full balance snapshot for a wallet. */
 export interface WalletBalance {
   walletId: string;
-  stellarAddress: string;
+  stellarAddress: StellarPublicKey;
   network: StellarNetwork;
   balances: AssetBalance[];
   updatedAt: IsoDateTime;
@@ -146,6 +167,18 @@ export interface PolicyConfiguration {
   weeklyLimit?: number;
   monthlyLimit?: number;
   timeWindow?: { start: string; end: string; timezone?: string };
+  /**
+   * Time-of-day window during which the policy permits an action. Unlike
+   * {@link PolicyConfiguration.timeWindow} (an absolute date range), this
+   * restricts the hour of the day and is evaluated locally by
+   * `@astroid/policy`'s `evaluatePolicy`.
+   */
+  allowedHours?: PolicyAllowedHours;
+  /**
+   * Minimum total signing weight required before the action may proceed.
+   * A signer without an explicit weight counts as `1`.
+   */
+  requiredSignatures?: number;
   [key: string]: unknown;
 }
 

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   AuthenticationError,
   AuthorizationError,
+  ForbiddenError,
   ValidationError,
   NotFoundError,
   ConflictError,
@@ -9,6 +10,7 @@ import {
   BudgetExceededError,
   ApprovalRequiredError,
   RateLimitError,
+  InternalServerError,
   ServerError,
   AstroidError,
 } from '@astroid/errors';
@@ -83,10 +85,11 @@ describe('parseErrorResponse', () => {
     expect(error).toBeInstanceOf(AuthenticationError);
   });
 
-  it('maps FORBIDDEN to AuthorizationError', async () => {
+  it('maps FORBIDDEN to ForbiddenError and AuthorizationError', async () => {
     const response = makeResponse({ error: { code: 'FORBIDDEN', message: 'Not allowed' } }, 403);
 
     const { error } = await parseErrorResponse(response);
+    expect(error).toBeInstanceOf(ForbiddenError);
     expect(error).toBeInstanceOf(AuthorizationError);
   });
 
@@ -130,13 +133,26 @@ describe('parseErrorResponse', () => {
     expect(error).toBeInstanceOf(RateLimitError);
   });
 
-  it('maps INTERNAL_ERROR to ServerError', async () => {
+  it('extracts Retry-After header on RATE_LIMITED response', async () => {
+    const response = makeResponse(
+      { error: { code: 'RATE_LIMITED', message: 'Rate limit exceeded' } },
+      429,
+      { 'retry-after': '30' },
+    );
+
+    const { error } = await parseErrorResponse(response);
+    expect(error).toBeInstanceOf(RateLimitError);
+    expect((error as RateLimitError).retryAfter).toBe(30);
+  });
+
+  it('maps INTERNAL_ERROR to InternalServerError and ServerError', async () => {
     const response = makeResponse(
       { error: { code: 'INTERNAL_ERROR', message: 'Something broke' } },
       500,
     );
 
     const { error } = await parseErrorResponse(response);
+    expect(error).toBeInstanceOf(InternalServerError);
     expect(error).toBeInstanceOf(ServerError);
   });
 

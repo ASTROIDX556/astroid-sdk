@@ -36,6 +36,12 @@ export interface RequestOptions {
    * correlation middleware generates a UUID v4 automatically.
    */
   correlationId?: string;
+  /**
+   * Optional caller-supplied request ID, sent as the `X-Request-ID` header.
+   * When omitted, falls back to {@link correlationId} and then to a generated
+   * UUID v4 (issue #255).
+   */
+  requestId?: string;
 }
 
 /** A fully-prepared request as seen by middleware and the transport. */

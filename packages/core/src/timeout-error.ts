@@ -1,12 +1,9 @@
-/** Error raised when an HTTP request exceeds its configured timeout. */
-export class AstroidTimeoutError extends Error {
-  readonly code = 'REQUEST_TIMEOUT';
-  readonly timeoutMs: number;
-  readonly isRetryable = true;
+/**
+ * Error raised when a request exceeds its configured timeout.
+ *
+ * Defined in `@astroid/errors` as a subclass of `NetworkError`, so it is part
+ * of the core error hierarchy. This module re-exports it so the previously
+ * published import path from `@astroid/core` keeps working.
+ */
 
-  constructor(timeoutMs: number) {
-    super(`Astroid request timed out after ${timeoutMs}ms.`);
-    this.name = 'AstroidTimeoutError';
-    this.timeoutMs = timeoutMs;
-  }
-}
+export { AstroidTimeoutError } from '@astroid/errors';

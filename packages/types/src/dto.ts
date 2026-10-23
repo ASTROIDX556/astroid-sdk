@@ -17,7 +17,15 @@ import type {
   TransactionStatus,
   WalletType,
 } from './enums.js';
-import type { Organization, PolicyConfiguration, Session, User } from './entities.js';
+import type {
+  DecimalString,
+  Organization,
+  PolicyConfiguration,
+  Session,
+  StellarAssetCode,
+  StellarPublicKey,
+  User,
+} from './entities.js';
 
 /* -------------------------------------------------------------------------- */
 /* Wallet                                                                      */
@@ -31,7 +39,7 @@ export interface CreateWalletInput {
 }
 
 export interface ImportWalletInput {
-  stellarAddress: string;
+  stellarAddress: StellarPublicKey;
   /** Secret key for self-custody import. Never logged by the SDK. */
   secretKey?: string;
   agentId?: string;
@@ -44,6 +52,40 @@ export interface UpdateWalletInput {
   label?: string;
   agentId?: string | null;
   status?: 'ACTIVE' | 'FROZEN' | 'PAUSED' | 'ARCHIVED';
+}
+
+/**
+ * Optional asset filters for a wallet balance snapshot.
+ *
+ * @example
+ * ```ts
+ * const query: WalletBalanceQuery = { assetCode: 'USDC', issuer: stellarIssuer };
+ * const balance = await astroid.wallets.getWalletBalances('wlt_123', query);
+ * ```
+ */
+export interface WalletBalanceQuery {
+  assetCode?: StellarAssetCode;
+  issuer?: StellarPublicKey;
+}
+
+/**
+ * Asset and exact decimal amount to submit when funding a wallet. Keep `amount`
+ * as a string so the value is not rounded through floating-point arithmetic.
+ *
+ * @example
+ * ```ts
+ * const input: FundWalletInput = {
+ *   assetCode: 'USDC',
+ *   issuer: stellarIssuer,
+ *   amount: '25.0000001',
+ * };
+ * await astroid.wallets.fundWallet('wlt_123', input);
+ * ```
+ */
+export interface FundWalletInput {
+  assetCode: StellarAssetCode;
+  amount: DecimalString;
+  issuer?: StellarPublicKey;
 }
 
 export interface TransferInput {
@@ -121,6 +163,19 @@ export interface SimulatePolicyInput {
 /* Budget                                                                       */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Payload for `budgets.createBudget` / `budgets.create`.
+ *
+ * Monetary amounts should be decimal strings (e.g. `"5000.00"`) so values
+ * never round-trip through IEEE-754 floats; numbers are accepted for
+ * convenience and serialized as decimals.
+ *
+ * @example
+ * ```ts
+ * const input: CreateBudgetInput = { name: 'Q3 Ops', limitAmount: '5000.00' };
+ * const budget = await budgets.createBudget(input);
+ * ```
+ */
 export interface CreateBudgetInput {
   name: string;
   limitAmount: number | string;
@@ -132,6 +187,14 @@ export interface CreateBudgetInput {
   enabled?: boolean;
 }
 
+/**
+ * Payload for `budgets.updateBudget` / `budgets.update`.
+ *
+ * @example
+ * ```ts
+ * const updated = await budgets.updateBudget('bud_1', { limitAmount: '7500.00' });
+ * ```
+ */
 export interface UpdateBudgetInput {
   name?: string;
   limitAmount?: number | string;
@@ -140,6 +203,14 @@ export interface UpdateBudgetInput {
   enabled?: boolean;
 }
 
+/**
+ * Payload for `budgets.consume`.
+ *
+ * @example
+ * ```ts
+ * const updated = await budgets.consume('bud_1', { amount: '25.00' });
+ * ```
+ */
 export interface ConsumeBudgetInput {
   amount: number | string;
   transactionId?: string;
@@ -253,6 +324,32 @@ export interface AuthTokens {
   refreshToken: string;
   expiresIn: number;
   tokenType: 'Bearer';
+}
+
+/**
+ * Why a session's credentials were invalidated (issue #237):
+ *
+ * - `'refresh_failed'` — the refresh endpoint rejected the refresh token.
+ * - `'refresh_token_expired'` — no usable refresh token was stored.
+ * - `'unauthorized_401'` — a `401 Unauthorized` was escalated to the caller.
+ */
+export type AuthFailureReason =
+  | 'refresh_failed'
+  | 'refresh_token_expired'
+  | 'unauthorized_401';
+
+/**
+ * Emitted when authentication fails and the session's stored credentials are
+ * cleared. Lets applications (and long-lived agents) react to session loss —
+ * e.g. re-authenticate, rotate credentials, or alert an operator.
+ */
+export interface AuthFailureEvent {
+  /** Why the credentials were cleared. */
+  reason: AuthFailureReason;
+  /** The error that caused the invalidation. */
+  error: unknown;
+  /** ISO-8601 timestamp of when the failure was handled. */
+  timestamp: string;
 }
 
 export interface AuthSession {
