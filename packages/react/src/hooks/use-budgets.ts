@@ -20,6 +20,7 @@ export {
   type UseCreateBudgetOptions,
   type UseCreateBudgetResult,
 } from './useCreateBudget.js';
+export { useBudgetAlerts, budgetAlertKeys, type UseBudgetAlertsOptions } from './useBudgetAlerts.js';
 
 /**
  * Fetch a paginated list of budgets.

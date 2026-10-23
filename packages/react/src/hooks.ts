@@ -21,6 +21,7 @@ export {
   useUpdateAgent,
   useUpdateAgentStatus,
   useUpdateAgentMetadata,
+  useArchiveAgent,
   useDeleteAgent,
   type UpdateAgentVariables,
   type UpdateAgentStatusVariables,
@@ -131,6 +132,8 @@ export const queryKeys = {
     list: (params?: object) => ['astroid', 'budgets', 'list', params ?? {}] as const,
     detail: (id: string) => ['astroid', 'budgets', 'detail', id] as const,
     utilization: (id: string) => ['astroid', 'budgets', 'detail', id, 'utilization'] as const,
+    alerts: (budgetId: string, params?: object) =>
+      ['astroid', 'budgets', budgetId, 'alerts', params ?? {}] as const,
   },
   transactions: {
     all: ['astroid', 'transactions'] as const,

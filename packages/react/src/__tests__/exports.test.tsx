@@ -23,4 +23,9 @@ describe('@astroid/react entry point exports', () => {
   it('exports the useAgentList paginated hook as a function (issue #266)', () => {
     expect(typeof reactPackage.useAgentList).toBe('function');
   });
+
+  it('exports useArchiveAgent and useBudgetAlerts hooks as functions', () => {
+    expect(typeof reactPackage.useArchiveAgent).toBe('function');
+    expect(typeof reactPackage.useBudgetAlerts).toBe('function');
+  });
 });
