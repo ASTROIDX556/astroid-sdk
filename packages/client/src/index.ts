@@ -28,8 +28,10 @@ import {
   HttpClient,
   SDK_VERSION,
   type AstroidClientConfig as CoreClientConfig,
+  type AstroidResponse,
   type Middleware,
   type QueryValue,
+  type RequestOptions,
   type RequestOptionsExtras,
   type RetryConfig,
 } from '@astroid/core';
@@ -138,6 +140,15 @@ export interface AstroidClientConfig extends CoreClientConfig {
    * @deprecated Prefer `minTimeout` or `baseDelay`.
    */
   retryDelay?: number;
+  /**
+   * Configurable retry policy for transient errors (429, 502, 503, 504, timeouts).
+   * Alias for `retry`.
+   */
+  retryPolicy?: boolean | Partial<RetryConfig>;
+  /**
+   * Configurable retry policy (alias for `retry`).
+   */
+  retryOptions?: boolean | Partial<RetryConfig>;
   /** Request/response logging hooks with automatic header redaction. */
   logging?: LoggingMiddlewareOptions;
   /**
@@ -181,6 +192,18 @@ export type ClientOptions = AstroidClientConfig;
  * Alias for {@link AstroidClientConfig}.
  */
 export type AstroidClientOptions = AstroidClientConfig;
+
+/**
+ * Configuration options interface for {@link AstroidHttpClient} (issue #374).
+ * Alias for {@link AstroidClientConfig}.
+ */
+export type AstroidHttpClientConfig = AstroidClientConfig;
+
+/**
+ * Options interface for {@link AstroidHttpClient} (issue #374).
+ * Alias for {@link AstroidClientOptions}.
+ */
+export type AstroidHttpClientOptions = AstroidClientConfig;
 
 /** The AI-native namespace: express intents, not low-level transfers. */
 export class AiResource {
@@ -562,10 +585,70 @@ export class Astroid {
   } {
     return extractPaginationCursors(headers);
   }
+  /**
+   * Issue an arbitrary request through the underlying HTTP client, applying
+   * authentication, middlewares, retries with backoff, and error mapping.
+   */
+  request<TData>(options: RequestOptions): Promise<AstroidResponse<TData>> {
+    return this.http.request<TData>(options);
+  }
+
+  /**
+   * Convenience wrapper to issue a GET request through the client with retries.
+   */
+  get<TData>(
+    path: string,
+    options?: Omit<RequestOptions, 'method' | 'path'>,
+  ): Promise<AstroidResponse<TData>> {
+    return this.http.get<TData>(path, options);
+  }
+
+  /**
+   * Convenience wrapper to issue a POST request through the client.
+   */
+  post<TData>(
+    path: string,
+    body?: unknown,
+    options?: Omit<RequestOptions, 'method' | 'path' | 'body'>,
+  ): Promise<AstroidResponse<TData>> {
+    return this.http.post<TData>(path, body, options);
+  }
+
+  /**
+   * Convenience wrapper to issue a PUT request through the client.
+   */
+  put<TData>(
+    path: string,
+    body?: unknown,
+    options?: Omit<RequestOptions, 'method' | 'path' | 'body'>,
+  ): Promise<AstroidResponse<TData>> {
+    return this.http.put<TData>(path, body, options);
+  }
+
+  /**
+   * Convenience wrapper to issue a PATCH request through the client.
+   */
+  patch<TData>(
+    path: string,
+    body?: unknown,
+    options?: Omit<RequestOptions, 'method' | 'path' | 'body'>,
+  ): Promise<AstroidResponse<TData>> {
+    return this.http.patch<TData>(path, body, options);
+  }
+
+  /**
+   * Convenience wrapper to issue a DELETE request through the client.
+   */
+  delete<TData>(
+    path: string,
+    options?: Omit<RequestOptions, 'method' | 'path'>,
+  ): Promise<AstroidResponse<TData>> {
+    return this.http.delete<TData>(path, options);
+  }
 }
 
 export default Astroid;
-export { Astroid as AstroidClient };
+export { Astroid as AstroidClient, Astroid as AstroidHttpClient, HttpClient };
 
 /**
  * Normalise the flat retry shorthand options
@@ -594,6 +677,8 @@ function normalizeConfig(config: AstroidClientConfig): CoreClientConfig {
     retryableStatusCodes,
     jitter,
     retry,
+    retryPolicy,
+    retryOptions,
     ...rest
   } = config;
 
@@ -610,10 +695,24 @@ function normalizeConfig(config: AstroidClientConfig): CoreClientConfig {
   if (resolvedStatuses !== undefined) shorthand.retryableStatuses = resolvedStatuses;
   if (jitter !== undefined) shorthand.jitter = jitter;
 
-  // Nothing to merge, or retries explicitly disabled: leave the config as-is.
-  if (Object.keys(shorthand).length === 0 || retry === false) return config;
+  const rawRetry = retry ?? retryPolicy ?? retryOptions;
 
-  const baseRetry: Partial<RetryConfig> = retry && typeof retry === 'object' ? retry : {};
+  // Nothing to merge, or retries explicitly disabled: leave the config as-is.
+  if (rawRetry === false) {
+    return {
+      ...rest,
+      retry: false,
+    };
+  }
+
+  if (
+    Object.keys(shorthand).length === 0 &&
+    (rawRetry === undefined || typeof rawRetry === 'boolean')
+  ) {
+    return config;
+  }
+
+  const baseRetry: Partial<RetryConfig> = rawRetry && typeof rawRetry === 'object' ? rawRetry : {};
   return {
     ...rest,
     retry: { ...baseRetry, ...shorthand },
