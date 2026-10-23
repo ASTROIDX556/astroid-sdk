@@ -640,3 +640,4 @@ export class PolicyResource extends Resource {
 export const PoliciesResource = PolicyResource;
 
 export * from './builder.js';
+export * from './validation.js';
