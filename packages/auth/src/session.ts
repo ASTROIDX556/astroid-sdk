@@ -7,6 +7,7 @@
 import { AuthenticationError } from '@astroid/errors';
 import type { AuthFailureEvent, AuthFailureReason, AuthTokens } from '@astroid/types';
 import type { HttpClient, Middleware, PreparedRequest } from '@astroid/core';
+import type { TokenStorageAdapter } from './storage.js';
 
 // Re-exported so `@astroid/auth` consumers can name the failure-event types
 // without reaching into `@astroid/types` (issue #237).
@@ -41,6 +42,13 @@ export interface SessionManagerConfig {
   /** Header that carries the API key. Defaults to `'x-api-key'`. */
   apiKeyHeader?: string;
   storage?: TokenStorage;
+  /**
+   * Optional adapter that persists the access token (issue #441). Every
+   * {@link SessionManager.setTokens} writes to it and
+   * {@link SessionManager.clearTokens} clears it; call
+   * {@link SessionManager.restoreFromStorage} to hydrate a session from it.
+   */
+  tokenStorage?: TokenStorageAdapter;
   storageKeyPrefix?: string;
   bufferSeconds?: number;
   onTokenUpdate?: (tokens: AuthTokens) => void | Promise<void>;
@@ -133,6 +141,7 @@ export class SessionManager {
   private refreshToken?: string;
   private apiKey?: string;
   private readonly storage?: TokenStorage;
+  private readonly tokenStorage?: TokenStorageAdapter;
   private readonly prefix: string;
   private readonly bufferSeconds: number;
   private readonly authMode: SessionAuthMode;
@@ -147,6 +156,7 @@ export class SessionManager {
     this.refreshToken = config.refreshToken;
     this.apiKey = config.apiKey;
     this.storage = config.storage;
+    this.tokenStorage = config.tokenStorage;
     this.prefix = config.storageKeyPrefix ?? 'astroid_auth_';
     this.bufferSeconds = config.bufferSeconds ?? 30;
     this.apiKeyHeader = config.apiKeyHeader ?? 'x-api-key';
@@ -283,6 +293,16 @@ export class SessionManager {
       }
     }
 
+    if (this.tokenStorage) {
+      try {
+        await this.tokenStorage.setToken(tokens.accessToken);
+      } catch (err) {
+        // A storage backend must never break token adoption.
+        // eslint-disable-next-line no-console
+        console.warn('Failed to persist access token to token storage:', err);
+      }
+    }
+
     if (this.onTokenUpdate) {
       try {
         const exp = getTokenExpiration(tokens.accessToken);
@@ -317,6 +337,43 @@ export class SessionManager {
         // eslint-disable-next-line no-console
         console.warn('Failed to clear tokens from storage:', err);
       }
+    }
+
+    if (this.tokenStorage) {
+      try {
+        await this.tokenStorage.clearToken();
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn('Failed to clear access token from token storage:', err);
+      }
+    }
+  }
+
+  /**
+   * Hydrate the in-memory access token from the configured
+   * {@link SessionManagerConfig.tokenStorage} adapter.
+   *
+   * Call this once at startup to resume a session persisted by a previous
+   * process. An access token already present in memory is never overwritten,
+   * so explicitly-supplied credentials always win over stale storage.
+   *
+   * @returns The restored access token, or `undefined` when no adapter is
+   *   configured, the adapter is empty, or it holds an access token already in
+   *   memory.
+   */
+  async restoreFromStorage(): Promise<string | undefined> {
+    if (!this.tokenStorage || this.accessToken !== undefined) {
+      return undefined;
+    }
+    try {
+      const token = await this.tokenStorage.getToken();
+      if (!token) return undefined;
+      this.accessToken = token;
+      return token;
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('Failed to read access token from token storage:', err);
+      return undefined;
     }
   }
 
