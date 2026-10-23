@@ -169,6 +169,35 @@ describe('BudgetResource', () => {
     expect(result).toEqual(resultData);
   });
 
+  it('simulateBudget aliases the budget simulation endpoint', async () => {
+    const { client, calls, handler } = makeClient();
+    const resultData: BudgetSimulationResult = {
+      budget,
+      allowed: true,
+      wouldExceed: false,
+      remainingAfter: '975.00',
+      restriction: null,
+      windowStart: '2026-08-01T00:00:00.000Z',
+      windowEnd: '2026-09-01T00:00:00.000Z',
+    };
+    handler.mockResolvedValueOnce(resultData);
+    const resource = new BudgetResource(client);
+
+    const result = await resource.simulateBudget(BUDGET_ID, {
+      asset: 'USDC',
+      amount: '25.00',
+    });
+
+    expect(calls).toEqual([
+      {
+        method: 'post',
+        path: `/budgets/${BUDGET_ID}/simulate`,
+        body: { asset: 'USDC', amount: '25.00' },
+      },
+    ]);
+    expect(result).toEqual(resultData);
+  });
+
   it('simulateBudgetCheck surfaces a limit breach', async () => {
     const { client, handler } = makeClient();
     const breach: BudgetSimulationResult = {

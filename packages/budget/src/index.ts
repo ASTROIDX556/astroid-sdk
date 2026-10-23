@@ -439,6 +439,33 @@ export class BudgetResource extends Resource {
   }
 
   /**
+   * Simulate a prospective budget allocation without committing it.
+   *
+   * This is the concise spelling of {@link BudgetResource.simulateBudgetCheck}
+   * and uses the same typed request and response contract.
+   *
+   * @param budgetId The budget to simulate against.
+   * @param input The prospective draw (`asset` + `amount`).
+   * @param options Extra request options forwarded to the HTTP client.
+   * @returns Whether the draw would be allowed and, if not, why.
+   *
+   * @example
+   * ```ts
+   * const result = await asteroid.budgets.simulateBudget('bud_1', {
+   *   asset: 'USDC',
+   *   amount: '25.00',
+   * });
+   * ```
+   */
+  async simulateBudget(
+    budgetId: string,
+    input: BudgetSimulationInput,
+    options?: RequestOptionsExtras,
+  ): Promise<BudgetSimulationResult> {
+    return this.simulateBudgetCheck(budgetId, input, options);
+  }
+
+  /**
    * Run the full dry-run validation for a proposed spend: the request is
    * checked locally (expired budget, disabled budget, multi-asset conversion
    * and limit overflow) and then — when the local check passes — forwarded to
