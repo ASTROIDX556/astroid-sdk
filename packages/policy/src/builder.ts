@@ -1,32 +1,30 @@
 /**
- * `@astroid/policy` — fluent policy condition builder & validation utilities.
+ * `@astroid/policy` — fluent policy rule builder & validation utilities.
  *
  * Constructing a valid policy JSON document by hand is error-prone:
- * destination whitelists need checksum-shaped Stellar public keys, spend caps
- * must be positive numbers, and time windows must have an ordered start/end.
- * {@link PolicyBuilder} offers a small, chainable, fully-typed API for
+ * destination whitelists need Stellar-shaped public keys, spend caps must be
+ * positive, and approval settings must agree with each other.
+ * {@link PolicyRuleBuilder} offers a small, immutable, fully-typed API for
  * assembling a {@link PolicyDraft} — the exact payload accepted by
  * {@link PolicyResource.create} — while validating every parameter as it is
- * added.
+ * added and again as a whole before submission.
  *
- * The builder is pure and side-effect free (no network, no globals); the only
- * runtime dependency it relies on is the structured {@link ValidationError}
- * from `@astroid/errors`.
+ * Every mutator returns a **new** builder; the instance you call it on is never
+ * changed, so a base rule can be forked safely. Built drafts copy their arrays,
+ * so later builder calls cannot alter an earlier snapshot.
  *
  * @example
  * ```ts
- * import { PolicyBuilder } from '@astroid/policy';
+ * import { PolicyRuleBuilder } from '@astroid/policy';
  *
- * const policy = new PolicyBuilder('Treasury guardrails')
+ * const rule = new PolicyRuleBuilder('Treasury guardrails')
  *   .forAgent('agent_123')
- *   .allowDestinations('GDEST…', 'GOTHER…')
- *   .allowAssets('XLM', 'USDC:G…Issuer')
+ *   .allowDestination('GDEST…', 'GOTHER…')
  *   .maxAmount(500)
- *   .dailyLimit(2_500)
- *   .timeWindow({ start: '2026-01-01T00:00:00.000Z', end: '2026-12-31T23:59:59.000Z' })
+ *   .requireApproval()
  *   .build();
  *
- * await astroid.policies.create(policy);
+ * await astroid.policies.create(rule);
  * ```
  *
  * @module
@@ -34,6 +32,7 @@
 
 import { ValidationError } from '@astroid/errors';
 import type { Policy, PolicyConfiguration, PolicyType } from '@astroid/types';
+import { PolicyCreateInputSchema } from './schemas.js';
 
 /* -------------------------------------------------------------------------- */
 /* Public types                                                                */
@@ -48,6 +47,13 @@ export type PolicyDraft = Omit<
   'id' | 'organizationId' | 'createdAt' | 'updatedAt' | 'deletedAt'
 >;
 
+/**
+ * A draft whose `type` may still be inferred from its configuration. Used by
+ * {@link validatePolicyRule} so an incomplete builder can be validated without
+ * pretending it already has a type.
+ */
+export type PolicyDraftCandidate = Omit<PolicyDraft, 'type'> & { type?: PolicyType };
+
 /** A single problem found while validating a policy rule. */
 export interface PolicyValidationIssue {
   /** Dotted path to the offending field (e.g. `"configuration.allowedRecipients"`). */
@@ -55,6 +61,16 @@ export interface PolicyValidationIssue {
   /** Human-readable explanation. */
   message: string;
 }
+
+/** Result of {@link PolicyRuleBuilder.validate}. */
+export type PolicyRuleValidationResult =
+  | { readonly valid: true; readonly issues: readonly PolicyValidationIssue[] }
+  | { readonly valid: false; readonly issues: readonly PolicyValidationIssue[] };
+
+/** Result of {@link PolicyRuleBuilder.safeBuild}. */
+export type PolicyRuleBuildResult =
+  | { readonly valid: true; readonly rule: PolicyDraft }
+  | { readonly valid: false; readonly issues: readonly PolicyValidationIssue[] };
 
 /** A time window during which the policy applies. */
 export interface PolicyTimeWindow {
@@ -66,7 +82,7 @@ export interface PolicyTimeWindow {
   timezone?: string;
 }
 
-/** Options accepted by the {@link PolicyBuilder} constructor. */
+/** Options accepted by the {@link PolicyRuleBuilder} constructor. */
 export interface PolicyBuilderOptions {
   /** Human-readable policy name. */
   name?: string;
@@ -82,8 +98,11 @@ export interface PolicyBuilderOptions {
   type?: PolicyType;
 }
 
+/** Alias of {@link PolicyBuilderOptions} using the builder's public name. */
+export type PolicyRuleBuilderOptions = PolicyBuilderOptions;
+
 /* -------------------------------------------------------------------------- */
-/* Validation helpers                                                          */
+/* Constants & format checks                                                   */
 /* -------------------------------------------------------------------------- */
 
 /** Stellar public key format: `G` followed by 55 base-32 characters. */
@@ -92,12 +111,16 @@ const STELLAR_PUBLIC_KEY_PATTERN = /^G[A-Z2-7]{55}$/;
 /** Asset code: 1–12 alphanumeric characters (SEP-0011 Alphanumeric4/12). */
 const ASSET_CODE_PATTERN = /^[A-Za-z0-9]{1,12}$/;
 
+/** Policy amounts use Stellar's 7-decimal precision. */
+const MAX_AMOUNT_DECIMALS = 7;
+
 /**
  * Whether `value` is a syntactically valid Stellar public key (`G…`).
  *
  * This is a format check — it verifies the `G` prefix, length and base-32
  * alphabet, but not the CRC16 checksum. Policies are also validated server-side
- * against the full checksum before they are persisted.
+ * against the full checksum before they are persisted. The policy package has
+ * no Stellar SDK dependency, so this stays dependency-free.
  */
 export function isValidPolicyAddress(value: unknown): value is string {
   return typeof value === 'string' && STELLAR_PUBLIC_KEY_PATTERN.test(value.trim());
@@ -121,6 +144,10 @@ export function isValidPolicyAsset(value: unknown): value is string {
   return true;
 }
 
+/* -------------------------------------------------------------------------- */
+/* Parameter guards                                                            */
+/* -------------------------------------------------------------------------- */
+
 /** Throw a {@link ValidationError} when `value` is not a valid Stellar address. */
 function assertAddress(value: string, field: string): void {
   if (!isValidPolicyAddress(value)) {
@@ -141,12 +168,38 @@ function assertAsset(value: string, field: string): void {
   }
 }
 
-/** Throw a {@link ValidationError} when `value` is not a positive finite amount. */
+/** Number of decimal places in a finite number, without floating-point maths. */
+function countDecimalPlaces(value: number): number {
+  const text = value.toString();
+  const [mantissa = '', exponentText] = text.split('e');
+  const fraction = mantissa.split('.')[1] ?? '';
+  if (exponentText === undefined) return fraction.length;
+  return Math.max(0, fraction.length - Number(exponentText));
+}
+
+/** Throw a {@link ValidationError} when `value` is not a positive, 7-decimal amount. */
 function assertPositiveAmount(value: number, field: string): void {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
     throw new ValidationError(`${field} must be a positive finite number.`, {
       code: 'INVALID_POLICY_AMOUNT',
       details: { field },
+    });
+  }
+  const places = countDecimalPlaces(value);
+  if (places > MAX_AMOUNT_DECIMALS) {
+    throw new ValidationError(
+      `${field} must have at most ${MAX_AMOUNT_DECIMALS} decimal places (received ${places}).`,
+      { code: 'INVALID_POLICY_AMOUNT', details: { field } },
+    );
+  }
+}
+
+/** Throw a {@link ValidationError} when a signing threshold is not a positive integer. */
+function assertRequiredSignatures(value: number): void {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+    throw new ValidationError('requiredSignatures must be a positive integer.', {
+      code: 'INVALID_POLICY_APPROVAL',
+      details: { field: 'requiredSignatures' },
     });
   }
 }
@@ -180,7 +233,7 @@ function assertTimeWindow(window: PolicyTimeWindow): void {
 /* -------------------------------------------------------------------------- */
 
 /** Infer the most specific {@link PolicyType} for a configuration. */
-function inferPolicyType(configuration: PolicyConfiguration): PolicyType | 'COMPOSITE' | null {
+function inferPolicyType(configuration: PolicyConfiguration): PolicyType | null {
   const families: PolicyType[] = [];
   if (configuration.maxAmount !== undefined) families.push('MAX_AMOUNT');
   if (configuration.minAmount !== undefined) families.push('MIN_AMOUNT');
@@ -194,46 +247,112 @@ function inferPolicyType(configuration: PolicyConfiguration): PolicyType | 'COMP
   if (configuration.timeWindow !== undefined) families.push('TIME_WINDOW');
 
   if (families.length === 0) return null;
-  if (families.length === 1) return families[0]!;
+  if (families.length === 1) {
+    const [only] = families;
+    if (only !== undefined) return only;
+  }
   return 'COMPOSITE';
 }
 
 /* -------------------------------------------------------------------------- */
-/* Standalone validation utilities                                             */
+/* Validation                                                                  */
 /* -------------------------------------------------------------------------- */
 
+/** Configuration field each single-condition policy type requires. */
+type RequiredConfigurationField =
+  | 'maxAmount'
+  | 'minAmount'
+  | 'allowedAssets'
+  | 'blockedAssets'
+  | 'allowedRecipients'
+  | 'blockedRecipients'
+  | 'dailyLimit'
+  | 'weeklyLimit'
+  | 'monthlyLimit'
+  | 'timeWindow';
+
+const REQUIRED_CONFIGURATION_FIELD: Partial<Record<PolicyType, RequiredConfigurationField>> = {
+  MAX_AMOUNT: 'maxAmount',
+  MIN_AMOUNT: 'minAmount',
+  ALLOWED_ASSETS: 'allowedAssets',
+  BLOCKED_ASSETS: 'blockedAssets',
+  ALLOWED_RECIPIENTS: 'allowedRecipients',
+  BLOCKED_RECIPIENTS: 'blockedRecipients',
+  DAILY_BUDGET: 'dailyLimit',
+  WEEKLY_BUDGET: 'weeklyLimit',
+  MONTHLY_BUDGET: 'monthlyLimit',
+  TIME_WINDOW: 'timeWindow',
+};
+
+/** Build a field issue for a malformed amount, or `null` when it is valid. */
+function amountIssue(value: unknown, field: string): PolicyValidationIssue | null {
+  if (value === undefined) return null;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return { field, message: `${field} must be a positive finite number.` };
+  }
+  const places = countDecimalPlaces(value);
+  if (places > MAX_AMOUNT_DECIMALS) {
+    return {
+      field,
+      message: `${field} must have at most ${MAX_AMOUNT_DECIMALS} decimal places (received ${places}).`,
+    };
+  }
+  return null;
+}
+
 /**
- * Validate a policy draft without throwing. Returns every issue found (empty
- * when the draft is valid) so callers can surface all problems at once.
+ * Validate a policy draft without throwing. Returns every semantic issue found
+ * (empty when the draft is valid) so callers can surface all problems at once.
  *
  * @param draft The policy payload to inspect.
  * @returns     A list of {@link PolicyValidationIssue}s.
  */
-export function validatePolicyRule(draft: PolicyDraft): PolicyValidationIssue[] {
+export function validatePolicyRule(draft: PolicyDraftCandidate): PolicyValidationIssue[] {
   const issues: PolicyValidationIssue[] = [];
-  const config = draft.configuration ?? {};
+  const config: PolicyConfiguration = draft.configuration ?? {};
 
   if (typeof draft.name !== 'string' || draft.name.trim() === '') {
     issues.push({ field: 'name', message: 'Policy name is required.' });
   }
+
   if (!draft.type) {
-    issues.push({ field: 'type', message: 'Policy type is required.' });
+    issues.push({
+      field: 'type',
+      message: 'Policy type is required. Add at least one condition or pass an explicit type.',
+    });
+    if (Object.keys(config).length === 0) {
+      issues.push({
+        field: 'configuration',
+        message: 'At least one rule condition is required.',
+      });
+    }
+  } else {
+    const required = REQUIRED_CONFIGURATION_FIELD[draft.type];
+    if (required !== undefined && config[required] === undefined) {
+      issues.push({
+        field: `configuration.${required}`,
+        message: `Policy type ${draft.type} requires ${required}.`,
+      });
+    }
   }
+
   if (typeof draft.priority !== 'number' || !Number.isFinite(draft.priority)) {
     issues.push({ field: 'priority', message: 'priority must be a finite number.' });
   }
+  if (typeof draft.enabled !== 'boolean') {
+    issues.push({ field: 'enabled', message: 'enabled must be a boolean.' });
+  }
 
-  const checkAmount = (value: unknown, field: string): void => {
-    if (value === undefined) return;
-    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
-      issues.push({ field, message: `${field} must be a positive finite number.` });
-    }
-  };
-  checkAmount(config.maxAmount, 'configuration.maxAmount');
-  checkAmount(config.minAmount, 'configuration.minAmount');
-  checkAmount(config.dailyLimit, 'configuration.dailyLimit');
-  checkAmount(config.weeklyLimit, 'configuration.weeklyLimit');
-  checkAmount(config.monthlyLimit, 'configuration.monthlyLimit');
+  for (const field of [
+    'maxAmount',
+    'minAmount',
+    'dailyLimit',
+    'weeklyLimit',
+    'monthlyLimit',
+  ] as const) {
+    const issue = amountIssue(config[field], `configuration.${field}`);
+    if (issue !== null) issues.push(issue);
+  }
 
   if (
     typeof config.maxAmount === 'number' &&
@@ -246,12 +365,16 @@ export function validatePolicyRule(draft: PolicyDraft): PolicyValidationIssue[] 
     });
   }
 
-  for (const [field, list, validator] of [
+  const listChecks: ReadonlyArray<
+    readonly [string, readonly string[] | undefined, (value: unknown) => value is string]
+  > = [
     ['configuration.allowedRecipients', config.allowedRecipients, isValidPolicyAddress],
     ['configuration.blockedRecipients', config.blockedRecipients, isValidPolicyAddress],
     ['configuration.allowedAssets', config.allowedAssets, isValidPolicyAsset],
     ['configuration.blockedAssets', config.blockedAssets, isValidPolicyAsset],
-  ] as const) {
+  ];
+
+  for (const [field, list, validator] of listChecks) {
     if (list === undefined) continue;
     if (list.length === 0) {
       issues.push({ field, message: `${field} must contain at least one entry.` });
@@ -266,12 +389,14 @@ export function validatePolicyRule(draft: PolicyDraft): PolicyValidationIssue[] 
 
   if (config.timeWindow) {
     const { start, end } = config.timeWindow;
-    if (Number.isNaN(Date.parse(start)) || Number.isNaN(Date.parse(end))) {
+    const startMs = typeof start === 'string' ? Date.parse(start) : Number.NaN;
+    const endMs = typeof end === 'string' ? Date.parse(end) : Number.NaN;
+    if (Number.isNaN(startMs) || Number.isNaN(endMs)) {
       issues.push({
         field: 'configuration.timeWindow',
         message: 'timeWindow start/end must be parseable dates.',
       });
-    } else if (Date.parse(start) >= Date.parse(end)) {
+    } else if (startMs >= endMs) {
       issues.push({
         field: 'configuration.timeWindow',
         message: 'timeWindow.start must be before timeWindow.end.',
@@ -279,6 +404,54 @@ export function validatePolicyRule(draft: PolicyDraft): PolicyValidationIssue[] 
     }
   }
 
+  if (config.requiresApproval !== undefined && typeof config.requiresApproval !== 'boolean') {
+    issues.push({
+      field: 'configuration.requiresApproval',
+      message: 'requiresApproval must be a boolean.',
+    });
+  }
+
+  if (config.requiredSignatures !== undefined) {
+    if (
+      typeof config.requiredSignatures !== 'number' ||
+      !Number.isInteger(config.requiredSignatures) ||
+      config.requiredSignatures <= 0
+    ) {
+      issues.push({
+        field: 'configuration.requiredSignatures',
+        message: 'requiredSignatures must be a positive integer.',
+      });
+    } else if (config.requiresApproval === false) {
+      issues.push({
+        field: 'configuration.requiredSignatures',
+        message: 'requiredSignatures cannot be set when requiresApproval is false.',
+      });
+    }
+  }
+
+  return issues;
+}
+
+/** Map Zod schema failures to the builder's field-issue shape. */
+function schemaIssues(candidate: PolicyDraftCandidate): PolicyValidationIssue[] {
+  if (candidate.type === undefined) return [];
+  const result = PolicyCreateInputSchema.safeParse(candidate);
+  if (result.success) return [];
+  return result.error.issues.map((issue) => ({
+    field: issue.path.length > 0 ? issue.path.map((segment) => String(segment)).join('.') : 'input',
+    message: issue.message,
+  }));
+}
+
+/** Run semantic validation first, then schema validation without duplicate fields. */
+function collectValidationIssues(candidate: PolicyDraftCandidate): PolicyValidationIssue[] {
+  const issues = validatePolicyRule(candidate);
+  const seenFields = new Set(issues.map((issue) => issue.field));
+  for (const issue of schemaIssues(candidate)) {
+    if (seenFields.has(issue.field)) continue;
+    seenFields.add(issue.field);
+    issues.push(issue);
+  }
   return issues;
 }
 
@@ -290,9 +463,9 @@ export function validatePolicyRule(draft: PolicyDraft): PolicyValidationIssue[] 
  * @throws {ValidationError} With code `INVALID_POLICY_RULE` when invalid.
  */
 export function assertValidPolicyRule(draft: PolicyDraft): PolicyDraft {
-  const issues = validatePolicyRule(draft);
+  const issues = collectValidationIssues(draft);
   if (issues.length > 0) {
-    const summary = issues.map((i) => `${i.field}: ${i.message}`).join('; ');
+    const summary = issues.map((issue) => `${issue.field}: ${issue.message}`).join('; ');
     throw new ValidationError(`Policy rule is invalid — ${summary}`, {
       code: 'INVALID_POLICY_RULE',
       details: { issues },
@@ -302,261 +475,470 @@ export function assertValidPolicyRule(draft: PolicyDraft): PolicyDraft {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Immutable state helpers                                                     */
+/* -------------------------------------------------------------------------- */
+
+/** Internal builder snapshot. */
+interface PolicyRuleBuilderState {
+  name: string;
+  description?: string;
+  type?: PolicyType;
+  configuration: PolicyConfiguration;
+  priority: number;
+  enabled: boolean;
+  agentId?: string | null;
+}
+
+/** Deep-copy every array/object the builder owns. */
+function cloneConfiguration(configuration: PolicyConfiguration): PolicyConfiguration {
+  const clone: PolicyConfiguration = { ...configuration };
+  if (configuration.allowedRecipients !== undefined) {
+    clone.allowedRecipients = [...configuration.allowedRecipients];
+  }
+  if (configuration.blockedRecipients !== undefined) {
+    clone.blockedRecipients = [...configuration.blockedRecipients];
+  }
+  if (configuration.allowedAssets !== undefined) {
+    clone.allowedAssets = [...configuration.allowedAssets];
+  }
+  if (configuration.blockedAssets !== undefined) {
+    clone.blockedAssets = [...configuration.blockedAssets];
+  }
+  if (configuration.timeWindow !== undefined) {
+    clone.timeWindow = { ...configuration.timeWindow };
+  }
+  if (configuration.allowedHours !== undefined) {
+    const hours = configuration.allowedHours;
+    clone.allowedHours = {
+      ...hours,
+      ...(hours.days !== undefined ? { days: [...hours.days] } : {}),
+    };
+  }
+  return clone;
+}
+
+/** Copy a builder state so no mutable value is shared. */
+function cloneState(state: PolicyRuleBuilderState): PolicyRuleBuilderState {
+  return { ...state, configuration: cloneConfiguration(state.configuration) };
+}
+
+/** Append values that are not already present, preserving insertion order. */
+function appendUnique(
+  existing: readonly string[] | undefined,
+  additions: readonly string[],
+): string[] {
+  const result = existing === undefined ? [] : [...existing];
+  for (const value of additions) {
+    if (!result.includes(value)) result.push(value);
+  }
+  return result;
+}
+
+/* -------------------------------------------------------------------------- */
 /* Fluent builder                                                              */
 /* -------------------------------------------------------------------------- */
 
 /**
- * Fluent builder for policy rules.
+ * Immutable fluent builder for policy rules.
  *
- * Each `with*`/`allow*`/`deny*` method appends or sets a single configuration
- * field and returns `this`, so conditions can be chained. Invalid inputs throw
- * immediately; {@link PolicyBuilder.build} additionally runs the full
- * {@link assertValidPolicyRule} check and resolves the policy `type` (inferred
- * from the configured conditions, or `COMPOSITE` when more than one family is
- * used).
+ * Each method validates its own parameters, returns a **new** builder, and
+ * leaves the receiver untouched. {@link PolicyRuleBuilder.build} resolves the
+ * policy `type` (explicit, or inferred from the configured conditions, or
+ * `COMPOSITE` when more than one family is used) and runs the full semantic +
+ * schema validation before returning a deeply-copied {@link PolicyDraft}.
+ *
+ * Destination and asset lists deduplicate repeated entries while preserving
+ * first-seen order. Addresses and assets are trimmed; duplicates are compared
+ * after trimming.
  *
  * @example
  * ```ts
- * const rule = PolicyBuilder.create('Payroll destinations')
- *   .allowDestinations(...teamAddresses)
- *   .maxAmount(10_000)
- *   .build();
+ * const base = new PolicyRuleBuilder('Payroll')
+ *   .allowDestination(...teamAddresses)
+ *   .maxAmount(10_000);
+ *
+ * const withApproval = base.requireApproval(true, 2);
+ * const rule = withApproval.build();
+ * // `base` is unchanged and can be forked again.
  * ```
  */
-export class PolicyBuilder {
-  private draft: {
-    name: string;
-    description?: string;
-    type?: PolicyType;
-    configuration: PolicyConfiguration;
-    priority: number;
-    enabled: boolean;
-    agentId?: string | null;
-  };
+export class PolicyRuleBuilder {
+  private state: PolicyRuleBuilderState;
 
+  /**
+   * @param nameOrOptions Policy name, or a {@link PolicyBuilderOptions} object.
+   */
   constructor(nameOrOptions: string | PolicyBuilderOptions = {}) {
     const options: PolicyBuilderOptions =
       typeof nameOrOptions === 'string' ? { name: nameOrOptions } : nameOrOptions;
 
-    this.draft = {
+    this.state = {
       name: options.name ?? '',
       configuration: {},
       priority: options.priority ?? 1,
       enabled: options.enabled ?? true,
     };
-    if (options.description !== undefined) this.draft.description = options.description;
-    if (options.type !== undefined) this.draft.type = options.type;
-    if (options.agentId !== undefined) this.draft.agentId = options.agentId;
+    if (options.description !== undefined) this.state.description = options.description;
+    if (options.type !== undefined) this.state.type = options.type;
+    if (options.agentId !== undefined) this.state.agentId = options.agentId;
   }
 
   /** Start a new builder with the given name. */
-  static create(name: string): PolicyBuilder {
-    return new PolicyBuilder(name);
+  static create(name: string): PolicyRuleBuilder {
+    return new PolicyRuleBuilder(name);
+  }
+
+  /** Return a new builder with a snapshot of `state`. */
+  private static fromState(state: PolicyRuleBuilderState): PolicyRuleBuilder {
+    const builder = new PolicyRuleBuilder(state.name);
+    builder.state = cloneState(state);
+    return builder;
+  }
+
+  /** Fork the current state, cloning the configuration. */
+  private fork(overrides: Partial<PolicyRuleBuilderState>): PolicyRuleBuilder {
+    return PolicyRuleBuilder.fromState({
+      ...this.state,
+      ...overrides,
+      configuration: cloneConfiguration(overrides.configuration ?? this.state.configuration),
+    });
   }
 
   /** Set the policy name. */
-  withName(name: string): this {
+  withName(name: string): PolicyRuleBuilder {
     if (typeof name !== 'string' || name.trim() === '') {
       throw new ValidationError('Policy name is required.', { code: 'INVALID_POLICY_NAME' });
     }
-    this.draft.name = name;
-    return this;
+    return this.fork({ name });
   }
 
   /** Set the optional description. */
-  withDescription(description: string): this {
-    this.draft.description = description;
-    return this;
+  withDescription(description: string): PolicyRuleBuilder {
+    return this.fork({ description });
   }
 
-  /** Scope the policy to a single agent. */
-  forAgent(agentId: string | null): this {
-    this.draft.agentId = agentId;
-    return this;
+  /** Scope the policy to a single agent (`null` clears the scope). */
+  forAgent(agentId: string | null): PolicyRuleBuilder {
+    return this.fork({ agentId });
   }
 
-  /** Set the explicit policy type (overrides inference). */
-  ofType(type: PolicyType): this {
-    this.draft.type = type;
-    return this;
+  /** Set an explicit policy type, overriding inference. */
+  ofType(type: PolicyType): PolicyRuleBuilder {
+    return this.fork({ type });
   }
 
   /** Set the evaluation priority (lower runs first). */
-  withPriority(priority: number): this {
+  withPriority(priority: number): PolicyRuleBuilder {
     if (typeof priority !== 'number' || !Number.isFinite(priority) || priority < 0) {
       throw new ValidationError('priority must be a non-negative finite number.', {
         code: 'INVALID_POLICY_PRIORITY',
       });
     }
-    this.draft.priority = priority;
-    return this;
+    return this.fork({ priority });
   }
 
   /** Enable or disable the policy. */
-  enabled(enabled: boolean): this {
-    this.draft.enabled = Boolean(enabled);
-    return this;
+  enabled(enabled: boolean): PolicyRuleBuilder {
+    return this.fork({ enabled: Boolean(enabled) });
   }
 
   /* ------------------------------ destinations ---------------------------- */
 
-  /** Allow one destination (Stellar `G…` address). */
-  allowDestination(address: string): this {
-    assertAddress(address, 'allowedRecipients');
-    this.draft.configuration.allowedRecipients = [
-      ...(this.draft.configuration.allowedRecipients ?? []),
-      address,
-    ];
-    return this;
+  /**
+   * Allow one or more destinations (Stellar `G…` addresses).
+   *
+   * Accepts several arguments in one call and may be called repeatedly;
+   * duplicates are ignored.
+   */
+  allowDestination(...addresses: string[]): PolicyRuleBuilder {
+    if (addresses.length === 0) return this.fork({});
+    const normalised = addresses.map((address) => {
+      assertAddress(address, 'allowedRecipients');
+      return address.trim();
+    });
+    return this.fork({
+      configuration: {
+        ...this.state.configuration,
+        allowedRecipients: appendUnique(this.state.configuration.allowedRecipients, normalised),
+      },
+    });
   }
 
-  /** Allow several destinations at once. */
-  allowDestinations(...addresses: string[]): this {
-    for (const address of addresses) this.allowDestination(address);
-    return this;
+  /** Allow several destinations at once. Alias of {@link allowDestination}. */
+  allowDestinations(...addresses: string[]): PolicyRuleBuilder {
+    return this.allowDestination(...addresses);
   }
 
-  /** Block one destination (Stellar `G…` address). */
-  denyDestination(address: string): this {
-    assertAddress(address, 'blockedRecipients');
-    this.draft.configuration.blockedRecipients = [
-      ...(this.draft.configuration.blockedRecipients ?? []),
-      address,
-    ];
-    return this;
+  /** Block one or more destinations (Stellar `G…` addresses). */
+  denyDestination(...addresses: string[]): PolicyRuleBuilder {
+    if (addresses.length === 0) return this.fork({});
+    const normalised = addresses.map((address) => {
+      assertAddress(address, 'blockedRecipients');
+      return address.trim();
+    });
+    return this.fork({
+      configuration: {
+        ...this.state.configuration,
+        blockedRecipients: appendUnique(this.state.configuration.blockedRecipients, normalised),
+      },
+    });
   }
 
-  /** Block several destinations at once. */
-  denyDestinations(...addresses: string[]): this {
-    for (const address of addresses) this.denyDestination(address);
-    return this;
+  /** Block several destinations at once. Alias of {@link denyDestination}. */
+  denyDestinations(...addresses: string[]): PolicyRuleBuilder {
+    return this.denyDestination(...addresses);
   }
 
   /* -------------------------------- assets -------------------------------- */
 
-  /** Restrict transfers to a single asset (`XLM`, `USDC`, or `CODE:ISSUER`). */
-  allowAsset(asset: string): this {
-    assertAsset(asset, 'allowedAssets');
-    this.draft.configuration.allowedAssets = [
-      ...(this.draft.configuration.allowedAssets ?? []),
-      asset,
-    ];
-    return this;
+  /**
+   * Restrict transfers to one or more assets (`XLM`, a bare code, or
+   * `CODE:ISSUER`). Duplicates are ignored.
+   */
+  allowAsset(...assets: string[]): PolicyRuleBuilder {
+    if (assets.length === 0) return this.fork({});
+    const normalised = assets.map((asset) => {
+      assertAsset(asset, 'allowedAssets');
+      return asset.trim();
+    });
+    return this.fork({
+      configuration: {
+        ...this.state.configuration,
+        allowedAssets: appendUnique(this.state.configuration.allowedAssets, normalised),
+      },
+    });
   }
 
-  /** Restrict transfers to the given assets. */
-  allowAssets(...assets: string[]): this {
-    for (const asset of assets) this.allowAsset(asset);
-    return this;
+  /** Restrict transfers to several assets. Alias of {@link allowAsset}. */
+  allowAssets(...assets: string[]): PolicyRuleBuilder {
+    return this.allowAsset(...assets);
   }
 
-  /** Block a single asset. */
-  denyAsset(asset: string): this {
-    assertAsset(asset, 'blockedAssets');
-    this.draft.configuration.blockedAssets = [
-      ...(this.draft.configuration.blockedAssets ?? []),
-      asset,
-    ];
-    return this;
+  /** Block one or more assets. */
+  denyAsset(...assets: string[]): PolicyRuleBuilder {
+    if (assets.length === 0) return this.fork({});
+    const normalised = assets.map((asset) => {
+      assertAsset(asset, 'blockedAssets');
+      return asset.trim();
+    });
+    return this.fork({
+      configuration: {
+        ...this.state.configuration,
+        blockedAssets: appendUnique(this.state.configuration.blockedAssets, normalised),
+      },
+    });
   }
 
-  /** Block the given assets. */
-  denyAssets(...assets: string[]): this {
-    for (const asset of assets) this.denyAsset(asset);
-    return this;
+  /** Block several assets. Alias of {@link denyAsset}. */
+  denyAssets(...assets: string[]): PolicyRuleBuilder {
+    return this.denyAsset(...assets);
   }
 
   /* ------------------------------ spend limits ---------------------------- */
 
-  /** Cap each individual transfer at `amount`. */
-  maxAmount(amount: number): this {
+  /** Cap each individual transfer at `amount` (positive, at most 7 decimals). */
+  maxAmount(amount: number): PolicyRuleBuilder {
     assertPositiveAmount(amount, 'maxAmount');
-    this.draft.configuration.maxAmount = amount;
-    return this;
+    return this.fork({
+      configuration: { ...this.state.configuration, maxAmount: amount },
+    });
   }
 
-  /** Require each transfer to be at least `amount`. */
-  minAmount(amount: number): this {
+  /** Require each transfer to be at least `amount` (positive, at most 7 decimals). */
+  minAmount(amount: number): PolicyRuleBuilder {
     assertPositiveAmount(amount, 'minAmount');
-    if (
-      this.draft.configuration.maxAmount !== undefined &&
-      amount > this.draft.configuration.maxAmount
-    ) {
+    const max = this.state.configuration.maxAmount;
+    if (typeof max === 'number' && amount > max) {
       throw new ValidationError('minAmount must not exceed maxAmount.', {
         code: 'INVALID_POLICY_AMOUNT',
+        details: { field: 'minAmount' },
       });
     }
-    this.draft.configuration.minAmount = amount;
-    return this;
+    return this.fork({
+      configuration: { ...this.state.configuration, minAmount: amount },
+    });
   }
 
-  /** Cap spend over a rolling day at `amount` (velocity limit). */
-  dailyLimit(amount: number): this {
+  /** Cap spend over a rolling day at `amount`. */
+  dailyLimit(amount: number): PolicyRuleBuilder {
     assertPositiveAmount(amount, 'dailyLimit');
-    this.draft.configuration.dailyLimit = amount;
-    return this;
+    return this.fork({
+      configuration: { ...this.state.configuration, dailyLimit: amount },
+    });
   }
 
-  /** Cap spend over a rolling week at `amount` (velocity limit). */
-  weeklyLimit(amount: number): this {
+  /** Cap spend over a rolling week at `amount`. */
+  weeklyLimit(amount: number): PolicyRuleBuilder {
     assertPositiveAmount(amount, 'weeklyLimit');
-    this.draft.configuration.weeklyLimit = amount;
-    return this;
+    return this.fork({
+      configuration: { ...this.state.configuration, weeklyLimit: amount },
+    });
   }
 
-  /** Cap spend over a rolling month at `amount` (velocity limit). */
-  monthlyLimit(amount: number): this {
+  /** Cap spend over a rolling month at `amount`. */
+  monthlyLimit(amount: number): PolicyRuleBuilder {
     assertPositiveAmount(amount, 'monthlyLimit');
-    this.draft.configuration.monthlyLimit = amount;
-    return this;
+    return this.fork({
+      configuration: { ...this.state.configuration, monthlyLimit: amount },
+    });
+  }
+
+  /**
+   * Require human/agent approval before a transfer may proceed.
+   *
+   * @param required           Whether approval is required. Defaults to `true`.
+   * @param requiredSignatures Optional signing-weight threshold (positive
+   *                           integer) stored as `configuration.requiredSignatures`.
+   */
+  requireApproval(required: boolean = true, requiredSignatures?: number): PolicyRuleBuilder {
+    if (typeof required !== 'boolean') {
+      throw new ValidationError('requiresApproval must be a boolean.', {
+        code: 'INVALID_POLICY_APPROVAL',
+        details: { field: 'requiresApproval' },
+      });
+    }
+    const configuration: PolicyConfiguration = {
+      ...this.state.configuration,
+      requiresApproval: required,
+    };
+    if (requiredSignatures !== undefined) {
+      assertRequiredSignatures(requiredSignatures);
+      configuration.requiredSignatures = requiredSignatures;
+    }
+    return this.fork({ configuration });
+  }
+
+  /**
+   * Set the signing-weight threshold required for approval.
+   *
+   * Stored as `configuration.requiredSignatures`; pair it with
+   * {@link requireApproval}.
+   */
+  requiredSignatures(count: number): PolicyRuleBuilder {
+    assertRequiredSignatures(count);
+    return this.fork({
+      configuration: { ...this.state.configuration, requiredSignatures: count },
+    });
   }
 
   /** Restrict the policy to an ordered time window. */
-  timeWindow(window: PolicyTimeWindow): this {
+  timeWindow(window: PolicyTimeWindow): PolicyRuleBuilder {
     assertTimeWindow(window);
-    this.draft.configuration.timeWindow = {
-      start: window.start,
-      end: window.end,
-      ...(window.timezone !== undefined ? { timezone: window.timezone } : {}),
+    return this.fork({
+      configuration: {
+        ...this.state.configuration,
+        timeWindow: {
+          start: window.start,
+          end: window.end,
+          ...(window.timezone !== undefined ? { timezone: window.timezone } : {}),
+        },
+      },
+    });
+  }
+
+  /* -------------------------------- terminal ------------------------------ */
+
+  /** Resolve the explicit or inferred policy type. */
+  private resolveType(): PolicyType | undefined {
+    return this.state.type ?? inferPolicyType(this.state.configuration) ?? undefined;
+  }
+
+  /** Build a deep-copied candidate draft. */
+  private toCandidate(): PolicyDraftCandidate {
+    const type = this.resolveType();
+    return {
+      name: this.state.name,
+      ...(type !== undefined ? { type } : {}),
+      configuration: cloneConfiguration(this.state.configuration),
+      priority: this.state.priority,
+      enabled: this.state.enabled,
+      ...(this.state.description !== undefined ? { description: this.state.description } : {}),
+      ...(this.state.agentId !== undefined ? { agentId: this.state.agentId } : {}),
     };
-    return this;
+  }
+
+  /**
+   * Validate the accumulated rule without throwing and report **every**
+   * problem, so a UI can show all issues at once.
+   */
+  validate(): PolicyRuleValidationResult {
+    const issues = collectValidationIssues(this.toCandidate());
+    return issues.length === 0 ? { valid: true, issues: [] } : { valid: false, issues };
+  }
+
+  /**
+   * Validate and build without throwing.
+   *
+   * @returns `{ valid: true, rule }` on success, otherwise
+   *          `{ valid: false, issues }` with every problem found.
+   */
+  safeBuild(): PolicyRuleBuildResult {
+    const candidate = this.toCandidate();
+    const issues = collectValidationIssues(candidate);
+    if (issues.length > 0) return { valid: false, issues };
+    if (candidate.type === undefined) {
+      return {
+        valid: false,
+        issues: [{ field: 'type', message: 'Policy type is required.' }],
+      };
+    }
+    // Rebuild explicitly (rather than spreading the rest and appending `type`)
+    // so the serialized payload keeps the conventional key order.
+    const rule: PolicyDraft = {
+      name: candidate.name,
+      type: candidate.type,
+      configuration: candidate.configuration,
+      priority: candidate.priority,
+      enabled: candidate.enabled,
+      ...(candidate.description !== undefined ? { description: candidate.description } : {}),
+      ...(candidate.agentId !== undefined ? { agentId: candidate.agentId } : {}),
+    };
+    return { valid: true, rule };
   }
 
   /**
    * Produce the final, validated policy draft.
    *
    * @returns A {@link PolicyDraft} accepted by `PolicyResource.create`.
-   * @throws {ValidationError} When no conditions/type were configured, or any
-   *   accumulated parameter is invalid.
+   * @throws {ValidationError} With code `INVALID_POLICY_RULE` when the rule is
+   *   incomplete or any accumulated parameter is invalid.
    */
   build(): PolicyDraft {
-    const inferred = inferPolicyType(this.draft.configuration);
-    const type = this.draft.type ?? inferred ?? undefined;
-    if (!type) {
-      throw new ValidationError(
-        'PolicyBuilder requires at least one condition or an explicit type before build().',
-        { code: 'INVALID_POLICY_RULE' },
-      );
+    const result = this.safeBuild();
+    if (!result.valid) {
+      const summary = result.issues.map((issue) => `${issue.field}: ${issue.message}`).join('; ');
+      throw new ValidationError(`Policy rule is invalid — ${summary}`, {
+        code: 'INVALID_POLICY_RULE',
+        details: { issues: result.issues },
+      });
     }
+    return result.rule;
+  }
 
-    const draft: PolicyDraft = {
-      name: this.draft.name,
-      type,
-      configuration: { ...this.draft.configuration },
-      priority: this.draft.priority,
-      enabled: this.draft.enabled,
-      ...(this.draft.description !== undefined ? { description: this.draft.description } : {}),
-      ...(this.draft.agentId !== undefined ? { agentId: this.draft.agentId } : {}),
-    };
-
-    return assertValidPolicyRule(draft);
+  /**
+   * Serialise the validated rule, so `JSON.stringify(builder)` emits the same
+   * payload as {@link build}.
+   *
+   * @throws {ValidationError} When the accumulated rule is invalid.
+   */
+  toJSON(): PolicyDraft {
+    return this.build();
   }
 }
 
 /**
- * Convenience factory for {@link PolicyBuilder}. Equivalent to
- * `new PolicyBuilder(name)`.
+ * Backwards-compatible alias of {@link PolicyRuleBuilder}.
+ *
+ * @deprecated Use {@link PolicyRuleBuilder}; this alias is kept so existing
+ * `PolicyBuilder` imports continue to type-check.
  */
-export function policy(name: string): PolicyBuilder {
-  return new PolicyBuilder(name);
+export const PolicyBuilder = PolicyRuleBuilder;
+export type PolicyBuilder = PolicyRuleBuilder;
+
+/**
+ * Convenience factory for {@link PolicyRuleBuilder}. Equivalent to
+ * `new PolicyRuleBuilder(name)`.
+ */
+export function policy(name: string): PolicyRuleBuilder {
+  return new PolicyRuleBuilder(name);
 }
