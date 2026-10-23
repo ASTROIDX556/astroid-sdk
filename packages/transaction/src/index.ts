@@ -1,6 +1,7 @@
 export * from './builder.js';
 export * from './decoder.js';
 export * from './simulation.js';
+export * from './simulate.js';
 export * from './submit.js';
 export * from './history.js';
 export * from './validation.js';
