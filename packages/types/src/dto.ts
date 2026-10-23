@@ -18,6 +18,7 @@ import type {
   WalletType,
 } from './enums.js';
 import type {
+  AssetBalance,
   DecimalString,
   Organization,
   PolicyConfiguration,
@@ -67,6 +68,73 @@ export interface WalletBalanceQuery {
   assetCode?: StellarAssetCode;
   issuer?: StellarPublicKey;
 }
+
+/**
+ * Optional asset filters for batch wallet balance queries.
+ *
+ * Supports filtering by a single asset code and optional issuer, or an array
+ * of asset identifiers (e.g. `['XLM', 'USDC:G...']`).
+ *
+ * @example
+ * ```ts
+ * const filter: WalletBalanceBatchFilter = { assetCode: 'USDC', issuer: stellarIssuer };
+ * ```
+ */
+export interface WalletBalanceBatchFilter {
+  /** Optional Stellar asset code to filter by (e.g. `'USDC'`, `'XLM'`). */
+  assetCode?: StellarAssetCode;
+  /** Optional issuing Stellar account public key (`G…`). */
+  issuer?: StellarPublicKey;
+  /** Optional array of asset identifiers or codes to filter across all queried wallets. */
+  assets?: string[];
+}
+
+/**
+ * Parameters for querying balances across multiple wallets in a single batch request.
+ *
+ * @example
+ * ```ts
+ * const query: BatchWalletBalancesQuery = {
+ *   walletIds: ['wlt_123', 'GA7QYNF7SOWQ3GLR2ZGMGIWQFDYQ4RJXGFJQCXVYJ2LGK7IGMSNMIBOA'],
+ *   assetCode: 'USDC',
+ * };
+ * ```
+ */
+export interface BatchWalletBalancesQuery extends WalletBalanceBatchFilter {
+  /** Array of wallet identifiers (Astroid wallet IDs or Stellar public addresses). */
+  walletIds: string[];
+}
+
+/**
+ * Input DTO for batch wallet balance requests.
+ */
+export interface BatchWalletBalancesInput {
+  /** Array of wallet identifiers (Astroid wallet IDs or Stellar public addresses). */
+  walletIds: string[];
+  /** Optional asset filters. */
+  filters?: WalletBalanceBatchFilter;
+}
+
+/**
+ * Strongly typed mapping of Stellar wallet addresses to their respective asset balance arrays.
+ *
+ * @example
+ * ```ts
+ * const balances: BatchWalletBalancesResult = {
+ *   'GA7QYNF7SOWQ3GLR2ZGMGIWQFDYQ4RJXGFJQCXVYJ2LGK7IGMSNMIBOA': [
+ *     { asset: 'XLM', balance: '100.5000000' },
+ *     { asset: 'USDC', balance: '25.0000000', issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5' },
+ *   ],
+ * };
+ * ```
+ */
+export type BatchWalletBalancesResult = Record<string, AssetBalance[]>;
+
+/** Alias for {@link BatchWalletBalancesResult}. */
+export type BatchWalletBalancesResponse = BatchWalletBalancesResult;
+
+/** Alias for {@link BatchWalletBalancesResult}. */
+export type WalletBalancesBatchMapping = BatchWalletBalancesResult;
 
 /**
  * Asset and exact decimal amount to submit when funding a wallet. Keep `amount`
@@ -333,10 +401,7 @@ export interface AuthTokens {
  * - `'refresh_token_expired'` — no usable refresh token was stored.
  * - `'unauthorized_401'` — a `401 Unauthorized` was escalated to the caller.
  */
-export type AuthFailureReason =
-  | 'refresh_failed'
-  | 'refresh_token_expired'
-  | 'unauthorized_401';
+export type AuthFailureReason = 'refresh_failed' | 'refresh_token_expired' | 'unauthorized_401';
 
 /**
  * Emitted when authentication fails and the session's stored credentials are

@@ -24,7 +24,19 @@ import type {
   WalletBalanceQuery,
   WalletBalance,
   WalletStatus,
+  BatchWalletBalancesResult,
+  WalletBalanceBatchFilter,
 } from '@astroid/types';
+
+import { fetchWalletBalancesBatch, type BatchWalletBalancesOptions } from './batch.js';
+
+export {
+  fetchWalletBalancesBatch,
+  resolveHttpClient,
+  parseBatchBalancesResponse,
+  type BatchClientLike,
+  type BatchWalletBalancesOptions,
+} from './batch.js';
 
 export {
   signTransactionOffline,
@@ -38,7 +50,17 @@ export {
  * Balance DTOs re-exported from `@astroid/types` so consumers of
  * `@astroid/wallet` can name the balance shapes without a second import.
  */
-export type { WalletBalance, AssetBalance, WalletBalanceQuery } from '@astroid/types';
+export type {
+  WalletBalance,
+  AssetBalance,
+  WalletBalanceQuery,
+  WalletBalanceBatchFilter,
+  BatchWalletBalancesQuery,
+  BatchWalletBalancesInput,
+  BatchWalletBalancesResult,
+  BatchWalletBalancesResponse,
+  WalletBalancesBatchMapping,
+} from '@astroid/types';
 
 /** An asset balance with a locale-formatted amount for display. */
 export interface FormattedAssetBalance extends AssetBalance {
@@ -340,6 +362,51 @@ export class WalletResource extends Resource {
       },
       options,
     );
+  }
+
+  /**
+   * Query on-chain asset balances across multiple managed agent wallets in a single
+   * optimized batch request (issue #461).
+   *
+   * Aggregates live balances across the supplied wallet identifiers (Astroid
+   * wallet IDs or Stellar public addresses), optionally filtered by asset code
+   * or issuer, and returns a strongly typed mapping of Stellar addresses to
+   * asset balance arrays.
+   *
+   * @param walletIds Array of wallet identifiers (Astroid wallet IDs or Stellar addresses).
+   * @param filters Optional asset code, issuer, or asset list filters.
+   * @param options Optional per-request HTTP options or method overrides.
+   * @returns A strongly typed mapping of wallet addresses to asset balance arrays.
+   *
+   * @example
+   * ```ts
+   * const balances = await astroid.wallets.fetchWalletBalancesBatch(
+   *   ['wlt_1', 'wlt_2'],
+   *   { assetCode: 'USDC' },
+   * );
+   * ```
+   */
+  async fetchWalletBalancesBatch(
+    walletIds: readonly string[],
+    filters?: WalletBalanceBatchFilter,
+    options?: BatchWalletBalancesOptions,
+  ): Promise<BatchWalletBalancesResult> {
+    return fetchWalletBalancesBatch(this.client, walletIds, filters, options);
+  }
+
+  /**
+   * Alias for {@link WalletResource.fetchWalletBalancesBatch}.
+   *
+   * @param walletIds Array of wallet identifiers.
+   * @param filters Optional asset filters.
+   * @param options Optional request options.
+   */
+  async getWalletBalancesBatch(
+    walletIds: readonly string[],
+    filters?: WalletBalanceBatchFilter,
+    options?: BatchWalletBalancesOptions,
+  ): Promise<BatchWalletBalancesResult> {
+    return this.fetchWalletBalancesBatch(walletIds, filters, options);
   }
 
   /**
