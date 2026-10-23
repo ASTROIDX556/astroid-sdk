@@ -40,12 +40,14 @@ export {
 } from './alerts.js';
 export {
   BudgetClient,
+  checkBudgetThreshold,
   classifyAllocation,
   deriveAllocationStatus,
   isAllocationExhausted,
   toBudgetQuery,
   DEFAULT_ALLOCATION_THRESHOLDS,
   type BudgetHttpClient,
+  type BudgetThresholdCheckResult,
   type BudgetQuery,
   type BudgetRequestOptions,
   type DeriveAllocationOptions,
