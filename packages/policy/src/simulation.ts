@@ -27,6 +27,7 @@
  * @module
  */
 
+import type { RequestOptionsExtras } from '@astroid/core';
 import { ValidationError } from '@astroid/errors';
 import {
   PolicyType,

@@ -129,4 +129,81 @@ describe('simulatePolicy — server-side endpoint helper', () => {
       simulatePolicy(failing, { walletId: 'w_1', asset: 'XLM', amount: '1' }),
     ).rejects.toBeInstanceOf(NetworkError);
   });
+
+  describe('single-policy overload (simulatePolicy(client, policyId, payload))', () => {
+    it('POSTs payload to /policies/{id}/simulate and returns PolicySimulationEvaluation', async () => {
+      const mockEvaluation = {
+        policyId: 'pol_123',
+        allowed: true,
+        passed: true,
+        violations: [],
+        risk: { score: 0.1, band: 'LOW', factors: [] },
+        budgetImpact: [],
+        explanation: 'Transaction complies with the policy.',
+      };
+
+      const { client, calls } = mockTransport(() => mockEvaluation);
+
+      const evaluation = await simulatePolicy(client, 'pol_123', {
+        asset: 'USDC',
+        amount: '100.00',
+        recipientAddress: 'GABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUVW',
+      });
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0]!.path).toBe('/policies/pol_123/simulate');
+      expect(evaluation.policyId).toBe('pol_123');
+      expect(evaluation.allowed).toBe(true);
+      expect(evaluation.passed).toBe(true);
+    });
+
+    it('handles rule breaches accurately on single-policy evaluation', async () => {
+      const mockBreachedEvaluation = {
+        policyId: 'pol_max',
+        allowed: false,
+        passed: false,
+        violatedRules: [
+          {
+            policyId: 'pol_max',
+            rule: 'MAX_AMOUNT',
+            message: 'Amount 1000 exceeds limit of 500',
+            limit: '500',
+            actual: '1000',
+          },
+        ],
+        risk: { score: 0.85, band: 'HIGH', factors: [] },
+        requiredApprovals: ['admin'],
+        explanation: 'Transaction blocked by MAX_AMOUNT rule',
+      };
+
+      const { client } = mockTransport(() => mockBreachedEvaluation);
+
+      const evaluation = await simulatePolicy(client, 'pol_max', {
+        asset: 'USDC',
+        amount: '1000.00',
+      });
+
+      expect(evaluation.allowed).toBe(false);
+      expect(evaluation.violatedRules).toHaveLength(1);
+      expect(evaluation.violatedRules[0].rule).toBe('MAX_AMOUNT');
+      expect(evaluation.requiredApprovals).toContain('admin');
+      expect(evaluation.riskScore).toBe(0.85);
+    });
+
+    it('throws ValidationError when policyId is blank', async () => {
+      const { client } = mockTransport(() => ALLOWED);
+
+      await expect(
+        simulatePolicy(client, '   ', { asset: 'USDC', amount: '100.00' }),
+      ).rejects.toThrow('policyId is required');
+    });
+
+    it('throws ValidationError when transaction amount is invalid', async () => {
+      const { client } = mockTransport(() => ALLOWED);
+
+      await expect(
+        simulatePolicy(client, 'pol_1', { asset: 'USDC', amount: -50 }),
+      ).rejects.toThrow('positive finite number');
+    });
+  });
 });
