@@ -640,3 +640,4 @@ export const PoliciesResource = PolicyResource;
 
 export * from './simulator.js';
 export * from './builder.js';
+export * from './validation.js';
