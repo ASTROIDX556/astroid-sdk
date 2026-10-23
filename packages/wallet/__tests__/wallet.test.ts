@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { HttpClient } from '@astroid/core';
 import { NetworkError, NotFoundError } from '@astroid/errors';
 
-import { WalletResource } from '../src/index.js';
+import { formatWalletBalances, WalletResource } from '../src/index.js';
 
 /** A HTTP 200 response carrying an enveloped `data` payload. */
 function jsonResponse(data: unknown, status = 200, headers: Record<string, string> = {}): Response {
@@ -117,6 +117,52 @@ describe('WalletResource — fetching, creating, listing', () => {
     expect(url.pathname).toBe('/v1/wallets/w_1/balance');
     expect(url.searchParams.get('assetCode')).toBe('USDC');
     expect(url.searchParams.get('issuer')).toBe('GISSUER');
+  });
+
+  it('getWalletBalances returns all assets when no filter is provided', async () => {
+    const balance = {
+      walletId: 'w_1',
+      stellarAddress: 'GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX',
+      network: 'TESTNET',
+      balances: [
+        { asset: 'XLM', balance: '1200.0000000' },
+        { asset: 'USDC', issuer: 'GISSUER', balance: '0.0000001' },
+      ],
+      updatedAt: '2026-08-01T00:00:00.000Z',
+    };
+    const { resource, fetch } = clientWith(async () => jsonResponse({ data: balance }));
+
+    const result = await resource.getWalletBalances('w_1');
+
+    expect(result.balances).toHaveLength(2);
+    expect(result.balances.map(({ balance: amount }) => amount)).toEqual([
+      '1200.0000000',
+      '0.0000001',
+    ]);
+    const url = new URL(String(fetch.mock.calls[0]![0]));
+    expect(url.searchParams.has('assetCode')).toBe(false);
+    expect(url.searchParams.has('issuer')).toBe(false);
+  });
+
+  it('formats wallet balances without losing decimal precision and handles empty balances', () => {
+    const balance = {
+      walletId: 'w_1',
+      stellarAddress: 'GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX',
+      network: 'TESTNET',
+      balances: [
+        { asset: 'XLM', balance: '12345678901234567890.0000001' },
+        { asset: 'USDC', issuer: 'GISSUER', balance: '0.0000000' },
+      ],
+      updatedAt: '2026-08-01T00:00:00.000Z',
+    };
+
+    const formatted = formatWalletBalances(balance);
+
+    expect(formatted.balances.map(({ formattedBalance }) => formattedBalance)).toEqual([
+      '12,345,678,901,234,567,890.0000001',
+      '0.0000000',
+    ]);
+    expect(formatWalletBalances({ ...balance, balances: [] }).balances).toEqual([]);
   });
 
   it('fundWallet posts an exact decimal amount to the wallet funding endpoint', async () => {
