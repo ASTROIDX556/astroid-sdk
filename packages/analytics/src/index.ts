@@ -23,6 +23,7 @@ import type {
   BudgetUtilizationRow,
   CashflowReport,
   CursorPaginated,
+  GlobalAnalyticsParams,
   Paginated,
   RiskReport,
   SpendingSummaryParams,
@@ -34,11 +35,17 @@ import type {
   MetricsQueryParams,
 } from '@astroid/types';
 import { getMetricsInRange } from './analytics.js';
+import { getAgentMetrics, getGlobalAnalytics } from './metrics.js';
 // Re-export the aggregated-metrics query helpers (issue #78) from the package
 // entry point so consumers can call them directly as well as through
 // {@link AnalyticsResource}. These were previously imported but never used,
 // which failed the `dts` build (`TS6192: All imports in import declaration are
 // unused`).
+export {
+  getAgentMetrics,
+  getGlobalAnalytics,
+} from './metrics.js';
+
 export {
   AnalyticsQueryResource,
   getAgentExecutionCounts,
@@ -145,6 +152,7 @@ export type {
   AgentMetricsParams,
   AgentMetricsReport,
   AgentMetricsRow,
+  GlobalAnalyticsParams,
   AnalyticsCursorParams,
   AnalyticsListParams,
   CursorPaginated,
@@ -303,7 +311,21 @@ export class AnalyticsResource extends Resource {
     query: AgentMetricsParams = {},
     options?: RequestOptionsExtras,
   ): Promise<AgentMetricsReport> {
-    return this.getData<AgentMetricsReport>('/analytics/agents/metrics', { ...query }, options);
+    return getAgentMetrics(this.client, query, options);
+  }
+
+  /**
+   * Fetch global transaction, fee, policy, and success metrics for a time range.
+   *
+   * @param query Optional reporting window and resolution.
+   * @param options Extra request options forwarded to the HTTP client.
+   * @returns The global analytics overview.
+   */
+  async getGlobalAnalytics(
+    query: GlobalAnalyticsParams = {},
+    options?: RequestOptionsExtras,
+  ): Promise<AnalyticsOverview> {
+    return getGlobalAnalytics(this.client, query, options);
   }
 
   /**
