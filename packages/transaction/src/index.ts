@@ -3,7 +3,7 @@ export * from './asset-builder.js';
 export * from './multi-operation.js';
 export * from './feeBump.js';
 export * from './decoder.js';
-export * from './simulation.js';
+export { simulateTransactionFee, type SimulationOptions, type SimulationResult, type TransactionSimulationResult } from './simulation.js';
 export * from './simulate.js';
 export * from './submit.js';
 export * from './status.js';
