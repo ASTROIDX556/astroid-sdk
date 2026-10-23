@@ -14,6 +14,7 @@ export {
   useUpdateAgent,
   useUpdateAgentStatus,
   useUpdateAgentMetadata,
+  useArchiveAgent,
   useDeleteAgent,
   useSimulatePolicy,
   type WalletMutationVariables,
@@ -95,6 +96,11 @@ export {
   type UseBudgetQueryOptions,
   type UseBudgetThresholdOptions,
 } from './hooks/use-budget.js';
+export {
+  useBudgetAlerts,
+  budgetAlertKeys,
+  type UseBudgetAlertsOptions,
+} from './hooks/useBudgetAlerts.js';
 export {
   usePolicies,
   usePolicy,
