@@ -39,7 +39,10 @@ import type {
   PaginationParams,
   UpdateBudgetAlertInput,
   UpdateBudgetInput,
+  BudgetAdjustmentRequest,
+  BudgetAdjustmentResponse,
 } from '@astroid/types';
+import { requestBudgetAdjustment } from './adjustments.js';
 import { ValidationError } from '@astroid/errors';
 import {
   createBudgetAlert,
@@ -269,6 +272,24 @@ export class BudgetClient {
    */
   async create(input: CreateBudgetInput): Promise<Budget> {
     return this.http.post<Budget>(BASE_PATH, input);
+  }
+
+  /**
+   * Request a dynamic budget allocation adjustment (issue #466).
+   *
+   * @param budgetId      The unique identifier of the budget to adjust.
+   * @param amount        The adjustment amount.
+   * @param justification Justification string or metadata explaining the adjustment.
+   * @param options       Optional transport options.
+   * @returns             The pending or resolved adjustment response.
+   */
+  async requestAdjustment(
+    budgetId: string,
+    amount: DecimalString | number,
+    justification?: string | Record<string, unknown> | BudgetAdjustmentRequest,
+    options?: BudgetRequestOptions,
+  ): Promise<BudgetAdjustmentResponse> {
+    return requestBudgetAdjustment(this.http, budgetId, amount, justification, options);
   }
 
   /**

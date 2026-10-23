@@ -7,12 +7,19 @@ import {
 } from '@tanstack/react-query';
 import { queryKeys, useAstroidClient } from '../hooks.js';
 import type { BudgetListParams } from '@astroid/client';
-import type { Budget, CreateBudgetInput, Paginated, UpdateBudgetInput } from '@astroid/types';
+import type { Budget, Paginated, UpdateBudgetInput } from '@astroid/types';
 
 // `useBudget` / `useBudgetUtilization` live in their own module (issue #74);
 // re-exported here so the long-standing `use-budgets.ts` import path keeps
 // working for existing consumers.
 export { useBudget, useBudgetUtilization, type UseBudgetQueryOptions } from './use-budget.js';
+export {
+  useCreateBudget,
+  type CreateBudgetVariables,
+  type CreateBudgetResponse,
+  type UseCreateBudgetOptions,
+  type UseCreateBudgetResult,
+} from './useCreateBudget.js';
 
 /**
  * Fetch a paginated list of budgets.
@@ -39,32 +46,7 @@ export function useBudgets(params?: BudgetListParams): UseQueryResult<Paginated<
   });
 }
 
-/**
- * Mutation hook to create a budget.
- *
- * On success every cached budget list is invalidated so the new budget appears
- * without a manual refetch.
- *
- * @returns A TanStack Query mutation with `mutate(input)`, `isPending`, `error`,
- *   etc.
- *
- * @example
- * ```tsx
- * const createBudget = useCreateBudget();
- * createBudget.mutate({ name: 'Marketing', limitAmount: '1000', period: 'MONTHLY' });
- * ```
- */
-export function useCreateBudget(): UseMutationResult<Budget, Error, CreateBudgetInput> {
-  const astroid = useAstroidClient();
-  const queryClient = useQueryClient();
 
-  return useMutation({
-    mutationFn: (input: CreateBudgetInput) => astroid.budgets.create(input),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.budgets.all });
-    },
-  });
-}
 
 /** Variables for {@link useUpdateBudget}. */
 export interface UpdateBudgetVariables {

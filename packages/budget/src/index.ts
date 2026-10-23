@@ -52,6 +52,16 @@ export {
   type ListBudgetsParams,
 } from './budget.js';
 export {
+  requestBudgetAdjustment,
+  type BudgetAdjustmentOptions,
+} from './adjustments.js';
+export type {
+  BudgetAdjustmentRequest,
+  BudgetAdjustmentResponse,
+  BudgetAdjustmentState,
+  BudgetAdjustmentStatus,
+} from '@astroid/types';
+export {
   validateSimulationRequest,
   resolveBudgetWindow,
   resolveBudgetRemaining,
@@ -86,6 +96,8 @@ import {
   isValidBudgetAlertChannel,
   BudgetAlertValidationError,
 } from './alerts.js';
+import { requestBudgetAdjustment } from './adjustments.js';
+import type { BudgetAdjustmentRequest, BudgetAdjustmentResponse, DecimalString } from '@astroid/types';
 
 /** Filters accepted by {@link BudgetResource.list}. */
 export interface BudgetListParams extends PaginationParams {
@@ -142,6 +154,30 @@ export class BudgetResource extends Resource {
    */
   async createBudget(input: CreateBudgetInput): Promise<Budget> {
     return this.create(input);
+  }
+
+  /**
+   * Request dynamic allocation adjustment for a budget (issue #466).
+   *
+   * @param budgetId      The unique identifier of the budget to adjust.
+   * @param amount        The adjustment amount.
+   * @param justification Reason or metadata explaining the adjustment.
+   * @param options       Extra request options forwarded to the transport.
+   * @returns             The pending or resolved adjustment response.
+   */
+  async requestAdjustment(
+    budgetId: string,
+    amount: DecimalString | number,
+    justification?: string | Record<string, unknown> | BudgetAdjustmentRequest,
+    options?: RequestOptionsExtras,
+  ): Promise<BudgetAdjustmentResponse> {
+    return requestBudgetAdjustment(
+      this.client as unknown as Parameters<typeof requestBudgetAdjustment>[0],
+      budgetId,
+      amount,
+      justification,
+      options,
+    );
   }
 
   /**

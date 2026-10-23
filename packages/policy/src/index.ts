@@ -50,6 +50,7 @@ export {
   simulatePolicy,
   POLICY_SIMULATE_PATH,
   type PolicySimulationHttpClient,
+  type PolicySimulationOptions,
 } from './simulate-policy.js';
 
 /**
@@ -638,5 +639,4 @@ export class PolicyResource extends Resource {
 /** Alias of {@link PolicyResource} matching the `*sResource` client naming. */
 export const PoliciesResource = PolicyResource;
 
-export * from './simulator.js';
 export * from './builder.js';

@@ -426,6 +426,144 @@ export function isValidCreateAgentParams(params: unknown): params is CreateAgent
   }
 }
 
+/**
+ * Validates an autonomous agent creation and configuration payload before registration (issue #462).
+ *
+ * Catches misconfigurations early on the client side before network requests are dispatched:
+ * - Checks cryptographic public key formats (`stellarAddress`, `publicKey`, `signingKey`, `signerAddress`).
+ * - Validates required string fields (`name`, `capabilities`, `currency`).
+ * - Enforces boundary constraints on budget allocations, roles, and status enums.
+ *
+ * This function is pure and side-effect free: the input configuration is never mutated.
+ *
+ * @param config The agent creation configuration to validate.
+ * @throws {AstroidValidationError} If any required field is missing, improperly typed,
+ *   holds an invalid key format, or breaches boundary constraints.
+ *
+ * @example
+ * ```ts
+ * import { validateAgentConfig } from '@astroid/agent';
+ *
+ * // Valid configuration
+ * validateAgentConfig({
+ *   name: 'SettlementAgent',
+ *   capabilities: ['payments', 'liquidity_rebalance'],
+ *   initialBudget: { currency: 'USDC', amount: '5000.00' },
+ *   role: 'FINANCE',
+ *   stellarAddress: 'GBTYP6STUV6PLZX2WOBP2MASVABW72U3NLFUP7T5C5K5EIKQ6T7C6XUI',
+ * });
+ *
+ * // Throws AstroidValidationError if name is blank, keys are malformed, or budget is negative
+ * try {
+ *   validateAgentConfig({ name: '', capabilities: [] });
+ * } catch (err) {
+ *   console.error(err.message, err.details);
+ * }
+ * ```
+ */
+export function validateAgentConfig(config: unknown): asserts config is CreateAgentParams {
+  if (!isPlainObject(config)) {
+    fail('Agent validation failed: configuration must be a non-null object.', {
+      field: 'config',
+      received: config,
+      expected: 'object',
+    });
+  }
+
+  const c = config as Record<string, unknown>;
+
+  // Required string fields
+  requireNonEmptyString(c['name'], 'name');
+  assertCapabilities(c['capabilities']);
+
+  // Budget validation: supports initialBudget or budget object
+  const budget = c['initialBudget'] ?? c['budget'];
+  if (!isPlainObject(budget)) {
+    fail('Agent validation failed: "initialBudget" is required and must be an object.', {
+      field: 'initialBudget',
+      received: budget,
+      expected: 'object',
+    });
+  }
+
+  requireNonEmptyString(budget['currency'], 'initialBudget.currency');
+  assertValidAmountString(budget['amount'], 'initialBudget.amount');
+
+  // Key formats validation
+  if (c['stellarAddress'] !== undefined) {
+    assertValidStellarPublicKey(c['stellarAddress'], 'stellarAddress');
+  }
+  if (c['publicKey'] !== undefined) {
+    assertValidStellarPublicKey(c['publicKey'], 'publicKey');
+  }
+  if (c['signerAddress'] !== undefined) {
+    assertValidStellarPublicKey(c['signerAddress'], 'signerAddress');
+  }
+  if (c['signingKey'] !== undefined) {
+    assertOptionalNonEmptyString(c['signingKey'], 'signingKey');
+  }
+  if (c['primaryWalletId'] !== undefined) {
+    assertOptionalNonEmptyString(c['primaryWalletId'], 'primaryWalletId');
+  }
+
+  // Metadata validation
+  if (c['metadata'] !== undefined) {
+    validateAgentMetadata(c['metadata']);
+  }
+
+  // Boundary constraints
+  if (c['role'] !== undefined) {
+    assertAgentRole(c['role'], 'role');
+  }
+  if (c['status'] !== undefined) {
+    assertAgentStatus(c['status'], 'status');
+  }
+  if (c['description'] !== undefined) {
+    assertOptionalString(c['description'], 'description');
+  }
+  if (c['provider'] !== undefined) {
+    assertOptionalNonEmptyString(c['provider'], 'provider');
+  }
+  if (c['model'] !== undefined) {
+    assertOptionalNonEmptyString(c['model'], 'model');
+  }
+
+  // Policy bindings validation if present
+  const policies = c['policies'] ?? c['policyIds'];
+  if (policies !== undefined) {
+    if (!Array.isArray(policies) || policies.some((p) => typeof p !== 'string' || p.trim() === '')) {
+      fail('Agent validation failed: "policyIds" must be an array of non-empty strings.', {
+        field: 'policyIds',
+        received: policies,
+        expected: 'string[]',
+      });
+    }
+  }
+}
+
+/**
+ * Non-throwing type guard for agent creation configuration — the boolean companion
+ * of {@link validateAgentConfig}.
+ *
+ * @param config The value to check.
+ * @returns `true` when `config` is a valid agent creation configuration, `false` otherwise.
+ *
+ * @example
+ * ```ts
+ * if (isValidAgentConfig(userInput)) {
+ *   await astroid.agents.create(userInput);
+ * }
+ * ```
+ */
+export function isValidAgentConfig(config: unknown): config is CreateAgentParams {
+  try {
+    validateAgentConfig(config);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /* -------------------------------------------------------------------------- */
 /* UpdateAgentDto                                                              */
 /* -------------------------------------------------------------------------- */
