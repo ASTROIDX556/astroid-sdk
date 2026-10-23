@@ -11,6 +11,8 @@ export const agentStatusKeys = {
 export interface UseAgentStatusOptions {
   /** Polling interval in milliseconds. Defaults to 5000 (5 seconds). */
   interval?: number;
+  /** Polling interval in milliseconds (alias for `interval`). */
+  refetchInterval?: number;
   /** Whether the query is enabled. Set to `false` to pause polling. Defaults to `true`. */
   enabled?: boolean;
   /** Extra TanStack Query options forwarded to `useQuery`. */
@@ -55,15 +57,16 @@ export function useAgentStatus(
   options: UseAgentStatusOptions = {},
 ): UseQueryResult<AgentStatusMetrics, Error> {
   const astroid = useAstroidClient();
-  const { interval = 5000, enabled = true, queryOptions } = options;
+  const { interval, refetchInterval, enabled = true, queryOptions } = options;
+  const pollingInterval = refetchInterval ?? interval ?? 5000;
 
   return useQuery({
     queryKey: agentStatusKeys.all(agentId),
     queryFn: () => astroid.agents.status(agentId),
     enabled,
-    refetchInterval: enabled ? interval : false,
+    refetchInterval: enabled ? pollingInterval : false,
     refetchOnWindowFocus: enabled,
-    staleTime: interval,
+    staleTime: pollingInterval,
     ...queryOptions,
   });
 }

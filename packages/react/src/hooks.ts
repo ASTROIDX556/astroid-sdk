@@ -11,6 +11,7 @@ import type {
 } from '@astroid/types';
 
 export { useCreateAgent, useUpdateAgent, useDeleteAgent } from './hooks/useAgents.js';
+export { useAgentStatus, agentStatusKeys, type UseAgentStatusOptions } from './hooks/useAgentStatus.js';
 export {
   useWallet,
   useWallets,
