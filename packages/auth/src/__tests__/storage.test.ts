@@ -1,7 +1,11 @@
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 
 import { AuthenticationError } from '@astroid/errors';
-import { InMemoryTokenStorage, SessionManager, type TokenStorageAdapter } from '../index.js';
+import {
+  InMemoryTokenStorage,
+  SessionManager,
+  type LegacyTokenStorageAdapter,
+} from '../index.js';
 
 describe('InMemoryTokenStorage', () => {
   it('starts empty', async () => {
@@ -71,7 +75,7 @@ describe('InMemoryTokenStorage', () => {
   });
 
   it('satisfies the TokenStorageAdapter contract', () => {
-    expectTypeOf<InMemoryTokenStorage>().toMatchTypeOf<TokenStorageAdapter>();
+    expectTypeOf<InMemoryTokenStorage>().toMatchTypeOf<LegacyTokenStorageAdapter>();
   });
 });
 
@@ -118,7 +122,7 @@ describe('SessionManager token storage adapter', () => {
 
   it('does not fail token adoption when the adapter rejects a write', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    const tokenStorage: TokenStorageAdapter = {
+    const tokenStorage: LegacyTokenStorageAdapter = {
       getToken: async () => null,
       setToken: async () => {
         throw new Error('quota exceeded');
