@@ -405,3 +405,39 @@ export interface BudgetExpenditureSummary {
   /** When the API generated this snapshot (ISO-8601 UTC). */
   generatedAt: IsoDateTime;
 }
+
+/* -------------------------------------------------------------------------- */
+/* Budget allocation adjustments                                               */
+/* -------------------------------------------------------------------------- */
+
+/** Status of a budget allocation adjustment proposal. */
+export type BudgetAdjustmentStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'APPLIED';
+
+/** Lifecycle state of a budget allocation adjustment. */
+export type BudgetAdjustmentState = 'pending' | 'resolved' | 'approved' | 'rejected';
+
+/** Request parameters for dynamically adjusting budget allocation. */
+export interface BudgetAdjustmentRequest {
+  amount: DecimalString | number;
+  justification?: string;
+  metadata?: Record<string, unknown>;
+  targetBudgetId?: string;
+}
+
+/** Response object representing the pending or resolved allocation state. */
+export interface BudgetAdjustmentResponse {
+  id: string;
+  budgetId: string;
+  targetBudgetId?: string;
+  amount: DecimalString;
+  status: BudgetAdjustmentStatus;
+  state: BudgetAdjustmentState;
+  allocationState?: BudgetAllocationState;
+  currentLimit?: DecimalString;
+  adjustedLimit?: DecimalString;
+  justification?: string;
+  metadata?: Record<string, unknown>;
+  rejectionReason?: string;
+  createdAt: IsoDateTime;
+  updatedAt?: IsoDateTime;
+}
