@@ -1,9 +1,9 @@
-import { AstroidError } from '@astroid/errors';
+import { ValidationError } from '@astroid/errors';
 
 /**
  * Error thrown when agent payload parameters fail runtime validation.
  */
-export class AstroidValidationError extends AstroidError {
+export class AstroidValidationError extends ValidationError {
   constructor(message: string, details?: Record<string, unknown>, requestId?: string) {
     super(message, {
       code: 'ASTROID_VALIDATION_ERROR',

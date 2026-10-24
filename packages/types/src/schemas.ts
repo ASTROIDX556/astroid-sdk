@@ -273,6 +273,16 @@ export const WalletBalanceSchema = z.object({
   updatedAt: IsoDateTimeSchema,
 });
 
+/** Asset filters for batch wallet balance queries. */
+export const WalletBalanceBatchFilterSchema = z.object({
+  assetCode: z.string().optional(),
+  issuer: z.string().optional(),
+  assets: z.array(z.string()).optional(),
+});
+
+/** Strongly typed mapping of wallet addresses to asset balance arrays. */
+export const BatchWalletBalancesResultSchema = z.record(z.string(), z.array(AssetBalanceSchema));
+
 /** Policy configuration (flexible JSONB shape). */
 export const PolicyConfigurationSchema = z
   .object({

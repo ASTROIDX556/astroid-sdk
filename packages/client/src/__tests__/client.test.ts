@@ -1,230 +1,303 @@
 /**
- * Issue #390 — configurable retry wrapper with exponential backoff and jitter.
+ * Issue #382 — exponential backoff retries for the typed HTTP client.
  *
- * Acceptance criteria covered here:
- * - `RetryOptions` is exported from both the `@astroid/client` root and the
- *   `@astroid/client/client` entry point.
- * - Transient `503` responses are retried and a later success is returned.
- * - `400 Bad Request` fails fast without consuming a retry.
- * - The default retry set includes `500`, and `Retry-After` is honoured.
- * - Only idempotent methods (GET/PUT/DELETE) are retried by default.
- * - Backoff grows exponentially and is jittered when enabled.
+ * Verifies the public `Astroid` client wiring end to end: retry count and base
+ * delay are configurable at construction time, transient `503` responses and
+ * transport timeouts are retried with exponential backoff, and retries are
+ * exhausted (or skipped) exactly when they should be.
  */
 
-import { describe, expect, expectTypeOf, it, vi } from 'vitest';
-
-import { Astroid, backoffDelay, type RetryOptions } from '../index.js';
-import { AstroidClient, type RetryOptions as RetryOptionsFromClientEntry } from '../client.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { AstroidTimeoutError, ServerError } from '@astroid/errors';
+import { Astroid, type AstroidClientConfig } from '../index.js';
 
 /* -------------------------------------------------------------------------- */
 /* Helpers                                                                     */
 /* -------------------------------------------------------------------------- */
 
-function okResponse(data: unknown = { id: 'ok' }): Response {
+function okResponse(data: unknown = { ok: true }): Response {
   return new Response(JSON.stringify({ data }), {
     status: 200,
     headers: { 'content-type': 'application/json' },
   });
 }
 
-function errorResponse(status: number, code = 'SERVER_ERROR', message = 'error'): Response {
+function errorResponse(
+  status: number,
+  code = 'SERVICE_UNAVAILABLE',
+  message = 'Service unavailable',
+): Response {
   return new Response(JSON.stringify({ error: { code, message } }), {
     status,
     headers: { 'content-type': 'application/json' },
   });
 }
 
-function retryAfterResponse(status: number, retryAfter: string): Response {
-  return new Response(JSON.stringify({ error: { code: 'SERVER_ERROR', message: 'retry' } }), {
-    status,
-    headers: { 'content-type': 'application/json', 'retry-after': retryAfter },
-  });
-}
-
-/** Mock fetch returning queued responses in order; the last response repeats. */
+/** Mock fetch returning queued responses in order; repeats the last one. */
 function fetchQueue(...responses: Response[]): ReturnType<typeof vi.fn> {
   let index = 0;
   return vi.fn().mockImplementation(async () => {
     const response = responses[index] ?? responses[responses.length - 1]!;
-    index += 1;
+    index++;
     return response;
   });
 }
 
-const BASE_CONFIG = {
-  apiKey: 'sk_test_390',
+const BASE_CONFIG: AstroidClientConfig = {
+  apiKey: 'sk_test_issue_382',
   baseUrl: 'https://api.astroid.test',
 };
 
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
+
 /* -------------------------------------------------------------------------- */
-/* Public retry options                                                        */
+/* Configuration surface                                                       */
 /* -------------------------------------------------------------------------- */
 
-describe('Issue #390 — RetryOptions surface', () => {
-  it('exports the same RetryOptions interface from the root and client entry points', () => {
-    expectTypeOf<RetryOptionsFromClientEntry>().toEqualTypeOf<RetryOptions>();
-    expect(AstroidClient).toBe(Astroid);
-  });
-
-  it('accepts maxRetries, baseDelayMs, maxDelayMs, jitter and retryable statuses', () => {
-    const options: RetryOptions = {
-      maxRetries: 2,
-      baseDelayMs: 5,
-      maxDelayMs: 20,
-      jitter: false,
-      retryableStatuses: [429, 500, 502, 503, 504],
-    };
-
-    const client = new AstroidClient({
+describe('#382 — retry configuration', () => {
+  it('defaults to three retries with a 250ms base delay', () => {
+    const client = new Astroid({
       ...BASE_CONFIG,
       fetch: vi.fn() as unknown as typeof fetch,
-      retry: options,
     });
 
-    expect(client.http.config.retry).toMatchObject(options);
+    expect(client.http.config.retry).toMatchObject({
+      maxRetries: 3,
+      baseDelayMs: 250,
+      backoffFactor: 2,
+    });
   });
 
-  it('accepts the flat maxRetries / baseDelayMs shorthand on the client config', () => {
-    const client = new AstroidClient({
+  it('exposes retry count and base delay at client instantiation', () => {
+    const client = new Astroid({
       ...BASE_CONFIG,
       fetch: vi.fn() as unknown as typeof fetch,
-      maxRetries: 4,
-      baseDelayMs: 10,
+      maxRetries: 5,
+      baseDelay: 125,
+      backoffFactor: 3,
       jitter: false,
     });
 
     expect(client.http.config.retry).toMatchObject({
-      maxRetries: 4,
-      baseDelayMs: 10,
+      maxRetries: 5,
+      baseDelayMs: 125,
+      backoffFactor: 3,
       jitter: false,
     });
+  });
+
+  it('disables retries completely when retry is false', () => {
+    const client = new Astroid({
+      ...BASE_CONFIG,
+      fetch: vi.fn() as unknown as typeof fetch,
+      retry: false,
+    });
+
+    expect(client.http.config.retry).toBeNull();
   });
 });
 
 /* -------------------------------------------------------------------------- */
-/* Retry behaviour                                                             */
+/* HTTP 503 recovery and exponential delay sequence                            */
 /* -------------------------------------------------------------------------- */
 
-describe('Issue #390 — transient retry behaviour', () => {
-  it('retries a GET on 503 and returns the successful response', async () => {
-    const fetchMock = fetchQueue(
-      errorResponse(503, 'SERVICE_UNAVAILABLE', 'temporarily unavailable'),
-      okResponse({ id: 'wlt_recovered' }),
-    );
+describe('#382 — 503 Service Unavailable retries', () => {
+  it('recovers after a transient 503 using the configured base delay', async () => {
+    vi.useFakeTimers();
+    const fetchMock = fetchQueue(errorResponse(503), okResponse({ walletId: 'w_1' }));
+    const client = new Astroid({
+      ...BASE_CONFIG,
+      fetch: fetchMock,
+      maxRetries: 2,
+      baseDelay: 100,
+      maxDelay: 1_000,
+      jitter: false,
+    });
 
-    const client = new AstroidClient({
+    const pending = client.wallets.get('w_1');
+    await vi.advanceTimersByTimeAsync(99);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(2);
+    await expect(pending).resolves.toMatchObject({ walletId: 'w_1' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('backs off exponentially between successive 503 responses', async () => {
+    vi.useFakeTimers();
+    const callTimes: number[] = [];
+    const fetchMock = vi.fn().mockImplementation(async () => {
+      callTimes.push(Date.now());
+      return callTimes.length <= 3 ? errorResponse(503) : okResponse({ recovered: true });
+    });
+    const client = new Astroid({
+      ...BASE_CONFIG,
+      fetch: fetchMock,
+      maxRetries: 3,
+      baseDelay: 50,
+      maxDelay: 10_000,
+      backoffFactor: 2,
+      jitter: false,
+    });
+
+    const pending = client.http.get('/health');
+
+    await vi.advanceTimersByTimeAsync(49);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(2);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(98);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(198);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(2);
+
+    await expect(pending).resolves.toMatchObject({ data: { recovered: true } });
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(callTimes[1]! - callTimes[0]!).toBeGreaterThanOrEqual(50);
+    expect(callTimes[2]! - callTimes[1]!).toBeGreaterThanOrEqual(100);
+    expect(callTimes[3]! - callTimes[2]!).toBeGreaterThanOrEqual(200);
+  });
+
+  it('throws the final error after exhausting the retry budget', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn(async () => errorResponse(503));
+    const client = new Astroid({
+      ...BASE_CONFIG,
+      fetch: fetchMock,
+      maxRetries: 2,
+      baseDelay: 10,
+      maxDelay: 100,
+      jitter: false,
+    });
+
+    const pending = client.wallets.get('w_exhausted');
+    const assertion = expect(pending).rejects.toBeInstanceOf(ServerError);
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    await assertion;
+    // Initial attempt + 2 retries.
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not retry client-side 4xx responses other than 429', async () => {
+    const fetchMock = vi.fn(async () => errorResponse(400, 'BAD_REQUEST', 'Invalid id'));
+    const client = new Astroid({
+      ...BASE_CONFIG,
+      fetch: fetchMock,
+      maxRetries: 3,
+      baseDelay: 1,
+      jitter: false,
+    });
+
+    await expect(client.wallets.get('bad_id')).rejects.toBeDefined();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Transport timeouts                                                          */
+/* -------------------------------------------------------------------------- */
+
+describe('#382 — network timeout retries', () => {
+  it('retries an attempt that times out and succeeds on a later attempt', async () => {
+    vi.useFakeTimers();
+    let attempts = 0;
+    const fetchMock = vi.fn().mockImplementation(async (_url, init: RequestInit) => {
+      attempts++;
+      if (attempts === 1) {
+        return new Promise<Response>((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () => {
+            reject(new DOMException('The operation was aborted.', 'AbortError'));
+          });
+        });
+      }
+      return okResponse({ recoveredAfterTimeout: true });
+    });
+
+    const client = new Astroid({
       ...BASE_CONFIG,
       fetch: fetchMock as unknown as typeof fetch,
       maxRetries: 2,
-      baseDelayMs: 1,
-      maxDelayMs: 5,
+      baseDelay: 20,
+      maxDelay: 100,
       jitter: false,
+      timeoutMs: 100,
     });
 
-    await expect(client.wallets.get('wlt_recovered')).resolves.toMatchObject({
-      id: 'wlt_recovered',
-    });
+    const pending = client.http.get('/slow');
+    // First attempt hits its per-attempt timeout, then waits the 20ms backoff.
+    await vi.advanceTimersByTimeAsync(121);
+
+    await expect(pending).resolves.toMatchObject({ data: { recoveredAfterTimeout: true } });
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it('fails fast on 400 Bad Request without retrying', async () => {
-    const fetchMock = fetchQueue(errorResponse(400, 'VALIDATION_ERROR', 'bad request'));
-
-    const client = new AstroidClient({
-      ...BASE_CONFIG,
-      fetch: fetchMock as unknown as typeof fetch,
-      maxRetries: 3,
-      baseDelayMs: 1,
-      maxDelayMs: 5,
-      jitter: false,
-    });
-
-    await expect(client.wallets.get('wlt_invalid')).rejects.toBeDefined();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  it('retries the default 500 status', async () => {
-    const fetchMock = fetchQueue(
-      errorResponse(500, 'INTERNAL_ERROR', 'boom'),
-      okResponse({ id: 'wlt_500' }),
+  it('exposes the timeout error once retries are exhausted', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn().mockImplementation(
+      async (_url, init: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () => {
+            reject(new DOMException('The operation was aborted.', 'AbortError'));
+          });
+        }),
     );
 
-    const client = new AstroidClient({
+    const client = new Astroid({
       ...BASE_CONFIG,
       fetch: fetchMock as unknown as typeof fetch,
       maxRetries: 1,
-      baseDelayMs: 1,
-      maxDelayMs: 5,
+      baseDelay: 10,
+      maxDelay: 100,
       jitter: false,
+      timeoutMs: 50,
     });
 
-    await expect(client.wallets.get('wlt_500')).resolves.toMatchObject({ id: 'wlt_500' });
+    const pending = client.http.get('/never-responds');
+    const assertion = expect(pending).rejects.toBeInstanceOf(AstroidTimeoutError);
+    await vi.advanceTimersByTimeAsync(200);
+
+    await assertion;
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+});
 
-  it('honours Retry-After on a 503 response', async () => {
-    const timestamps: number[] = [];
-    let calls = 0;
-    const fetchMock = vi.fn().mockImplementation(async () => {
-      calls += 1;
-      timestamps.push(Date.now());
-      return calls === 1 ? retryAfterResponse(503, '0.03') : okResponse({ id: 'wlt_after' });
-    });
+/* -------------------------------------------------------------------------- */
+/* Idempotency                                                                 */
+/* -------------------------------------------------------------------------- */
 
-    const client = new AstroidClient({
+describe('#382 — idempotency policy', () => {
+  it('retries idempotent GET requests but not POST requests by default', async () => {
+    const getFetch = fetchQueue(errorResponse(503), okResponse({ id: 'g' }));
+    const getClient = new Astroid({
       ...BASE_CONFIG,
-      fetch: fetchMock as unknown as typeof fetch,
-      maxRetries: 1,
-      baseDelayMs: 1,
-      maxDelayMs: 1_000,
+      fetch: getFetch,
+      maxRetries: 2,
+      baseDelay: 1,
       jitter: false,
     });
 
-    await client.wallets.get('wlt_after');
-
-    expect(calls).toBe(2);
-    expect(timestamps[1]! - timestamps[0]!).toBeGreaterThanOrEqual(20);
-  });
-
-  it('only retries idempotent methods by default', async () => {
-    const getFetch = fetchQueue(errorResponse(503), okResponse({ id: 'wlt_get' }));
-    const getClient = new AstroidClient({
-      ...BASE_CONFIG,
-      fetch: getFetch as unknown as typeof fetch,
-      maxRetries: 1,
-      baseDelayMs: 1,
-      maxDelayMs: 5,
-      jitter: false,
+    await expect(getClient.http.get('/wallets/w_1')).resolves.toMatchObject({
+      data: { id: 'g' },
     });
-    await expect(getClient.wallets.get('wlt_get')).resolves.toMatchObject({ id: 'wlt_get' });
     expect(getFetch).toHaveBeenCalledTimes(2);
 
-    const postFetch = fetchQueue(errorResponse(503), okResponse({ id: 'wlt_post' }));
-    const postClient = new AstroidClient({
+    const postFetch = fetchQueue(errorResponse(503), okResponse({ id: 'p' }));
+    const postClient = new Astroid({
       ...BASE_CONFIG,
-      fetch: postFetch as unknown as typeof fetch,
-      maxRetries: 1,
-      baseDelayMs: 1,
-      maxDelayMs: 5,
+      fetch: postFetch,
+      maxRetries: 2,
+      baseDelay: 1,
       jitter: false,
     });
-    await expect(postClient.wallets.create({ label: 'no-retry' })).rejects.toBeDefined();
+
+    await expect(postClient.http.post('/wallets', { label: 'Ops' })).rejects.toBeDefined();
     expect(postFetch).toHaveBeenCalledTimes(1);
-  });
-
-  it('applies exponential backoff with full jitter', () => {
-    const config = {
-      maxRetries: 3,
-      baseDelayMs: 100,
-      maxDelayMs: 1_000,
-      jitter: false,
-    };
-
-    expect(backoffDelay(1, config)).toBe(100);
-    expect(backoffDelay(2, config)).toBe(200);
-    expect(backoffDelay(3, config)).toBe(400);
-
-    expect(backoffDelay(1, { ...config, jitter: true }, () => 0.5)).toBe(50);
-    expect(backoffDelay(2, { ...config, jitter: true }, () => 0.5)).toBe(100);
   });
 });

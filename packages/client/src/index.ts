@@ -28,8 +28,10 @@ import {
   HttpClient,
   SDK_VERSION,
   type AstroidClientConfig as CoreClientConfig,
+  type AstroidResponse,
   type Middleware,
   type QueryValue,
+  type RequestOptions,
   type RequestOptionsExtras,
   type RetryOptions,
 } from '@astroid/core';
@@ -50,6 +52,7 @@ import {
   createDebugLogger,
   createInterceptorMiddleware,
   type DebugLoggerOptions,
+  type ErrorInterceptor,
   type RequestInterceptor,
   type ResponseInterceptor,
 } from './interceptors.js';
@@ -138,6 +141,15 @@ export interface AstroidClientConfig extends CoreClientConfig {
    * @deprecated Prefer `minTimeout` or `baseDelay`.
    */
   retryDelay?: number;
+  /**
+   * Configurable retry policy for transient errors (429, 502, 503, 504, timeouts).
+   * Alias for `retry`.
+   */
+  retryPolicy?: boolean | Partial<RetryConfig>;
+  /**
+   * Configurable retry policy (alias for `retry`).
+   */
+  retryOptions?: boolean | Partial<RetryConfig>;
   /** Request/response logging hooks with automatic header redaction. */
   logging?: LoggingMiddlewareOptions;
   /**
@@ -152,6 +164,12 @@ export interface AstroidClientConfig extends CoreClientConfig {
    * replacement config to transform the response.
    */
   responseInterceptors?: ResponseInterceptor[];
+  /**
+   * Error interceptors executed, in order, when a request fails. Each receives
+   * the error and the failed request's options, and may return a replacement
+   * error or return nothing to keep the current one.
+   */
+  errorInterceptors?: ErrorInterceptor[];
   /**
    * Enable the built-in debug logger. Pass `true` for defaults or a
    * {@link DebugLoggerOptions} object to tune the log sink, body inclusion, and
@@ -181,6 +199,18 @@ export type ClientOptions = AstroidClientConfig;
  * Alias for {@link AstroidClientConfig}.
  */
 export type AstroidClientOptions = AstroidClientConfig;
+
+/**
+ * Configuration options interface for {@link AstroidHttpClient} (issue #374).
+ * Alias for {@link AstroidClientConfig}.
+ */
+export type AstroidHttpClientConfig = AstroidClientConfig;
+
+/**
+ * Options interface for {@link AstroidHttpClient} (issue #374).
+ * Alias for {@link AstroidClientOptions}.
+ */
+export type AstroidHttpClientOptions = AstroidClientConfig;
 
 /** The AI-native namespace: express intents, not low-level transfers. */
 export class AiResource {
@@ -277,6 +307,14 @@ class TypedEmitter {
   }
 }
 
+/** Remove the first occurrence of `item` from `list`, reporting whether it was present. */
+function removeFrom<T>(list: T[], item: T): boolean {
+  const index = list.indexOf(item);
+  if (index === -1) return false;
+  list.splice(index, 1);
+  return true;
+}
+
 /**
  * The Astroid SDK client. Construct once and reuse; it is safe to share across
  * requests. Each resource namespace shares the one underlying {@link HttpClient},
@@ -303,6 +341,9 @@ export class Astroid {
 
   private readonly emitter = new TypedEmitter();
   private readonly plugins: AstroidPlugin[] = [];
+  private readonly requestInterceptors: RequestInterceptor[] = [];
+  private readonly responseInterceptors: ResponseInterceptor[] = [];
+  private readonly errorInterceptors: ErrorInterceptor[] = [];
 
   constructor(config: AstroidClientConfig | HttpClient) {
     this.http = config instanceof HttpClient ? config : new HttpClient(normalizeConfig(config));
@@ -345,9 +386,14 @@ export class Astroid {
     // by all concurrent 401s, plus a middleware that queues requests issued
     // while a refresh is in flight so they don't race it with a stale token.
     const refreshTokens = async (refreshToken: string): Promise<AuthTokens> => {
-      const res = await this.http.post<AuthTokens>('/auth/refresh', { refreshToken });
-      this.setAccessToken(res.data.accessToken);
-      return res.data;
+      try {
+        const res = await this.http.post<AuthTokens>('/auth/refresh', { refreshToken });
+        this.setAccessToken(res.data.accessToken);
+        return res.data;
+      } catch (error) {
+        this.setAccessToken(undefined);
+        throw error;
+      }
     };
 
     this.use(createSessionMiddleware(this.sessionManager, refreshTokens));
@@ -394,17 +440,38 @@ export class Astroid {
         : clientConfig?.debug && typeof clientConfig.debug === 'object'
           ? createDebugLogger(clientConfig.debug)
           : undefined;
-    const requestInterceptors = [
+    this.requestInterceptors.push(
       ...(clientConfig?.requestInterceptors ?? []),
       ...(debugInterceptors ? [debugInterceptors.requestInterceptor] : []),
-    ];
-    const responseInterceptors = [
+    );
+    this.responseInterceptors.push(
       ...(clientConfig?.responseInterceptors ?? []),
       ...(debugInterceptors ? [debugInterceptors.responseInterceptor] : []),
-    ];
-    if (requestInterceptors.length > 0 || responseInterceptors.length > 0) {
-      this.http.use(createInterceptorMiddleware({ requestInterceptors, responseInterceptors }));
-    }
+    );
+    this.errorInterceptors.push(...(clientConfig?.errorInterceptors ?? []));
+    // Errors thrown by the middleware pipeline bypass `onError`, so error
+    // interceptors wrap `request()` itself to see every failure.
+    const request = this.http.request.bind(this.http);
+    this.http.request = async <TData>(options: RequestOptions) => {
+      try {
+        return await request<TData>(options);
+      } catch (err) {
+        let current: unknown = err;
+        for (const interceptor of [...this.errorInterceptors]) {
+          const next = await interceptor(current, options);
+          if (next !== undefined) current = next;
+        }
+        throw current;
+      }
+    };
+    // Always registered: the interceptor arrays are live, so interceptors added
+    // later via `addRequestInterceptor` and friends take effect immediately.
+    this.http.use(
+      createInterceptorMiddleware({
+        requestInterceptors: this.requestInterceptors,
+        responseInterceptors: this.responseInterceptors,
+      }),
+    );
 
     // Auto-register the error parser middleware so all responses are routed
     // through the rich error mapping layer.
@@ -415,6 +482,62 @@ export class Astroid {
   use(middleware: Middleware): this {
     this.http.use(middleware);
     return this;
+  }
+
+  /**
+   * Add a request interceptor. It runs after the interceptors already
+   * registered, before each request is dispatched. Returns `this` for chaining.
+   *
+   * @example
+   * ```ts
+   * astroid.addRequestInterceptor((config) => ({
+   *   ...config,
+   *   headers: { ...config.headers, 'x-correlation-id': crypto.randomUUID() },
+   * }));
+   * ```
+   */
+  addRequestInterceptor(interceptor: RequestInterceptor): this {
+    this.requestInterceptors.push(interceptor);
+    return this;
+  }
+
+  /**
+   * Remove a request interceptor previously added by reference.
+   *
+   * @returns `true` when the interceptor was registered and has been removed.
+   */
+  removeRequestInterceptor(interceptor: RequestInterceptor): boolean {
+    return removeFrom(this.requestInterceptors, interceptor);
+  }
+
+  /** Add a response interceptor. Returns `this` for chaining. */
+  addResponseInterceptor(interceptor: ResponseInterceptor): this {
+    this.responseInterceptors.push(interceptor);
+    return this;
+  }
+
+  /**
+   * Remove a response interceptor previously added by reference.
+   *
+   * @returns `true` when the interceptor was registered and has been removed.
+   */
+  removeResponseInterceptor(interceptor: ResponseInterceptor): boolean {
+    return removeFrom(this.responseInterceptors, interceptor);
+  }
+
+  /** Add an error interceptor. Returns `this` for chaining. */
+  addErrorInterceptor(interceptor: ErrorInterceptor): this {
+    this.errorInterceptors.push(interceptor);
+    return this;
+  }
+
+  /**
+   * Remove an error interceptor previously added by reference.
+   *
+   * @returns `true` when the interceptor was registered and has been removed.
+   */
+  removeErrorInterceptor(interceptor: ErrorInterceptor): boolean {
+    return removeFrom(this.errorInterceptors, interceptor);
   }
 
   /**
@@ -558,10 +681,70 @@ export class Astroid {
   } {
     return extractPaginationCursors(headers);
   }
+  /**
+   * Issue an arbitrary request through the underlying HTTP client, applying
+   * authentication, middlewares, retries with backoff, and error mapping.
+   */
+  request<TData>(options: RequestOptions): Promise<AstroidResponse<TData>> {
+    return this.http.request<TData>(options);
+  }
+
+  /**
+   * Convenience wrapper to issue a GET request through the client with retries.
+   */
+  get<TData>(
+    path: string,
+    options?: Omit<RequestOptions, 'method' | 'path'>,
+  ): Promise<AstroidResponse<TData>> {
+    return this.http.get<TData>(path, options);
+  }
+
+  /**
+   * Convenience wrapper to issue a POST request through the client.
+   */
+  post<TData>(
+    path: string,
+    body?: unknown,
+    options?: Omit<RequestOptions, 'method' | 'path' | 'body'>,
+  ): Promise<AstroidResponse<TData>> {
+    return this.http.post<TData>(path, body, options);
+  }
+
+  /**
+   * Convenience wrapper to issue a PUT request through the client.
+   */
+  put<TData>(
+    path: string,
+    body?: unknown,
+    options?: Omit<RequestOptions, 'method' | 'path' | 'body'>,
+  ): Promise<AstroidResponse<TData>> {
+    return this.http.put<TData>(path, body, options);
+  }
+
+  /**
+   * Convenience wrapper to issue a PATCH request through the client.
+   */
+  patch<TData>(
+    path: string,
+    body?: unknown,
+    options?: Omit<RequestOptions, 'method' | 'path' | 'body'>,
+  ): Promise<AstroidResponse<TData>> {
+    return this.http.patch<TData>(path, body, options);
+  }
+
+  /**
+   * Convenience wrapper to issue a DELETE request through the client.
+   */
+  delete<TData>(
+    path: string,
+    options?: Omit<RequestOptions, 'method' | 'path'>,
+  ): Promise<AstroidResponse<TData>> {
+    return this.http.delete<TData>(path, options);
+  }
 }
 
 export default Astroid;
-export { Astroid as AstroidClient };
+export { Astroid as AstroidClient, Astroid as AstroidHttpClient, HttpClient };
 
 /**
  * Normalise the flat retry shorthand options
@@ -590,6 +773,8 @@ function normalizeConfig(config: AstroidClientConfig): CoreClientConfig {
     retryableStatusCodes,
     jitter,
     retry,
+    retryPolicy,
+    retryOptions,
     ...rest
   } = config;
 
@@ -606,10 +791,24 @@ function normalizeConfig(config: AstroidClientConfig): CoreClientConfig {
   if (resolvedStatuses !== undefined) shorthand.retryableStatuses = resolvedStatuses;
   if (jitter !== undefined) shorthand.jitter = jitter;
 
-  // Nothing to merge, or retries explicitly disabled: leave the config as-is.
-  if (Object.keys(shorthand).length === 0 || retry === false) return config;
+  const rawRetry = retry ?? retryPolicy ?? retryOptions;
 
-  const baseRetry: RetryOptions = retry && typeof retry === 'object' ? retry : {};
+  // Nothing to merge, or retries explicitly disabled: leave the config as-is.
+  if (rawRetry === false) {
+    return {
+      ...rest,
+      retry: false,
+    };
+  }
+
+  if (
+    Object.keys(shorthand).length === 0 &&
+    (rawRetry === undefined || typeof rawRetry === 'boolean')
+  ) {
+    return config;
+  }
+
+  const baseRetry: Partial<RetryConfig> = rawRetry && typeof rawRetry === 'object' ? rawRetry : {};
   return {
     ...rest,
     retry: { ...baseRetry, ...shorthand },
@@ -629,8 +828,14 @@ export {
   type SessionManagerConfig,
   type AuthFailureCallback,
 } from '@astroid/auth';
-export { WalletResource, type WalletListParams } from '@astroid/wallet';
-export { AgentResource, type AgentListParams, type AgentCursorListParams } from '@astroid/agent';
+export {
+  WalletResource,
+  fetchWalletBalancesBatch,
+  type WalletListParams,
+  type BatchWalletBalancesOptions,
+  type BatchWalletBalancesResult,
+  type BatchClientLike,
+} from '@astroid/wallet';
 export { PolicyResource, type PolicyListParams } from '@astroid/policy';
 export { BudgetResource, type BudgetListParams } from '@astroid/budget';
 export { TransactionResource, type ProposalListParams } from '@astroid/transaction';
@@ -696,6 +901,48 @@ export {
   AstroidValidationError,
   AstroidNetworkError,
 } from '@astroid/errors';
+// Typed API exception surface (issue #373): the full set of specialized error
+// classes, the `unknown`-narrowing guards for `catch` blocks, and the
+// status/body → typed-error mappers used by the fetch wrapper. Surfacing them
+// here means agent runtimes can catch specific financial or authorization
+// failures (`RateLimitError`, `InsufficientFundsError`, …) without inspecting
+// raw strings or reaching into `@astroid/errors` directly.
+export {
+  // Specialized classes not covered above. Note: the base `ApiError` *class*
+  // is intentionally not re-exported under that name — `ApiError` already
+  // refers to the API error-envelope DTO from `@astroid/types` (star-exported
+  // above). Use `AstroidApiError` (exported above) for the class.
+  ApiRateLimitError,
+  TransactionSimulationError,
+  // Runtime type guards — narrow `catch (err: unknown)` without `instanceof`.
+  isAuthenticationError,
+  isForbiddenError,
+  isValidationError,
+  isNotFoundError,
+  isConflictError,
+  isPolicyViolationError,
+  isInsufficientFundsError,
+  isRateLimitError,
+  isApiRateLimitError,
+  isNetworkError,
+  isServerError,
+  // Error construction and HTTP-status mapping helpers.
+  fromApiError,
+  fromStatus,
+  fromErrorResponse,
+  toNetworkError,
+  mapStatusToError,
+  errorClassForCode,
+  errorClassForStatus,
+  codeForStatus,
+  statusCodeToCode,
+  setIncludeStackInErrors,
+  getIncludeStackInErrors,
+  // Supporting types.
+  type AstroidErrorOptions,
+  type SerializedAstroidError,
+  type NormalizeErrorContext,
+} from '@astroid/errors';
 // Centralized Stellar domain errors and mapping (issue #253).
 export {
   InsufficientBalanceError,
@@ -751,6 +998,7 @@ export {
   type ResponseConfig,
   type RequestInterceptor,
   type ResponseInterceptor,
+  type ErrorInterceptor,
   type InterceptorOptions,
   type DebugLogger,
   type DebugLoggerOptions,

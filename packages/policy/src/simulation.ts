@@ -38,6 +38,7 @@ import {
   type PolicySimulationInput,
 } from '@astroid/types';
 
+import type { RequestOptionsExtras } from '@astroid/core';
 import type { PolicySimulationHttpClient } from './simulate-policy.js';
 
 /* -------------------------------------------------------------------------- */
@@ -567,6 +568,7 @@ export async function simulatePolicyEvaluation(
   client: PolicySimulationHttpClient,
   policyId: string,
   input: PolicySimulationInput,
+  options?: RequestOptionsExtras,
 ): Promise<PolicySimulationEvaluation> {
   // Both the id and the payload are checked before a single byte goes over the
   // wire, so a malformed request can never reach the API.
@@ -574,6 +576,6 @@ export async function simulatePolicyEvaluation(
   const payload = validatePolicySimulationInput(input);
   const id = requirePolicyId(policyId);
 
-  const res = await client.post<unknown>(path, payload);
+  const res = await client.post<unknown>(path, payload, options);
   return toPolicySimulationEvaluation(id, res.data);
 }

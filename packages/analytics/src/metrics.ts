@@ -1,10 +1,71 @@
 import type { HttpClient, RequestOptionsExtras } from '@astroid/core';
 import type {
+  AgentMetricsParams,
+  AgentMetricsReport,
   AnalyticsMetricsResponse,
   AnalyticsOverview,
   AnalyticsQueryParams,
+  GlobalAnalyticsParams,
   VolumeSummary,
 } from '@astroid/types';
+
+/**
+ * Fetch aggregated per-agent metrics for a configurable time range.
+ *
+ * @param client HTTP client used to call the analytics API.
+ * @param params Optional time range, resolution, and agent/wallet filters.
+ * @param options Extra request options forwarded to the HTTP client.
+ * @returns The per-agent metrics report.
+ *
+ * @example
+ * ```ts
+ * const report = await getAgentMetrics(client, {
+ *   startDate: '2026-01-01T00:00:00.000Z',
+ *   endDate: '2026-02-01T00:00:00.000Z',
+ *   resolution: 'day',
+ * });
+ * ```
+ */
+export async function getAgentMetrics(
+  client: HttpClient,
+  params: AgentMetricsParams = {},
+  options?: RequestOptionsExtras,
+): Promise<AgentMetricsReport> {
+  const res = await client.get<AgentMetricsReport>('/analytics/agents/metrics', {
+    ...(options ?? {}),
+    query: { ...params },
+  });
+  return res.data;
+}
+
+/**
+ * Fetch the global analytics overview for a configurable time range.
+ *
+ * @param client HTTP client used to call the analytics API.
+ * @param params Optional time range and resolution.
+ * @param options Extra request options forwarded to the HTTP client.
+ * @returns Global transaction, fee, policy, and success metrics.
+ *
+ * @example
+ * ```ts
+ * const report = await getGlobalAnalytics(client, {
+ *   startDate: '2026-01-01T00:00:00.000Z',
+ *   endDate: '2026-02-01T00:00:00.000Z',
+ *   resolution: 'day',
+ * });
+ * ```
+ */
+export async function getGlobalAnalytics(
+  client: HttpClient,
+  params: GlobalAnalyticsParams = {},
+  options?: RequestOptionsExtras,
+): Promise<AnalyticsOverview> {
+  const res = await client.get<AnalyticsOverview>('/analytics/overview', {
+    ...(options ?? {}),
+    query: { ...params },
+  });
+  return res.data;
+}
 
 /**
  * Serialize analytics query parameters — including pagination — into a
@@ -100,4 +161,5 @@ export class AnalyticsResource {
 /**
  * Helper function for backward compatibility with existing aggregateTransactionMetrics
  */
-export { aggregateTransactionMetrics } from './aggregations.js';
+export { aggregateTransactionMetrics, aggregateTimeSeriesMetrics } from './aggregations.js';
+

@@ -98,7 +98,7 @@ describe('AgentResource lifecycle (issue #77)', () => {
     const result = await resource.deactivate('agt_1');
 
     expect(result).toEqual(deactivated);
-    expect(http.post).toHaveBeenCalledWith('/agents/agt_1/deactivate', undefined, undefined);
+    expect(http.post).toHaveBeenCalledWith('/agents/agt_1/deactivate');
   });
 
   it('deactivate() percent-encodes the agent id', async () => {
@@ -106,10 +106,6 @@ describe('AgentResource lifecycle (issue #77)', () => {
 
     await resource.deactivate('agt/special');
 
-    expect(http.post).toHaveBeenCalledWith(
-      '/agents/agt%2Fspecial/deactivate',
-      undefined,
-      undefined,
-    );
+    expect(http.post).toHaveBeenCalledWith('/agents/agt%2Fspecial/deactivate');
   });
 });

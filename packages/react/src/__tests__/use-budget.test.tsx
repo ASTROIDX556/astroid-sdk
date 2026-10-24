@@ -322,14 +322,15 @@ describe('useBudgetUtilization', () => {
     unmount();
   });
 
-  it('is disabled until an id is provided', () => {
+  it('is disabled until a non-empty id is provided', () => {
     const client = makeClient();
     const utilSpy = vi.spyOn(client.budgets, 'utilization');
 
     let isIdle = false;
     function TestComponent() {
-      const result = useBudgetUtilization(undefined);
-      isIdle = result.fetchStatus === 'idle';
+      const missingId = useBudgetUtilization(undefined);
+      const emptyId = useBudgetUtilization('');
+      isIdle = missingId.fetchStatus === 'idle' && emptyId.fetchStatus === 'idle';
       return null;
     }
 

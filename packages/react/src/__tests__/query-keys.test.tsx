@@ -115,6 +115,17 @@ describe('queryKeys', () => {
         'utilization',
       ]);
     });
+
+    it('alerts returns a nested key under budget ID', () => {
+      const params = { limit: 10 };
+      expect(queryKeys.budgets.alerts('bud_123', params)).toEqual([
+        'astroid',
+        'budgets',
+        'bud_123',
+        'alerts',
+        params,
+      ]);
+    });
   });
 
   describe('key stability', () => {

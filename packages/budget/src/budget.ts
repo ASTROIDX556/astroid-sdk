@@ -39,7 +39,10 @@ import type {
   PaginationParams,
   UpdateBudgetAlertInput,
   UpdateBudgetInput,
+  BudgetAdjustmentRequest,
+  BudgetAdjustmentResponse,
 } from '@astroid/types';
+import { requestBudgetAdjustment } from './adjustments.js';
 import { ValidationError } from '@astroid/errors';
 import {
   createBudgetAlert,
@@ -178,6 +181,23 @@ export interface DeriveAllocationOptions extends BudgetAllocationThresholds {
 }
 
 /**
+ * Allocation status with remaining-budget percentage and threshold flags.
+ *
+ * Threshold flags and state use the full-precision utilization ratio. The
+ * inherited `percent` and `remainingPercentage` values are rounded for display.
+ */
+export interface BudgetThresholdCheckResult extends BudgetAllocationStatus {
+  /** Share of the limit still available, from `0` to `100`. */
+  remainingPercentage: number;
+  /** Whether the warning threshold has been reached. */
+  warning: boolean;
+  /** Whether the critical threshold has been reached. */
+  critical: boolean;
+  /** Whether the allocation is exhausted or over budget. */
+  exceeded: boolean;
+}
+
+/**
  * Compute a {@link BudgetAllocationStatus} from a {@link Budget} using only
  * local arithmetic — no network calls.
  *
@@ -212,6 +232,49 @@ export function deriveAllocationStatus(
   }
 
   return status;
+}
+
+/**
+ * Check a budget against warning and critical utilization thresholds.
+ *
+ * The result includes the normal allocation status, the percentage of the
+ * budget that remains, and flags indicating whether the warning, critical, or
+ * exhausted thresholds have been reached. Threshold values are percentages;
+ * defaults are 80% warning and 95% critical.
+ *
+ * @param budget The shared budget entity to inspect.
+ * @param thresholds Optional warning and critical percentage overrides.
+ * @returns The allocation status with remaining percentage and threshold flags.
+ *
+ * @example
+ * ```ts
+ * const check = checkBudgetThreshold(budget, { warnAt: 80, criticalAt: 90 });
+ * if (check.warning) notifyAgent(check.remainingPercentage);
+ * if (check.exceeded) pauseSpending();
+ * ```
+ */
+export function checkBudgetThreshold(
+  budget: Budget,
+  thresholds: BudgetAllocationThresholds = {},
+): BudgetThresholdCheckResult {
+  const status = deriveAllocationStatus(budget, thresholds);
+  const warnAt = thresholds.warnAt ?? DEFAULT_ALLOCATION_THRESHOLDS.warnAt;
+  const criticalAt = thresholds.criticalAt ?? DEFAULT_ALLOCATION_THRESHOLDS.criticalAt;
+  const limit = toNumber(status.limit);
+  const spent = toNumber(status.spent);
+  const hasLimit = limit > 0;
+  const percent = hasLimit ? (spent / limit) * 100 : spent > 0 ? 100 : 0;
+
+  return {
+    ...status,
+    state: classifyAllocation(percent, thresholds),
+    remainingPercentage: hasLimit
+      ? Math.round(Math.max(0, ((limit - spent) / limit) * 100) * 100) / 100
+      : 0,
+    warning: percent >= warnAt,
+    critical: percent >= criticalAt,
+    exceeded: hasLimit ? spent >= limit : spent > 0,
+  };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -269,6 +332,24 @@ export class BudgetClient {
    */
   async create(input: CreateBudgetInput): Promise<Budget> {
     return this.http.post<Budget>(BASE_PATH, input);
+  }
+
+  /**
+   * Request a dynamic budget allocation adjustment (issue #466).
+   *
+   * @param budgetId      The unique identifier of the budget to adjust.
+   * @param amount        The adjustment amount.
+   * @param justification Justification string or metadata explaining the adjustment.
+   * @param options       Optional transport options.
+   * @returns             The pending or resolved adjustment response.
+   */
+  async requestAdjustment(
+    budgetId: string,
+    amount: DecimalString | number,
+    justification?: string | Record<string, unknown> | BudgetAdjustmentRequest,
+    options?: BudgetRequestOptions,
+  ): Promise<BudgetAdjustmentResponse> {
+    return requestBudgetAdjustment(this.http, budgetId, amount, justification, options);
   }
 
   /**
