@@ -46,6 +46,13 @@ export {
   type TransactionLike,
 } from './signing.js';
 
+export {
+  formatBalance,
+  parseBalance,
+  XLM_DECIMAL_PLACES,
+  DEFAULT_ASSET_DECIMAL_PLACES,
+} from './balance.js';
+
 /**
  * Balance DTOs re-exported from `@astroid/types` so consumers of
  * `@astroid/wallet` can name the balance shapes without a second import.
@@ -118,6 +125,14 @@ export function formatWalletBalances(
   };
 }
 
+export {
+  formatBalance,
+  parseBalance,
+  XLM_DECIMAL_PLACES,
+  DEFAULT_ASSET_DECIMAL_PLACES,
+} from './balance.js';
+
+
 export { SecureKeystore, type EncryptedPayload } from './keystore.js';
 
 // Stellar amount conversion, formatting & validation utilities (issue #453).
@@ -144,6 +159,14 @@ export {
   verifyMessage,
   zeroize,
 } from './crypto.js';
+
+/** Balance formatting and parsing utilities */
+export {
+  formatBalance,
+  parseBalance,
+  XLM_DECIMAL_PLACES,
+  DEFAULT_ASSET_DECIMAL_PLACES,
+} from './balance.js';
 
 /** Filters accepted by {@link WalletResource.list}. */
 export interface WalletListParams extends PaginationParams {
@@ -456,6 +479,7 @@ export class WalletResource extends Resource {
   }
 }
 
+export * from './balance.js';
 export * from './multisig.js';
 export {
   verifyAssetTrustline,
