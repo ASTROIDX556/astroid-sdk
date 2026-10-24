@@ -16,6 +16,7 @@ import {
   FeeBumpValidationError,
   assertValidFeeBumpParams,
   bumpFee,
+  buildFeeBumpTransaction,
   validateFeeBumpParams,
   type FeeBumpOptions,
 } from '../src/feeBump.js';
@@ -164,6 +165,22 @@ describe('bumpFee — valid construction', () => {
 
     expect(result.baseFee).toBe('100');
     expect(result.fee).toBe('200');
+  });
+
+  it('buildFeeBumpTransaction alias behaves identically to bumpFee', () => {
+    const sponsor = Keypair.random();
+    const inner = makeInner({ sign: true });
+
+    const result = buildFeeBumpTransaction({
+      transaction: inner,
+      feeSource: { publicKey: sponsor.publicKey(), secretKey: sponsor.secret() },
+      networkPassphrase: Networks.TESTNET,
+      baseFee: 200,
+    });
+
+    expect(result.signed).toBe(true);
+    expect(result.feeSource).toBe(sponsor.publicKey());
+    expect(result.baseFee).toBe('200');
   });
 });
 
