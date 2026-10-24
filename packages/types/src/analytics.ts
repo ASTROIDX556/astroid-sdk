@@ -37,7 +37,6 @@ export interface AnalyticsQueryParams extends PaginationParams {
   /** Filter results to a single agent. */
   agentId?: string;
 }
-
 /** Shared analytics query filters (alias of {@link AnalyticsQueryParams}). */
 export type AnalyticsQuery = AnalyticsQueryParams;
 
@@ -198,11 +197,19 @@ export interface AgentMetricsParams {
   endDate?: string;
   /** Bucket granularity for the report. */
   interval?: MetricsInterval;
+  /** Alias for `interval` used by the metrics endpoint. */
+  resolution?: MetricsInterval;
   /** Filter results to a single agent. */
   agentId?: string;
   /** Filter results to a single wallet. */
   walletId?: string;
 }
+
+/** Query filters for the global analytics overview. */
+export type GlobalAnalyticsParams = Pick<
+  AgentMetricsParams,
+  'startDate' | 'endDate' | 'resolution'
+>;
 
 /**
  * Query DTO for `GET /analytics/spending/summary`.
@@ -376,3 +383,184 @@ export interface MetricsQueryParams extends TimeRangeQueryParams {
   /** Several metric families to aggregate in one request. */
   metrics?: TimeSeriesMetric[];
 }
+
+/* -------------------------------------------------------------------------- */
+/* Telemetry event tracking DTOs (issue #380)                                   */
+/* -------------------------------------------------------------------------- */
+
+/** Severity levels carried by a telemetry event, ordered info → error. */
+export type AnalyticsEventSeverity = 'debug' | 'info' | 'warn' | 'error';
+
+/**
+ * Scoping metadata attached to a telemetry event so events can be correlated
+ * back to the agent, wallet, transaction, or organization that produced them.
+ * Every field is optional — a bare custom event needs none of them.
+ */
+export interface AnalyticsEventContext {
+  /** The agent that emitted the event, when applicable. */
+  agentId?: string;
+  /** The wallet the event relates to, when applicable. */
+  walletId?: string;
+  /** The transaction the event relates to, when applicable. */
+  transactionId?: string;
+  /** The organization that owns the emitting agent/wallet. */
+  organizationId?: string;
+  /** The network the event occurred on (e.g. `"testnet"`). */
+  network?: string;
+}
+
+/** JSON-safe scalar property values accepted on a telemetry event. */
+export type AnalyticsEventPropertyValue = string | number | boolean | null;
+
+/**
+ * Strict, wire-ready telemetry event produced by the analytics client.
+ *
+ * Every field is required: the SDK fills in `id`, `timestamp`, `severity`,
+ * `context`, and `properties` defaults when the caller supplies only an
+ * {@link AnalyticsEventInput}, so batches posted to the telemetry endpoint
+ * are fully normalized before they leave the process.
+ */
+export interface AnalyticsEvent {
+  /** Unique event identifier (ULID/UUID), assigned at record time. */
+  id: string;
+  /** Dotted event name, e.g. `"transaction.completed"` or `"agent.executed"`. */
+  name: string;
+  /** Event severity. Defaults to `"info"`. */
+  severity: AnalyticsEventSeverity;
+  /** ISO-8601 UTC timestamp of when the event occurred. */
+  timestamp: string;
+  /** Correlation metadata (agent, wallet, transaction, …). */
+  context: AnalyticsEventContext;
+  /** Flat, JSON-safe custom properties (durations, counts, amounts, …). */
+  properties: Record<string, AnalyticsEventPropertyValue>;
+}
+
+/**
+ * Caller-facing input for {@link AnalyticsEvent}: `name` is required and
+ * everything else is optional, with sane defaults applied at record time.
+ * `timestamp` accepts a `Date` for convenience and is normalized to an
+ * ISO-8601 UTC string on the wire.
+ */
+export interface AnalyticsEventInput {
+  /** Dotted event name, e.g. `"transaction.completed"`. */
+  name: string;
+  /** Event severity. Defaults to `"info"`. */
+  severity?: AnalyticsEventSeverity;
+  /** When the event occurred. Defaults to "now" when omitted or invalid. */
+  timestamp?: string | Date;
+  /** Correlation metadata (agent, wallet, transaction, …). */
+  context?: AnalyticsEventContext;
+  /** Flat, JSON-safe custom properties. */
+  properties?: Record<string, AnalyticsEventPropertyValue>;
+}
+
+/** The POST body sent to the telemetry ingest endpoint for one batch. */
+export interface AnalyticsEventBatch {
+  /** The normalized events in this batch, in record order. */
+  events: AnalyticsEvent[];
+  /** ISO-8601 UTC timestamp of when the batch was dispatched. */
+  sentAt?: string;
+}
+
+/** Server acknowledgement for a posted {@link AnalyticsEventBatch}. */
+export interface AnalyticsEventBatchAck {
+  /** Events the ingest endpoint accepted. */
+  accepted: number;
+  /** Events the ingest endpoint rejected (e.g. schema violations). */
+  rejected: number;
+  /** Optional server-assigned batch identifier, for tracing. */
+  batchId?: string;
+}
+/* Time-series aggregation DTOs (issue #442)                                   */
+/* -------------------------------------------------------------------------- */
+
+/** Supported interval resolutions for time-series aggregation. */
+export type TimeSeriesResolution =
+  | 'hour'
+  | 'day'
+  | 'week'
+  | 'hourly'
+  | 'daily'
+  | 'weekly';
+
+/** Options for aggregating time-series metrics. */
+export interface AggregateTimeSeriesOptions {
+  /** Bucket interval resolution. Defaults to `'day'`. */
+  interval?: TimeSeriesResolution;
+  /** When true, generates zero-value buckets for periods with no data. Defaults to false. */
+  zeroFill?: boolean;
+  /** Inclusive start of the reporting window (ISO-8601 string or Date). */
+  startDate?: string | Date;
+  /** Alias for {@link startDate}. */
+  startTime?: string | Date;
+  /** Shorthand alias for {@link startDate}. */
+  from?: string | Date;
+  /** Exclusive end of the reporting window (ISO-8601 string or Date). */
+  endDate?: string | Date;
+  /** Alias for {@link endDate}. */
+  endTime?: string | Date;
+  /** Shorthand alias for {@link endDate}. */
+  to?: string | Date;
+  /** Custom formatter for chart x-axis labels. */
+  formatDate?: (date: Date, interval: 'hour' | 'day' | 'week') => string;
+}
+
+/** Formatted, aggregated time-series metric bucket ready for charts and reports. */
+export interface AggregatedTimeSeriesBucket extends TimeSeriesMetricPoint {
+  /** ISO-8601 UTC timestamp marking the start of this interval bucket (inclusive). */
+  timestamp: string;
+  /** ISO-8601 UTC timestamp marking the end of this interval bucket (exclusive). */
+  endTimestamp: string;
+  /** Sum of transaction/spending volume in this bucket (decimal string). */
+  volume: string;
+  /** Sum of network/gas fees in this bucket (decimal string). */
+  fee: string;
+  /** Total transaction count in this bucket. */
+  count: number;
+  /** Total successful transactions in this bucket. */
+  successCount: number;
+  /** Total failed transactions in this bucket. */
+  failureCount: number;
+  /** Success rate between 0 and 1: `successCount / (successCount + failureCount)`. */
+  successRate: number;
+  /** Volume as a floating-point number for charting axes. */
+  volumeNumeric: number;
+  /** Fee as a floating-point number for charting axes. */
+  feeNumeric: number;
+  /** Human-friendly formatted date string suitable for chart x-axis labels. */
+  formattedDate: string;
+  /** Chart-compatible date label (alias of formattedDate). */
+  date: string;
+  /** Chart-compatible metric value (alias of volumeNumeric). */
+  value: number;
+}
+
+/**
+ * Result returned by time-series metrics aggregation.
+ * Extends `Array<AggregatedTimeSeriesBucket>` for array operations, with summary totals attached.
+ */
+export interface AggregatedTimeSeriesResult extends Array<AggregatedTimeSeriesBucket> {
+  /** Bucket granularity used for aggregation. */
+  interval: 'hour' | 'day' | 'week';
+  /** Resolution requested in options. */
+  resolution: TimeSeriesResolution;
+  /** Array of bucketed points (reference to this array). */
+  points: AggregatedTimeSeriesBucket[];
+  /** Per-bucket breakdown (alias of points). */
+  buckets: AggregatedTimeSeriesBucket[];
+  /** Summary statistics across all buckets. */
+  summary: VolumeSummary;
+  /** Sum of volume across all buckets (decimal string). */
+  totalVolume: string;
+  /** Sum of fees across all buckets (decimal string). */
+  totalFees: string;
+  /** Total transaction count across all buckets. */
+  totalCount: number;
+  /** Total successful transactions across all buckets. */
+  successCount: number;
+  /** Total failed transactions across all buckets. */
+  failureCount: number;
+  /** Global success rate across all buckets. */
+  successRate: number;
+}
+

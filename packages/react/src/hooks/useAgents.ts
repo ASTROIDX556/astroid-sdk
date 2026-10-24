@@ -257,6 +257,44 @@ export function useUpdateAgentMetadata(): UseMutationResult<
 }
 
 /* -------------------------------------------------------------------------- */
+/* useArchiveAgent — optimistic lifecycle deactivation                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Mutation hook to archive (deactivate) an autonomous agent.
+ *
+ * **Optimistic update**: the agent's cached detail and list entries flip to
+ * `ARCHIVED` status instantly, in-flight refetches are cancelled, failures roll
+ * back to the pre-mutation snapshot, and the affected keys are invalidated on settle.
+ */
+export function useArchiveAgent(): UseMutationResult<Agent, Error, string> {
+  const astroid = useAstroidClient();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => astroid.agents.deactivate(id),
+    onMutate: async (id) => {
+      const context = await snapshotAgentCache(queryClient, id);
+
+      patchAgentDetail(queryClient, id, { status: 'ARCHIVED' });
+      patchAgentInLists(queryClient, id, (agent) => ({
+        ...agent,
+        status: 'ARCHIVED',
+        updatedAt: new Date().toISOString(),
+      }));
+
+      return context;
+    },
+    onError: (_err, _id, context) => {
+      rollbackAgentCache(queryClient, context);
+    },
+    onSettled: (_data, _error, id) => {
+      void invalidateAgentQueries(queryClient, id);
+    },
+  });
+}
+
+/* -------------------------------------------------------------------------- */
 /* useDeleteAgent — optimistic: remove from list cache                         */
 /* -------------------------------------------------------------------------- */
 

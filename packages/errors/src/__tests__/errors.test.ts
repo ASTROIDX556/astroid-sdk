@@ -343,4 +343,70 @@ describe('specialized error classes (issue #271 / #279)', () => {
     expect(errorClassForCode('RATE_LIMITED')).toBe(RateLimitError);
     expect(errorClassForCode('AUTHENTICATION_ERROR')).toBe(AuthenticationError);
   });
+
+  describe('RateLimitError and ValidationError specific features (issue #406)', () => {
+    it('instantiates RateLimitError with optional retryAfter metadata', () => {
+      const errWithRetry = new RateLimitError('Too many requests', {
+        code: 'RATE_LIMITED',
+        statusCode: 429,
+        details: { retryAfter: 60 },
+      });
+      expect(errWithRetry).toBeInstanceOf(RateLimitError);
+      expect(errWithRetry).toBeInstanceOf(AstroidError);
+      expect(errWithRetry.retryAfter).toBe(60);
+      expect(errWithRetry.isRetryable).toBe(true);
+
+      const errWithoutRetry = new RateLimitError('Too many requests', {
+        code: 'RATE_LIMITED',
+        statusCode: 429,
+      });
+      expect(errWithoutRetry.retryAfter).toBeUndefined();
+      expect(errWithoutRetry.isRetryable).toBe(true);
+    });
+
+    it('instantiates ValidationError with field error details metadata', () => {
+      const fieldErrors = {
+        amount: ['amount must be greater than 0'],
+        recipient: ['invalid stellar address'],
+      };
+      const errWithFields = new ValidationError('Validation failed', {
+        code: 'VALIDATION_ERROR',
+        statusCode: 422,
+        details: { fields: fieldErrors },
+      });
+      expect(errWithFields).toBeInstanceOf(ValidationError);
+      expect(errWithFields).toBeInstanceOf(AstroidError);
+      expect(errWithFields.fieldErrors).toEqual(fieldErrors);
+      expect(errWithFields.isRetryable).toBe(false);
+
+      const errWithValidationErrors = new ValidationError('Validation failed', {
+        code: 'VALIDATION_ERROR',
+        statusCode: 422,
+        details: { validationErrors: fieldErrors },
+      });
+      expect(errWithValidationErrors.fieldErrors).toEqual(fieldErrors);
+
+      const errWithoutFields = new ValidationError('Validation failed', {
+        code: 'VALIDATION_ERROR',
+        statusCode: 422,
+      });
+      expect(errWithoutFields.fieldErrors).toBeUndefined();
+    });
+
+    it('maps HTTP 429 and 422 to their respective subclasses via mapStatusToError', () => {
+      const rateLimitErr = mapStatusToError(429, 'Rate limit exceeded', {
+        details: { retryAfter: 30 },
+      });
+      expect(rateLimitErr).toBeInstanceOf(RateLimitError);
+      expect((rateLimitErr as RateLimitError).retryAfter).toBe(30);
+      expect(rateLimitErr.statusCode).toBe(429);
+
+      const validationErr = mapStatusToError(422, 'Unprocessable entity', {
+        details: { fields: { email: ['invalid format'] } },
+      });
+      expect(validationErr).toBeInstanceOf(ValidationError);
+      expect((validationErr as ValidationError).fieldErrors).toEqual({ email: ['invalid format'] });
+      expect(validationErr.statusCode).toBe(422);
+    });
+  });
 });
