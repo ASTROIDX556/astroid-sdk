@@ -34,6 +34,7 @@ import {
   type RequestOptions,
   type RequestOptionsExtras,
   type RetryOptions,
+  type RetryConfig,
 } from '@astroid/core';
 import type { PaginatedResponse, PaginationParams, ResponseMeta } from '@astroid/types';
 import {
