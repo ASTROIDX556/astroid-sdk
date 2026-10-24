@@ -96,6 +96,13 @@ export interface FeeBumpOptions {
   feeBufferPercentage?: number;
 }
 
+/**
+ * The subset of {@link FeeBumpOptions} a builder accepts when a transaction
+ * should be wrapped in a fee-bump envelope. The inner transaction and network
+ * passphrase are supplied by the builder itself.
+ */
+export type FeeBumpConfig = Pick<FeeBumpOptions, 'feeSource' | 'baseFee' | 'feeBufferPercentage'>;
+
 /** The result of a successful {@link bumpFee} call. */
 export interface FeeBumpResult {
   /** The constructed fee-bump transaction (signed when credentials allowed it). */

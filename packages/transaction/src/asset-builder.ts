@@ -29,7 +29,7 @@ import type { AssetDescriptor, IssuedAssetDescriptor, NativeAssetDescriptor } fr
 
 import { assertValidPositiveAmount, assertValidStellarPublicKey } from './validate.js';
 import { createBuilder, type BuildTransactionOptions } from './builder.js';
-import type { FeeBumpOptions } from './feeBump.js';
+import type { FeeBumpConfig } from './feeBump.js';
 import { bumpFee } from './feeBump.js';
 
 /* -------------------------------------------------------------------------- */
@@ -48,7 +48,7 @@ export interface AssetPaymentTransactionOptions extends BuildTransactionOptions 
   /** Amount to send (decimal string or number). */
   amount: string | number;
   /** Sponsor the transaction fee with a Stellar fee-bump envelope. */
-  feeBump?: Pick<FeeBumpOptions, 'feeSource' | 'baseFee' | 'feeBufferPercentage'>;
+  feeBump?: FeeBumpConfig;
 }
 
 /** Everything {@link buildAssetPaymentTransaction} returns about the built envelope. */

@@ -28,12 +28,13 @@ import { ValidationError } from '@astroid/errors';
 import { MAX_OPERATIONS, MAX_TOTAL_FEE_STROOPS, MIN_BASE_FEE_STROOPS } from './validator.js';
 import {
   assertValidMemoHash,
+  assertValidMemoId,
   assertValidMemoText,
   assertValidPositiveAmount,
   assertValidStellarPublicKey,
 } from './validate.js';
 import { bumpFee } from './feeBump.js';
-import type { FeeBumpOptions } from './feeBump.js';
+import type { FeeBumpConfig } from './feeBump.js';
 
 /* -------------------------------------------------------------------------- */
 /* Public types                                                                */
@@ -75,10 +76,12 @@ export interface BuildTransactionOptions {
    */
   memoReturn?: string;
   /**
-   * Optional `MEMO_ID` value: a non-negative 64-bit unsigned integer.
+   * Optional `MEMO_ID` value: a non-negative 64-bit unsigned integer, as a
+   * decimal string, a safe integer number, or a `bigint`. Values above
+   * `Number.MAX_SAFE_INTEGER` must be a string or `bigint` to avoid rounding.
    * Mutually exclusive with the other memo options.
    */
-  memoId?: string | number;
+  memoId?: string | number | bigint;
 }
 
 /** Options for {@link buildPaymentTransaction}. */
@@ -97,7 +100,7 @@ export interface PaymentTransactionOptions extends BuildTransactionOptions {
 /** Options for an autonomous agent transfer, optionally wrapped in a fee bump. */
 export interface AgentTransferTransactionOptions extends PaymentTransactionOptions {
   /** Sponsor the transaction fee with a Stellar fee-bump envelope. */
-  feeBump?: Pick<FeeBumpOptions, 'feeSource' | 'baseFee' | 'feeBufferPercentage'>;
+  feeBump?: FeeBumpConfig;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -220,14 +223,14 @@ function resolveMemo(options: BuildTransactionOptions): Memo | undefined {
     return Memo.return(options.memoReturn.trim());
   }
   if (options.memoId !== undefined) {
-    const id = String(options.memoId).trim();
-    if (!/^\d{1,20}$/.test(id) || BigInt(id) > 18_446_744_073_709_551_615n) {
-      throw new ValidationError('memoId must be a uint64 value.', {
-        code: 'INVALID_MEMO',
-        details: { field: 'memoId' },
-      });
-    }
-    return Memo.id(id);
+    assertValidMemoId(options.memoId);
+    // stellar-base takes memo ids as decimal strings; bigint keeps the full
+    // uint64 range intact.
+    return Memo.id(
+      typeof options.memoId === 'bigint'
+        ? options.memoId.toString()
+        : String(options.memoId).trim(),
+    );
   }
   return undefined;
 }
