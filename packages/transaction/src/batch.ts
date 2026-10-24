@@ -395,7 +395,7 @@ export class BatchTransactionBuilder {
   private memoText?: string;
   private memoHash?: string;
   private memoReturn?: string;
-  private memoId?: string | number;
+  private memoId?: string | number | bigint;
   private operations: BatchOperationSpec[] = [];
   private cachedPayload?: BatchTransactionPayload;
 
@@ -499,7 +499,7 @@ export class BatchTransactionBuilder {
   }
 
   /** Set a 64-bit unsigned integer memo ID. */
-  setMemoId(id: string | number): this {
+  setMemoId(id: string | number | bigint): this {
     this.invalidateCache();
     this.memoId = id;
     return this;
