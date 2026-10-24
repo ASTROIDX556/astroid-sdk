@@ -3,7 +3,7 @@ import re
 with open('packages/react/src/hooks/useAgents.ts', 'r') as f:
     content = f.read()
 
-# Replace useCreateAgent
+# ReplaceuseCreateAgent
 content = re.sub(
     r'export function useCreateAgent\(\).*?onSettled: \(\) => \{\n      // Invalidate so TanStack Query re-fetches the authoritative state\.\n      void queryClient\.invalidateQueries\(\{ queryKey: queryKeys\.agents\.all \}\);\n    \},\n  \}\);\n\}',
     '''export function useCreateAgent(): UseMutationResult<Agent, Error, CreateAgentParams> {
