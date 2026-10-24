@@ -330,3 +330,58 @@ export interface BudgetHistoryQueryParams extends PaginationParams {
   /** Only entries whose `amount` is at most this value. */
   maxAmount?: DecimalString | number;
 }
+
+/* -------------------------------------------------------------------------- */
+/* Budget allocation adjustments                                               */
+/* -------------------------------------------------------------------------- */
+
+/** Status of a budget allocation adjustment proposal. */
+export type BudgetAdjustmentStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'APPLIED';
+
+/** Lifecycle state of a budget allocation adjustment. */
+export type BudgetAdjustmentState = 'pending' | 'resolved' | 'approved' | 'rejected';
+
+/** Request parameters for dynamically adjusting budget allocation. */
+export interface BudgetAdjustmentRequest {
+  /** The amount to adjust (temporary expansion or reallocation). */
+  amount: DecimalString | number;
+  /** Justification metadata explaining why the adjustment is requested. */
+  justification?: string;
+  /** Additional structured metadata accompanying the adjustment proposal. */
+  metadata?: Record<string, unknown>;
+  /** Optional target sub-budget id if funds are reallocated between sub-budgets. */
+  targetBudgetId?: string;
+}
+
+/** Response object representing the pending or resolved allocation state. */
+export interface BudgetAdjustmentResponse {
+  /** Unique identifier of the adjustment request. */
+  id: string;
+  /** The budget being adjusted. */
+  budgetId: string;
+  /** Optional target sub-budget if reallocating funds. */
+  targetBudgetId?: string;
+  /** The adjustment amount requested. */
+  amount: DecimalString;
+  /** The current status of the adjustment proposal. */
+  status: BudgetAdjustmentStatus;
+  /** Lifecycle state of the adjustment. */
+  state: BudgetAdjustmentState;
+  /** The active budget allocation state (healthy, warning, critical, exhausted). */
+  allocationState?: BudgetAllocationState;
+  /** The budget limit prior to adjustment. */
+  currentLimit?: DecimalString;
+  /** The new effective limit if approved/applied. */
+  adjustedLimit?: DecimalString;
+  /** Justification string provided with the request. */
+  justification?: string;
+  /** Arbitrary metadata attached to the adjustment proposal. */
+  metadata?: Record<string, unknown>;
+  /** Reason provided if the adjustment request was rejected. */
+  rejectionReason?: string;
+  /** When the request was created. */
+  createdAt: IsoDateTime;
+  /** When the request was last updated or resolved. */
+  updatedAt?: IsoDateTime;
+}
+

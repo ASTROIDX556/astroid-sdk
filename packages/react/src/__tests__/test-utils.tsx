@@ -76,6 +76,14 @@ export function createMockClient() {
           updatedAt: new Date().toISOString(),
         }),
       ),
+      update: vi.fn(async (): Promise<Agent> => AGENT_A),
+      deactivate: vi.fn(async (): Promise<Agent> => ({ ...AGENT_A, status: 'ARCHIVED' })),
+      delete: vi.fn(async (): Promise<void> => undefined),
+    },
+    budgets: {
+      list: vi.fn(async () => ({ data: [], meta: { page: 1, limit: 25, total: 0, totalPages: 0, hasNextPage: false, hasPreviousPage: false } })),
+      get: vi.fn(async () => ({ id: 'bud_123', name: 'Test Budget' })),
+      listAlerts: vi.fn(async () => ({ data: [], meta: { page: 1, limit: 25, total: 0, totalPages: 0, hasNextPage: false, hasPreviousPage: false } })),
     },
   } as unknown as Astroid;
 }

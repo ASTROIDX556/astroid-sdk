@@ -15,14 +15,21 @@
 export {
   AgentResource,
   AgentsResource,
+  DEFAULT_BATCH_STATUS_CONCURRENCY,
+  partitionAgentStatuses,
   type AgentListParams,
   type AgentCursorListParams,
+  type AgentStatusLookup,
+  type BatchAgentStatusOptions,
+  type PartitionedAgentStatuses,
 } from './agent.js';
 export { AstroidValidationError } from './errors.js';
 export {
   // CreateAgentDto guards
   validateCreateAgentParams,
   isValidCreateAgentParams,
+  validateAgentConfig,
+  isValidAgentConfig,
   // UpdateAgentDto guards
   validateUpdateAgentParams,
   isValidUpdateAgentParams,
@@ -38,3 +45,15 @@ export {
   isValidAgentMetadata,
 } from './validation.js';
 export { AgentClient } from './client.js';
+export {
+  hasAgentScope,
+  validateAgentScopes,
+  getMissingScopes,
+  hasAnyScope,
+  isScopedAgent,
+  extractScopes,
+  toScopedAgent,
+  scopeMatches,
+  type Scope,
+  type ScopedAgent,
+} from './scopes.js';

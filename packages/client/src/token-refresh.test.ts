@@ -258,6 +258,7 @@ describe('Astroid token refresh integration', () => {
     expect(refreshCalls).toBe(1);
     expect(client.sessionManager.getAccessToken()).toBeUndefined();
     expect(client.sessionManager.getRefreshToken()).toBeUndefined();
+    expect(client.http.config.auth.accessToken).toBeUndefined();
   });
 
   it('fails over to a single refresh network call when many parallel requests 401 (issue #237)', async () => {
