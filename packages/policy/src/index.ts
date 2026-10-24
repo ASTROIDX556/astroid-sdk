@@ -203,8 +203,9 @@ export { PolicyType } from '@astroid/types';
  */
 export type PolicyCreateInput = Omit<
   Policy,
-  'id' | 'organizationId' | 'createdAt' | 'updatedAt' | 'deletedAt' | 'enabled'
+  'id' | 'organizationId' | 'createdAt' | 'updatedAt' | 'deletedAt' | 'enabled' | 'priority'
 > & {
+  priority?: number;
   enabled?: boolean;
 };
 
