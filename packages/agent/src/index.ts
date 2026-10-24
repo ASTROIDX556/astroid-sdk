@@ -18,6 +18,7 @@ export {
   DEFAULT_BATCH_STATUS_CONCURRENCY,
   partitionAgentStatuses,
   type AgentListParams,
+  type AgentListOptions,
   type AgentCursorListParams,
   type AgentStatusLookup,
   type BatchAgentStatusOptions,

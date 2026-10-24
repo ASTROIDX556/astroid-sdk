@@ -25,6 +25,7 @@ import {
 
 /** Filters accepted by {@link AgentResource.list}. */
 export type AgentListParams = ListAgentsParams;
+export type AgentListOptions = ListAgentsParams;
 
 /**
  * Filters accepted by {@link AgentResource.iterateByCursor}.
@@ -137,10 +138,10 @@ export class AgentResource extends Resource {
    * ```
    */
   async list(
-    params: AgentListParams = {},
+    params: AgentListOptions = {},
     options?: RequestOptionsExtras,
   ): Promise<Paginated<Agent>> {
-    return this.listData<Agent>('/agents', { ...params }, options);
+    return this.listData<Agent>('/agents', toAgentListQuery(params), options);
   }
 
   /**
@@ -505,6 +506,18 @@ function toAgentEventQuery(
   if (params.eventTypes !== undefined && params.eventTypes.length > 0) {
     query['eventTypes'] = params.eventTypes.join(',');
   }
+  return query;
+}
+
+function toAgentListQuery(params: AgentListOptions = {}): Record<string, string | number> {
+  const query: Record<string, string | number> = {};
+  if (params.page !== undefined) query.page = params.page;
+  if (params.limit !== undefined) query.limit = params.limit;
+  if (params.cursor !== undefined) query.cursor = params.cursor;
+  if (params.status !== undefined) query.status = params.status;
+  if (params.role !== undefined) query.role = params.role;
+  if (params.tag !== undefined) query.tag = params.tag;
+  if (params.search !== undefined) query.search = params.search;
   return query;
 }
 

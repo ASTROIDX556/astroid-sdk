@@ -27,6 +27,7 @@
  * @module
  */
 
+// Keep transport options typed once for both validation and request helpers.
 import type { RequestOptionsExtras } from '@astroid/core';
 import { ValidationError } from '@astroid/errors';
 import {
@@ -39,7 +40,6 @@ import {
   type PolicySimulationInput,
 } from '@astroid/types';
 
-import type { RequestOptionsExtras } from '@astroid/core';
 import type { PolicySimulationHttpClient } from './simulate-policy.js';
 
 /* -------------------------------------------------------------------------- */
