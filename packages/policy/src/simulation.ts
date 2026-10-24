@@ -39,7 +39,6 @@ import {
   type PolicySimulationInput,
 } from '@astroid/types';
 
-import type { RequestOptionsExtras } from '@astroid/core';
 import type { PolicySimulationHttpClient } from './simulate-policy.js';
 
 /* -------------------------------------------------------------------------- */
