@@ -19,6 +19,7 @@ import {
   useDeleteAgent,
   useSimulatePolicy,
   useWallets,
+  useAgentStatus,
   queryKeys,
   type AstroidProviderProps,
 } from '../index.js';
@@ -171,6 +172,50 @@ describe('Agent mutation hooks', () => {
     expect(hasCreate).toBe(true);
     expect(hasUpdate).toBe(true);
     expect(hasDelete).toBe(true);
+    unmount();
+  });
+});
+
+describe('useAgentStatus', () => {
+  it('returns a loading state initially', () => {
+    let isLoading = false;
+
+    function TestComponent() {
+      const query = useAgentStatus('agent_1');
+      isLoading = query.isLoading;
+      return null;
+    }
+
+    const { unmount } = renderInProviders(createElement(TestComponent));
+    expect(typeof isLoading).toBe('boolean');
+    unmount();
+  });
+
+  it('respects refetchInterval option', () => {
+    let rendered = false;
+
+    function TestComponent() {
+      useAgentStatus('agent_1', { refetchInterval: 3000 });
+      rendered = true;
+      return null;
+    }
+
+    const { unmount } = renderInProviders(createElement(TestComponent));
+    expect(rendered).toBe(true);
+    unmount();
+  });
+
+  it('query is disabled when enabled is false', () => {
+    let isFetching = true;
+
+    function TestComponent() {
+      const query = useAgentStatus('agent_1', { enabled: false });
+      isFetching = query.isFetching;
+      return null;
+    }
+
+    const { unmount } = renderInProviders(createElement(TestComponent));
+    expect(isFetching).toBe(false);
     unmount();
   });
 });

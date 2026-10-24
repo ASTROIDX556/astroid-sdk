@@ -5,6 +5,7 @@ import { ValidationError } from '@astroid/errors';
 
 import {
   BudgetClient,
+  checkBudgetThreshold,
   classifyAllocation,
   deriveAllocationStatus,
   isAllocationExhausted,
@@ -451,6 +452,65 @@ describe('BudgetClient', () => {
 /* -------------------------------------------------------------------------- */
 
 describe('allocation helpers', () => {
+  it('checks remaining percentage and default warning thresholds', () => {
+    const check = checkBudgetThreshold(makeBudget({ limitAmount: '100', spent: '80' }));
+
+    expect(check.remainingPercentage).toBe(20);
+    expect(check.warning).toBe(true);
+    expect(check.critical).toBe(false);
+    expect(check.exceeded).toBe(false);
+    expect(check.state).toBe('warning');
+  });
+
+  it('honors custom warning and critical thresholds', () => {
+    const warning = checkBudgetThreshold(makeBudget({ limitAmount: '100', spent: '80' }), {
+      warnAt: 80,
+      criticalAt: 90,
+    });
+    const critical = checkBudgetThreshold(makeBudget({ limitAmount: '100', spent: '90' }), {
+      warnAt: 80,
+      criticalAt: 90,
+    });
+
+    expect(warning.warning).toBe(true);
+    expect(warning.critical).toBe(false);
+    expect(critical.warning).toBe(true);
+    expect(critical.critical).toBe(true);
+    expect(critical.state).toBe('critical');
+    expect(critical.remainingPercentage).toBe(10);
+  });
+
+  it('evaluates flags against unrounded utilization at threshold boundaries', () => {
+    const justBelow = checkBudgetThreshold(makeBudget({ limitAmount: '100', spent: '89.999' }), {
+      warnAt: 80,
+      criticalAt: 90,
+    });
+    const almostExhausted = checkBudgetThreshold(
+      makeBudget({ limitAmount: '100', spent: '99.999' }),
+    );
+
+    expect(justBelow.percent).toBe(90);
+    expect(justBelow.warning).toBe(true);
+    expect(justBelow.critical).toBe(false);
+    expect(justBelow.state).toBe('warning');
+    expect(almostExhausted.exceeded).toBe(false);
+    expect(almostExhausted.state).toBe('critical');
+  });
+
+  it('handles zero limits and over-budget spending without invalid percentages', () => {
+    const zero = checkBudgetThreshold(makeBudget({ limitAmount: '0', spent: '0' }));
+    const over = checkBudgetThreshold(makeBudget({ limitAmount: '100', spent: '125' }));
+
+    expect(zero.remainingPercentage).toBe(0);
+    expect(zero.warning).toBe(false);
+    expect(zero.exceeded).toBe(false);
+    expect(over.remainingPercentage).toBe(0);
+    expect(over.warning).toBe(true);
+    expect(over.critical).toBe(true);
+    expect(over.exceeded).toBe(true);
+    expect(over.state).toBe('exhausted');
+  });
+
   it('classifyAllocation buckets by threshold', () => {
     expect(classifyAllocation(10)).toBe('healthy');
     expect(classifyAllocation(85)).toBe('warning');

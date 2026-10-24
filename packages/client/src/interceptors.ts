@@ -98,6 +98,16 @@ export type ResponseInterceptor = (
   response: ResponseConfig,
 ) => ResponseConfig | void | Promise<ResponseConfig | void>;
 
+/**
+ * An error interceptor. Called, in order, with every error that propagates out
+ * of a request, together with the options of the request that failed.
+ *
+ * Return a replacement error to transform it for the next interceptor and,
+ * ultimately, the caller. Return nothing to keep the current error — either
+ * observing it (logging, telemetry) or mutating it in place.
+ */
+export type ErrorInterceptor = (error: unknown, request: RequestOptions) => unknown;
+
 /** Interceptor arrays accepted by the client configuration. */
 export interface InterceptorOptions {
   /** Interceptors invoked, in order, before each request is dispatched. */
@@ -127,6 +137,19 @@ function encodeBody(body: unknown): string | undefined {
   return JSON.stringify(body);
 }
 
+/**
+ * Copy the per-request options so an interceptor that edits `config.options`
+ * never mutates the caller's original object (or a retry's copy of it).
+ */
+function cloneOptions(options: RequestOptions): RequestOptions {
+  return {
+    ...options,
+    ...(options.query ? { query: { ...options.query } } : {}),
+    ...(options.headers ? { headers: { ...options.headers } } : {}),
+    ...(options.context ? { context: { ...options.context } } : {}),
+  };
+}
+
 /** Snapshot a prepared request into the interceptor-facing config. */
 function toRequestConfig(req: PreparedRequest): RequestConfig {
   return {
@@ -134,7 +157,7 @@ function toRequestConfig(req: PreparedRequest): RequestConfig {
     method: req.method,
     headers: { ...req.headers },
     body: decodeBody(req.body),
-    options: req.options,
+    options: cloneOptions(req.options),
   };
 }
 
@@ -165,6 +188,9 @@ function fromRequestConfig(original: PreparedRequest, config: RequestConfig): Pr
  * @returns A {@link Middleware} that can be registered via `client.use()`.
  */
 export function createInterceptorMiddleware(options: InterceptorOptions = {}): Middleware {
+  // The arrays are held by reference, so interceptors added or removed after
+  // registration take effect on the next request. Each run iterates a snapshot,
+  // so an interceptor may safely remove itself mid-flight.
   const requestInterceptors = options.requestInterceptors ?? [];
   const responseInterceptors = options.responseInterceptors ?? [];
 
@@ -173,7 +199,7 @@ export function createInterceptorMiddleware(options: InterceptorOptions = {}): M
 
     async onRequest(req: PreparedRequest): Promise<PreparedRequest> {
       let current = toRequestConfig(req);
-      for (const interceptor of requestInterceptors) {
+      for (const interceptor of [...requestInterceptors]) {
         const next = await interceptor(current);
         if (next) current = next;
       }
@@ -188,7 +214,7 @@ export function createInterceptorMiddleware(options: InterceptorOptions = {}): M
         requestId: res.requestId,
         request: toRequestConfig(req),
       };
-      for (const interceptor of responseInterceptors) {
+      for (const interceptor of [...responseInterceptors]) {
         const next = await interceptor(current);
         if (next) current = next;
       }

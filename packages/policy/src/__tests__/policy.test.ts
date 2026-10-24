@@ -24,6 +24,8 @@ import {
   simulatePolicyRuleEvaluation,
   toPolicyEvaluationOutcome,
   validatePolicyEvaluationRequest,
+  validatePolicyConfig,
+  isValidPolicyConfig,
 } from '../index.js';
 
 /* -------------------------------------------------------------------------- */
@@ -350,3 +352,130 @@ describe('PolicyResource.simulatePolicyRule (issue #401)', () => {
     expect(String(url)).toContain('/policies/simulate-rule');
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* Input validation and sanitization helpers (issue #407)                      */
+/* -------------------------------------------------------------------------- */
+
+describe('validatePolicyConfig (issue #407)', () => {
+  const VALID_STELLAR_PUBKEY = 'GABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUVW';
+
+  it('validates and sanitizes a complete valid policy configuration', () => {
+    const raw = {
+      maxAmount: 1000,
+      minAmount: 10,
+      asset: '  USDC  ',
+      allowedRecipients: [`  ${VALID_STELLAR_PUBKEY}  `],
+      dailyLimit: 5000,
+      weeklyLimit: 25000,
+      monthlyLimit: 100000,
+      timeWindow: {
+        start: '2026-01-01T00:00:00.000Z',
+        end: '2026-12-31T23:59:59.000Z',
+      },
+      allowedHours: {
+        startHour: 9,
+        endHour: 17,
+        days: [1, 2, 3, 4, 5],
+      },
+      requiredSignatures: 2,
+      requiresApproval: true,
+      customMeta: 'preserved',
+    };
+
+    const validated = validatePolicyConfig(raw);
+
+    expect(validated.maxAmount).toBe(1000);
+    expect(validated.minAmount).toBe(10);
+    expect(validated.asset).toBe('USDC');
+    expect(validated.allowedRecipients).toEqual([VALID_STELLAR_PUBKEY]);
+    expect(validated.dailyLimit).toBe(5000);
+    expect(validated.weeklyLimit).toBe(25000);
+    expect(validated.monthlyLimit).toBe(100000);
+    expect(validated.timeWindow?.start).toBe('2026-01-01T00:00:00.000Z');
+    expect(validated.allowedHours?.startHour).toBe(9);
+    expect(validated.requiredSignatures).toBe(2);
+    expect(validated.requiresApproval).toBe(true);
+    expect(validated.customMeta).toBe('preserved');
+    expect(isValidPolicyConfig(raw)).toBe(true);
+  });
+
+  it('rejects non-object configurations', () => {
+    expect(() => validatePolicyConfig(null)).toThrow(ValidationError);
+    expect(isValidPolicyConfig(null)).toBe(false);
+    expect(() => validatePolicyConfig(undefined)).toThrow(ValidationError);
+    expect(isValidPolicyConfig(undefined)).toBe(false);
+    expect(() => validatePolicyConfig('config')).toThrow(ValidationError);
+    expect(isValidPolicyConfig('config')).toBe(false);
+    expect(() => validatePolicyConfig([])).toThrow(ValidationError);
+    expect(isValidPolicyConfig([])).toBe(false);
+  });
+
+  it('rejects negative or NaN numeric limits', () => {
+    expect(() => validatePolicyConfig({ maxAmount: -100 })).toThrow(ValidationError);
+    expect(() => validatePolicyConfig({ minAmount: -1 })).toThrow(ValidationError);
+    expect(() => validatePolicyConfig({ dailyLimit: -500 })).toThrow(ValidationError);
+    expect(() => validatePolicyConfig({ weeklyLimit: NaN })).toThrow(ValidationError);
+    expect(() => validatePolicyConfig({ monthlyLimit: Infinity })).toThrow(ValidationError);
+  });
+
+  it('rejects when minAmount exceeds maxAmount', () => {
+    expect(() =>
+      validatePolicyConfig({
+        minAmount: 1000,
+        maxAmount: 500,
+      }),
+    ).toThrow(ValidationError);
+  });
+
+  it('rejects invalid Stellar public key formats', () => {
+    expect(() =>
+      validatePolicyConfig({
+        allowedRecipients: ['not-a-stellar-address'],
+      }),
+    ).toThrow(ValidationError);
+
+    expect(() =>
+      validatePolicyConfig({
+        blockedRecipients: ['0x1234567890abcdef'],
+      }),
+    ).toThrow(ValidationError);
+
+    expect(() =>
+      validatePolicyConfig({
+        recipientAddress: 'GSHORT',
+      }),
+    ).toThrow(ValidationError);
+  });
+
+  it('rejects invalid asset identifiers', () => {
+    expect(() => validatePolicyConfig({ asset: '' })).toThrow(ValidationError);
+    expect(() => validatePolicyConfig({ asset: 'TOOLONGASSETNAMEOVER12CHARS' })).toThrow(ValidationError);
+    expect(() =>
+      validatePolicyConfig({
+        allowedAssets: ['INVALID:NOTANISSUERADDRESS'],
+      }),
+    ).toThrow(ValidationError);
+  });
+
+  it('rejects invalid timeWindow bounds', () => {
+    expect(() =>
+      validatePolicyConfig({
+        timeWindow: {
+          start: 'not-a-date',
+          end: '2026-12-31T00:00:00Z',
+        },
+      }),
+    ).toThrow(ValidationError);
+
+    expect(() =>
+      validatePolicyConfig({
+        timeWindow: {
+          start: '2026-12-31T00:00:00Z',
+          end: '2026-01-01T00:00:00Z',
+        },
+      }),
+    ).toThrow(ValidationError);
+  });
+});
+
