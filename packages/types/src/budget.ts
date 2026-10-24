@@ -332,56 +332,76 @@ export interface BudgetHistoryQueryParams extends PaginationParams {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Budget allocation adjustments                                               */
+/* Expenditure summary                                                         */
 /* -------------------------------------------------------------------------- */
 
-/** Status of a budget allocation adjustment proposal. */
-export type BudgetAdjustmentStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'APPLIED';
+/**
+ * Utilization percentage at which an expenditure summary reports a warning
+ * when the caller does not supply `thresholdPercent`.
+ */
+export const DEFAULT_BUDGET_EXPENDITURE_THRESHOLD_PERCENT = 80;
 
-/** Lifecycle state of a budget allocation adjustment. */
-export type BudgetAdjustmentState = 'pending' | 'resolved' | 'approved' | 'rejected';
-
-/** Request parameters for dynamically adjusting budget allocation. */
-export interface BudgetAdjustmentRequest {
-  /** The amount to adjust (temporary expansion or reallocation). */
-  amount: DecimalString | number;
-  /** Justification metadata explaining why the adjustment is requested. */
-  justification?: string;
-  /** Additional structured metadata accompanying the adjustment proposal. */
-  metadata?: Record<string, unknown>;
-  /** Optional target sub-budget id if funds are reallocated between sub-budgets. */
-  targetBudgetId?: string;
+/**
+ * Time-range and threshold filters for a budget expenditure summary
+ * (`GET /budgets/:id/expenditure`).
+ *
+ * All fields are optional; omitting them summarizes the budget's active
+ * window against the default threshold
+ * ({@link DEFAULT_BUDGET_EXPENDITURE_THRESHOLD_PERCENT}).
+ */
+export interface BudgetExpenditureSummaryParams {
+  /** Inclusive start of the reporting window (ISO-8601 date or timestamp). */
+  from?: IsoDateTime;
+  /** Inclusive end of the reporting window (ISO-8601 date or timestamp). */
+  to?: IsoDateTime;
+  /**
+   * Utilization percentage (`(0, 100]`) at which the summary flags a warning.
+   * Defaults to {@link DEFAULT_BUDGET_EXPENDITURE_THRESHOLD_PERCENT}.
+   */
+  thresholdPercent?: number;
 }
 
-/** Response object representing the pending or resolved allocation state. */
-export interface BudgetAdjustmentResponse {
-  /** Unique identifier of the adjustment request. */
-  id: string;
-  /** The budget being adjusted. */
+/**
+ * Point-in-time expenditure (spend velocity) summary for a budget.
+ *
+ * Money fields are decimal strings so values never round-trip through
+ * IEEE-754 floats. `utilization` / `percent` mirror the live counters while
+ * `thresholdExceeded` / `thresholdWarning` answer "is this budget close to its
+ * limit?" without the caller doing any arithmetic.
+ */
+export interface BudgetExpenditureSummary {
+  /** The budget this summary describes. */
   budgetId: string;
-  /** Optional target sub-budget if reallocating funds. */
-  targetBudgetId?: string;
-  /** The adjustment amount requested. */
-  amount: DecimalString;
-  /** The current status of the adjustment proposal. */
-  status: BudgetAdjustmentStatus;
-  /** Lifecycle state of the adjustment. */
-  state: BudgetAdjustmentState;
-  /** The active budget allocation state (healthy, warning, critical, exhausted). */
-  allocationState?: BudgetAllocationState;
-  /** The budget limit prior to adjustment. */
-  currentLimit?: DecimalString;
-  /** The new effective limit if approved/applied. */
-  adjustedLimit?: DecimalString;
-  /** Justification string provided with the request. */
-  justification?: string;
-  /** Arbitrary metadata attached to the adjustment proposal. */
-  metadata?: Record<string, unknown>;
-  /** Reason provided if the adjustment request was rejected. */
-  rejectionReason?: string;
-  /** When the request was created. */
-  createdAt: IsoDateTime;
-  /** When the request was last updated or resolved. */
-  updatedAt?: IsoDateTime;
+  /** Currency the amounts are denominated in. */
+  currency: string;
+  /** The budget's period cadence. */
+  period: BudgetPeriod;
+  /** Start of the budget's active window (ISO-8601 UTC). */
+  periodStart: IsoDateTime;
+  /** End of the budget's active window (ISO-8601 UTC). */
+  periodEnd: IsoDateTime;
+  /** Inclusive start of the reporting window, echoed when `from` was supplied. */
+  from?: IsoDateTime;
+  /** Inclusive end of the reporting window, echoed when `to` was supplied. */
+  to?: IsoDateTime;
+  /** Configured spend limit for the reporting window (decimal string). */
+  limit: DecimalString;
+  /** Total expenditure inside the reporting window (decimal string). */
+  spent: DecimalString;
+  /** Headroom left (limit minus spent), as a decimal string. */
+  remaining: DecimalString;
+  /** Fraction of the limit consumed (`0`–`1`+, useful for progress bars). */
+  utilization: number;
+  /** {@link utilization} as a percentage, `0`–`100`, rounded to 2 dp. */
+  percent: number;
+  /** Bucketed health derived from {@link percent}. */
+  state: BudgetAllocationState;
+  /** Threshold percentage this summary was evaluated against. */
+  thresholdPercent: number;
+  /** Whether expenditure has reached or exceeded {@link thresholdPercent}. */
+  thresholdExceeded: boolean;
+  /** Human-readable warning when the threshold is breached, else `null`. */
+  thresholdWarning: string | null;
+  /** When the API generated this snapshot (ISO-8601 UTC). */
+  generatedAt: IsoDateTime;
 }
-

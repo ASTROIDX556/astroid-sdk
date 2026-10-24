@@ -143,14 +143,22 @@ export type UpdateAgentParams = UpdateAgentDto;
 
 /** Filter and pagination parameters for listing agents (`GET /v1/agents`). */
 export interface ListAgentsParams {
-  /** 1-based page number. */
+  /** 1-based page number (offset pagination). */
   page?: number;
   /** Page size. */
   limit?: number;
+  /**
+   * Opaque keyset cursor returned as `meta.nextCursor` by a previous page.
+   *
+   * Mutually exclusive with {@link page}: pass one or the other, never both.
+   */
+  cursor?: string;
   /** Restrict to agents with this status. */
   status?: AgentStatus;
   /** Restrict to agents with this role. */
   role?: AgentRole;
+  /** Restrict to agents carrying this tag. */
+  tag?: string;
   /** Case-insensitive substring match against the agent name. */
   search?: string;
 }
