@@ -50,6 +50,9 @@ import {
   getBudgetAlert,
   updateBudgetAlert,
   deleteBudgetAlert,
+  subscribeToBudgetAlerts,
+  type BudgetAlertCallback,
+  type BudgetAlertSubscription,
 } from './alerts.js';
 
 /* -------------------------------------------------------------------------- */
@@ -777,5 +780,37 @@ export class BudgetClient {
   /** Alias of {@link deleteAlert} for threshold-explicit naming. */
   async deleteThresholdAlert(budgetId: string, alertId: string): Promise<void> {
     return this.deleteAlert(budgetId, alertId);
+  }
+
+  /**
+   * Subscribe to budget limit utilization alert milestones (issue #443).
+   *
+   * Registers a threshold alert (e.g. at 80% or 100% of the budget) delivering
+   * to a webhook URL, email address, or dashboard notification.
+   *
+   * @param budgetId         The budget to monitor.
+   * @param thresholdPercent Threshold percentage between 1 and 100.
+   * @param callback         Webhook URL string, callback function, or subscription options.
+   * @returns The active {@link BudgetAlertSubscription} containing the alert record and an `.unsubscribe()` method.
+   * @throws {BudgetAlertValidationError} When parameters fail local validation.
+   *
+   * @example
+   * ```ts
+   * const sub = await budgets.subscribeToBudgetAlerts(
+   *   'bud_1',
+   *   80,
+   *   'https://agent.example.com/api/budget-webhook'
+   * );
+   *
+   * // To cancel subscription later:
+   * await sub.unsubscribe();
+   * ```
+   */
+  async subscribeToBudgetAlerts(
+    budgetId: string,
+    thresholdPercent: number,
+    callback: BudgetAlertCallback,
+  ): Promise<BudgetAlertSubscription> {
+    return subscribeToBudgetAlerts(this.http, budgetId, thresholdPercent, callback);
   }
 }

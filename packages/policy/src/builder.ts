@@ -897,6 +897,43 @@ export class PolicyRuleBuilder {
   }
 
   /**
+   * Validate the currently configured draft rule without throwing.
+   *
+   * @returns A list of {@link PolicyValidationIssue}s found (empty when valid).
+   */
+  validate(): PolicyValidationIssue[] {
+    const inferred = inferPolicyType(this.draft.configuration);
+    const type = this.draft.type ?? inferred;
+    const draft: PolicyDraft = {
+      name: this.draft.name,
+      type: type ?? ('' as PolicyType),
+      configuration: { ...this.draft.configuration },
+      priority: this.draft.priority,
+      enabled: this.draft.enabled,
+      ...(this.draft.description !== undefined ? { description: this.draft.description } : {}),
+      ...(this.draft.agentId !== undefined ? { agentId: this.draft.agentId } : {}),
+    };
+
+    const issues = validatePolicyRule(draft);
+    if (!type && !issues.some((i) => i.field === 'type')) {
+      issues.push({
+        field: 'type',
+        message: 'PolicyBuilder requires at least one condition or an explicit type before build().',
+      });
+    }
+    return issues;
+  }
+
+  /**
+   * Check whether the builder's current configuration is valid and ready to build.
+   *
+   * @returns `true` if valid, `false` if any validation issues are present.
+   */
+  isValid(): boolean {
+    return this.validate().length === 0;
+  }
+
+  /**
    * Produce the final, validated policy draft.
    *
    * @returns A {@link PolicyDraft} accepted by `PolicyResource.create`.
