@@ -125,14 +125,6 @@ export function formatWalletBalances(
   };
 }
 
-export {
-  formatBalance,
-  parseBalance,
-  XLM_DECIMAL_PLACES,
-  DEFAULT_ASSET_DECIMAL_PLACES,
-} from './balance.js';
-
-
 export { SecureKeystore, type EncryptedPayload } from './keystore.js';
 
 // Stellar amount conversion, formatting & validation utilities (issue #453).
@@ -159,14 +151,6 @@ export {
   verifyMessage,
   zeroize,
 } from './crypto.js';
-
-/** Balance formatting and parsing utilities */
-export {
-  formatBalance,
-  parseBalance,
-  XLM_DECIMAL_PLACES,
-  DEFAULT_ASSET_DECIMAL_PLACES,
-} from './balance.js';
 
 /** Filters accepted by {@link WalletResource.list}. */
 export interface WalletListParams extends PaginationParams {
