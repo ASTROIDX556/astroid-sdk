@@ -38,21 +38,36 @@ export interface AuthConfig {
   tokenProvider?: () => Promise<string>;
 }
 
-/** Retry/backoff behaviour for transient failures. */
-export interface RetryConfig {
+/**
+ * User-facing retry/backoff options for transient failures.
+ *
+ * Every field is optional so callers only override the knobs they care about;
+ * {@link RetryConfig} is the fully-resolved form with all defaults applied.
+ *
+ * @example
+ * ```ts
+ * const retry: RetryOptions = {
+ *   maxRetries: 3,
+ *   baseDelayMs: 250,
+ *   retryableStatuses: [429, 500, 502, 503, 504],
+ * };
+ * ```
+ */
+export interface RetryOptions {
   /** Maximum number of retries after the first attempt. Default 3. */
-  maxRetries: number;
+  maxRetries?: number;
   /** Base backoff in ms; grows exponentially with jitter. Default 250. */
-  baseDelayMs: number;
+  baseDelayMs?: number;
   /** Alias for baseDelayMs. */
   baseDelay?: number;
   /** Upper bound for a single backoff delay in ms. Default 8000. */
-  maxDelayMs: number;
+  maxDelayMs?: number;
   /** Alias for maxDelayMs. */
   maxDelay?: number;
   /**
    * HTTP statuses that should be retried. Defaults to the SDK set
-   * `[429, 502, 503, 504]` (rate limiting and gateway errors).
+   * `[429, 500, 502, 503, 504]` (rate limiting, internal server errors and
+   * gateway errors).
    */
   retryableStatuses?: number[];
   /**
@@ -68,12 +83,27 @@ export interface RetryConfig {
   /**
    * The HTTP status codes that warrant a retry.
    *
-   * When omitted, the SDK-wide default applies: `429` and any `5xx`. Supply an
-   * explicit list (e.g. `[429, 502, 503, 504]`) to retry only those statuses —
-   * useful when an upstream gateway emits transient codes outside the standard
-   * set. `shouldRetryStatus` on the retry middleware takes precedence over this.
+   * When omitted, the SDK-wide default applies: `429`, `500`, `502`, `503` and
+   * `504`. Supply an explicit list to retry only those statuses — useful when
+   * an upstream gateway emits transient codes outside the standard set.
+   * `shouldRetryStatus` on the retry middleware takes precedence over this.
    */
   retryableStatusCodes?: number[];
+}
+
+/**
+ * Retry/backoff behaviour for transient failures, with every option resolved.
+ *
+ * A superset of {@link RetryOptions}: the fields every retry decision needs are
+ * required because `resolveConfig` fills them from the SDK defaults.
+ */
+export interface RetryConfig extends RetryOptions {
+  /** Maximum number of retries after the first attempt. Default 3. */
+  maxRetries: number;
+  /** Base backoff in ms; grows exponentially with jitter. Default 250. */
+  baseDelayMs: number;
+  /** Upper bound for a single backoff delay in ms. Default 8000. */
+  maxDelayMs: number;
 }
 
 /**
@@ -150,7 +180,7 @@ export interface AstroidClientConfig extends AuthConfig {
   /** Alias for {@link timeoutMs} (accepted for API parity). */
   timeout?: number;
   /** Retry configuration, or `false` to disable retries entirely. */
-  retry?: Partial<RetryConfig> | false;
+  retry?: RetryOptions | false;
   /** Extra headers merged into every request. */
   headers?: Record<string, string>;
   /** Injected fetch implementation (for tests / non-standard runtimes). */

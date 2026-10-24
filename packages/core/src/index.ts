@@ -18,6 +18,7 @@ export {
   type AstroidClientConfig,
   type ResolvedConfig,
   type AuthConfig,
+  type RetryOptions,
   type RetryConfig,
   type RateLimitConfig,
   type TelemetryHooks,

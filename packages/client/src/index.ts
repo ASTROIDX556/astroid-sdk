@@ -33,7 +33,7 @@ import {
   type QueryValue,
   type RequestOptions,
   type RequestOptionsExtras,
-  type RetryConfig,
+  type RetryOptions,
 } from '@astroid/core';
 import type { PaginatedResponse, PaginationParams, ResponseMeta } from '@astroid/types';
 import {
@@ -82,8 +82,8 @@ import { createTokenRefreshInterceptor } from './token-refresh.js';
  * Extends the core client config with shorthand retry options
  * (`retries` / `minTimeout` / `maxTimeout` / `backoffFactor` (`factor`) /
  * `retryableStatuses` / `jitter`) for convenience. Each is merged into the
- * `retry` block, so the full {@link RetryConfig} remains available for advanced
- * use.
+ * `retry` block, so the full {@link RetryOptions} surface (and the resolved
+ * {@link RetryConfig}) remains available for advanced use.
  */
 export interface AstroidClientConfig extends CoreClientConfig {
   /** Maximum number of retries after the first attempt (shorthand for `retry.maxRetries`). */
@@ -110,12 +110,12 @@ export interface AstroidClientConfig extends CoreClientConfig {
   maxDelayMs?: number;
   /**
    * HTTP statuses that should be retried (shorthand for
-   * `retry.retryableStatuses`). Defaults to `[429, 502, 503, 504]`.
+   * `retry.retryableStatuses`). Defaults to `[429, 500, 502, 503, 504]`.
    */
   retryableStatuses?: number[];
   /**
    * HTTP status codes that should be retried (alias for `retryableStatuses` /
-   * `retry.retryableStatusCodes`). Defaults to `[429, 502, 503, 504]`.
+   * `retry.retryableStatusCodes`). Defaults to `[429, 500, 502, 503, 504]`.
    */
   retryableStatusCodes?: number[];
   /**
@@ -778,7 +778,7 @@ function normalizeConfig(config: AstroidClientConfig): CoreClientConfig {
     ...rest
   } = config;
 
-  const shorthand: Partial<RetryConfig> = {};
+  const shorthand: RetryOptions = {};
   const resolvedRetries = retries ?? maxRetries;
   if (resolvedRetries !== undefined) shorthand.maxRetries = resolvedRetries;
   const resolvedBaseDelay = minTimeout ?? baseDelay ?? customBaseDelayMs ?? retryDelay;
@@ -861,6 +861,7 @@ export {
   AstroidTimeoutError,
   type Middleware,
   type RateLimitConfig,
+  type RetryOptions,
   type RetryConfig,
   type RetryMiddlewareOptions,
 } from '@astroid/core';

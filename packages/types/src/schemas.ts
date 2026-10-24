@@ -23,6 +23,7 @@
 import { z } from 'zod';
 
 import type { AgentInitialBudget, AgentMetadata, CreateAgentDto, UpdateAgentDto } from './agent.js';
+import { POLICY_REASON_CODE_VALUES } from './policy.js';
 
 /* -------------------------------------------------------------------------- */
 /* Enum schemas                                                                */
@@ -75,6 +76,9 @@ export const PolicyTypeSchema = z.enum([
   'EMERGENCY_LOCK',
   'COMPOSITE',
 ]);
+
+/** Machine-readable policy decision reason codes. */
+export const PolicyReasonCodeSchema = z.enum(POLICY_REASON_CODE_VALUES);
 
 export const BudgetPeriodSchema = z.enum([
   'ONE_TIME',
@@ -421,6 +425,7 @@ export const PolicyRuleBreachSchema = z.object({
   policyName: z.string().min(1).optional(),
   policyType: PolicyTypeSchema.optional(),
   rule: z.string().min(1),
+  reasonCode: PolicyReasonCodeSchema.optional(),
   message: z.string(),
   limit: z.union([z.number(), z.string()]).optional(),
   actual: z.union([z.number(), z.string()]).optional(),

@@ -142,8 +142,8 @@ describe('#272 — retry behaviour', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it('retries the default transient statuses (429, 502, 503, 504)', async () => {
-    for (const status of [429, 502, 503, 504]) {
+  it('retries the default transient statuses (429, 500, 502, 503, 504)', async () => {
+    for (const status of [429, 500, 502, 503, 504]) {
       const fetchMock = fetchQueue(errorResponse(status), okResponse({ id: 'w' }));
       const client = new Astroid({ ...BASE, fetch: fetchMock, minTimeout: 1, maxTimeout: 5 });
 

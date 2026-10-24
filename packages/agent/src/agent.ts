@@ -276,6 +276,7 @@ export class AgentResource extends Resource {
    * until re-activated.
    *
    * @param agentId The unique agent ID.
+   * @param options Optional per-request options (signal, timeout, headers).
    * @returns The deactivated agent entity.
    *
    * @example
