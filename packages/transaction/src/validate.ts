@@ -32,6 +32,12 @@ const ASSET_CODE_PATTERN = /^[A-Za-z0-9]{1,12}$/;
 /** Base64 without line breaks: standard alphabet, `=` padding only at the end. */
 const BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
 
+/** A `MEMO_ID` is an unsigned 64-bit integer, so it cannot exceed `2^64 - 1`. */
+const MAX_MEMO_ID = 18_446_744_073_709_551_615n;
+
+/** Decimal digits only: no sign, no fraction, no exponent. */
+const DECIMAL_UINT_PATTERN = /^\d{1,20}$/;
+
 /* -------------------------------------------------------------------------- */
 /* Public keys                                                                 */
 /* -------------------------------------------------------------------------- */
@@ -225,6 +231,58 @@ export function assertValidMemoHash(memo: string, field = 'memo'): void {
       `${field} must be ${MEMO_HASH_BYTES} bytes encoded as ${MEMO_HASH_BYTES * 2} hexadecimal characters.`,
       { code: 'INVALID_MEMO', details: { field } },
     );
+  }
+}
+
+/**
+ * Whether `value` is a valid Stellar `MEMO_ID` (an unsigned 64-bit integer).
+ *
+ * Accepts a decimal string (e.g. `'18446744073709551615'`), a safe integer
+ * number, or a `bigint`. Use a string or `bigint` for ids above
+ * `Number.MAX_SAFE_INTEGER` so the value is not rounded. Negative values,
+ * fractions, exponents and anything above `2^64 - 1` are rejected.
+ *
+ * @param value The memo id to check.
+ * @returns `true` when the value is a uint64.
+ *
+ * @example
+ * ```ts
+ * isValidMemoId('42');                     // true
+ * isValidMemoId(18_446_744_073_709_551_615n); // true (uint64 max)
+ * isValidMemoId(-1);                       // false
+ * ```
+ */
+export function isValidMemoId(value: string | number | bigint): boolean {
+  let id: bigint;
+  if (typeof value === 'bigint') {
+    id = value;
+  } else if (typeof value === 'number') {
+    // A non-integer or unsafe number cannot represent a uint64 exactly.
+    if (!Number.isSafeInteger(value)) return false;
+    id = BigInt(value);
+  } else if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!DECIMAL_UINT_PATTERN.test(trimmed)) return false;
+    id = BigInt(trimmed);
+  } else {
+    return false;
+  }
+  return id >= 0n && id <= MAX_MEMO_ID;
+}
+
+/**
+ * Throw a {@link ValidationError} unless `value` is a valid uint64 `MEMO_ID`.
+ *
+ * @param value The memo id to validate.
+ * @param field The field name to report in the error details.
+ * @throws {ValidationError} With code `INVALID_MEMO` when malformed.
+ */
+export function assertValidMemoId(value: string | number | bigint, field = 'memoId'): void {
+  if (!isValidMemoId(value)) {
+    throw new ValidationError(`${field} must be an unsigned 64-bit integer.`, {
+      code: 'INVALID_MEMO',
+      details: { field },
+    });
   }
 }
 

@@ -42,6 +42,62 @@ const xdr = encodeTransaction(tx);
 - `buildTransaction(options, operations)` — assemble any operation list.
 - `encodeTransaction(tx | xdr)` — base64 XDR envelope (pass-through for strings).
 
+## Memos
+
+Every builder (`buildPaymentTransaction`, `buildTransaction`,
+`buildAssetPaymentTransaction`, `buildMultiOperationTransaction`) accepts one
+optional standard Stellar memo. The options are mutually exclusive:
+
+| Option | Memo type | Protocol limit |
+| --- | --- | --- |
+| `memoText` | `MEMO_TEXT` | ≤ 28 UTF-8 bytes |
+| `memoId` | `MEMO_ID` | uint64 — decimal string, safe integer, or `bigint` |
+| `memoHash` | `MEMO_HASH` | 32 bytes, encoded as 64 hex characters |
+| `memoReturn` | `MEMO_RETURN` | 32 bytes, encoded as 64 hex characters |
+
+```ts
+const tx = buildPaymentTransaction({
+  source: account,
+  networkPassphrase: Networks.TESTNET,
+  destination: 'G…',
+  asset: 'XLM',
+  amount: '1',
+  memoId: '18446744073709551615', // full uint64 range as a string or bigint
+});
+```
+
+Supplying more than one memo option throws `CONFLICTING_MEMO`; an over-long or
+malformed value throws `INVALID_MEMO`. The same checks are exported for
+pre-flight use as `isValidMemoText` / `assertValidMemoText`, `isValidMemoId` /
+`assertValidMemoId` and `isValidMemoHash` / `assertValidMemoHash`.
+
+## Fee bumping
+
+`buildAgentTransferTransaction` and `buildAssetPaymentTransaction` accept an
+optional `feeBump` configuration (`FeeBumpConfig`): a sponsoring `feeSource`
+pays the fee of a wrapping envelope so the inner transaction can still be
+included while the network is congested. The memo travels on the inner
+transaction unchanged.
+
+```ts
+const tx = buildAgentTransferTransaction({
+  source: account,
+  networkPassphrase: Networks.TESTNET,
+  destination: 'G…',
+  asset: 'XLM',
+  amount: '2.5',
+  memoText: 'agent-op-42',
+  feeBump: {
+    feeSource: { publicKey: sponsor.publicKey(), secretKey: sponsor.secret() },
+    baseFee: 500,             // stroops per operation; defaults to the inner rate
+    feeBufferPercentage: 20,  // applied when baseFee is omitted
+  },
+});
+```
+
+For full control (custom inner transactions, XDR input, validation reports)
+use `bumpFee` / `validateFeeBumpParams` directly — see `feeBump.ts`.
+
 ## Fee bounds
 
 Every builder enforces the Astroid transaction standards before constructing:
