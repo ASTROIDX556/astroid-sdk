@@ -37,7 +37,6 @@ export interface AnalyticsQueryParams extends PaginationParams {
   /** Filter results to a single agent. */
   agentId?: string;
 }
-
 /** Shared analytics query filters (alias of {@link AnalyticsQueryParams}). */
 export type AnalyticsQuery = AnalyticsQueryParams;
 
@@ -472,3 +471,96 @@ export interface AnalyticsEventBatchAck {
   /** Optional server-assigned batch identifier, for tracing. */
   batchId?: string;
 }
+/* Time-series aggregation DTOs (issue #442)                                   */
+/* -------------------------------------------------------------------------- */
+
+/** Supported interval resolutions for time-series aggregation. */
+export type TimeSeriesResolution =
+  | 'hour'
+  | 'day'
+  | 'week'
+  | 'hourly'
+  | 'daily'
+  | 'weekly';
+
+/** Options for aggregating time-series metrics. */
+export interface AggregateTimeSeriesOptions {
+  /** Bucket interval resolution. Defaults to `'day'`. */
+  interval?: TimeSeriesResolution;
+  /** When true, generates zero-value buckets for periods with no data. Defaults to false. */
+  zeroFill?: boolean;
+  /** Inclusive start of the reporting window (ISO-8601 string or Date). */
+  startDate?: string | Date;
+  /** Alias for {@link startDate}. */
+  startTime?: string | Date;
+  /** Shorthand alias for {@link startDate}. */
+  from?: string | Date;
+  /** Exclusive end of the reporting window (ISO-8601 string or Date). */
+  endDate?: string | Date;
+  /** Alias for {@link endDate}. */
+  endTime?: string | Date;
+  /** Shorthand alias for {@link endDate}. */
+  to?: string | Date;
+  /** Custom formatter for chart x-axis labels. */
+  formatDate?: (date: Date, interval: 'hour' | 'day' | 'week') => string;
+}
+
+/** Formatted, aggregated time-series metric bucket ready for charts and reports. */
+export interface AggregatedTimeSeriesBucket extends TimeSeriesMetricPoint {
+  /** ISO-8601 UTC timestamp marking the start of this interval bucket (inclusive). */
+  timestamp: string;
+  /** ISO-8601 UTC timestamp marking the end of this interval bucket (exclusive). */
+  endTimestamp: string;
+  /** Sum of transaction/spending volume in this bucket (decimal string). */
+  volume: string;
+  /** Sum of network/gas fees in this bucket (decimal string). */
+  fee: string;
+  /** Total transaction count in this bucket. */
+  count: number;
+  /** Total successful transactions in this bucket. */
+  successCount: number;
+  /** Total failed transactions in this bucket. */
+  failureCount: number;
+  /** Success rate between 0 and 1: `successCount / (successCount + failureCount)`. */
+  successRate: number;
+  /** Volume as a floating-point number for charting axes. */
+  volumeNumeric: number;
+  /** Fee as a floating-point number for charting axes. */
+  feeNumeric: number;
+  /** Human-friendly formatted date string suitable for chart x-axis labels. */
+  formattedDate: string;
+  /** Chart-compatible date label (alias of formattedDate). */
+  date: string;
+  /** Chart-compatible metric value (alias of volumeNumeric). */
+  value: number;
+}
+
+/**
+ * Result returned by time-series metrics aggregation.
+ * Extends `Array<AggregatedTimeSeriesBucket>` for array operations, with summary totals attached.
+ */
+export interface AggregatedTimeSeriesResult extends Array<AggregatedTimeSeriesBucket> {
+  /** Bucket granularity used for aggregation. */
+  interval: 'hour' | 'day' | 'week';
+  /** Resolution requested in options. */
+  resolution: TimeSeriesResolution;
+  /** Array of bucketed points (reference to this array). */
+  points: AggregatedTimeSeriesBucket[];
+  /** Per-bucket breakdown (alias of points). */
+  buckets: AggregatedTimeSeriesBucket[];
+  /** Summary statistics across all buckets. */
+  summary: VolumeSummary;
+  /** Sum of volume across all buckets (decimal string). */
+  totalVolume: string;
+  /** Sum of fees across all buckets (decimal string). */
+  totalFees: string;
+  /** Total transaction count across all buckets. */
+  totalCount: number;
+  /** Total successful transactions across all buckets. */
+  successCount: number;
+  /** Total failed transactions across all buckets. */
+  failureCount: number;
+  /** Global success rate across all buckets. */
+  successRate: number;
+}
+
