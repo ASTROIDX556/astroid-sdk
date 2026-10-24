@@ -11,6 +11,7 @@
 
 import { Resource, type RequestOptionsExtras } from '@astroid/core';
 import type {
+  AssetBalance,
   CreateWalletInput,
   FundWalletInput,
   ImportWalletInput,
@@ -23,7 +24,19 @@ import type {
   WalletBalanceQuery,
   WalletBalance,
   WalletStatus,
+  BatchWalletBalancesResult,
+  WalletBalanceBatchFilter,
 } from '@astroid/types';
+
+import { fetchWalletBalancesBatch, type BatchWalletBalancesOptions } from './batch.js';
+
+export {
+  fetchWalletBalancesBatch,
+  resolveHttpClient,
+  parseBatchBalancesResponse,
+  type BatchClientLike,
+  type BatchWalletBalancesOptions,
+} from './batch.js';
 
 export {
   signTransactionOffline,
@@ -37,9 +50,88 @@ export {
  * Balance DTOs re-exported from `@astroid/types` so consumers of
  * `@astroid/wallet` can name the balance shapes without a second import.
  */
-export type { WalletBalance, AssetBalance, WalletBalanceQuery } from '@astroid/types';
+export type {
+  WalletBalance,
+  AssetBalance,
+  WalletBalanceQuery,
+  WalletBalanceBatchFilter,
+  BatchWalletBalancesQuery,
+  BatchWalletBalancesInput,
+  BatchWalletBalancesResult,
+  BatchWalletBalancesResponse,
+  WalletBalancesBatchMapping,
+} from '@astroid/types';
+
+/** An asset balance with a locale-formatted amount for display. */
+export interface FormattedAssetBalance extends AssetBalance {
+  formattedBalance: string;
+}
+
+/** A wallet balance snapshot with display-formatted asset amounts. */
+export interface FormattedWalletBalance extends Omit<WalletBalance, 'balances'> {
+  balances: FormattedAssetBalance[];
+}
+
+/**
+ * Format every asset amount in a wallet snapshot for display without
+ * converting the decimal amount to a JavaScript number. Grouping is localized,
+ * while all fractional digits from the API response are preserved.
+ *
+ * @param balance The wallet's exact balance snapshot.
+ * @param locale Locale used for digit grouping and the decimal separator.
+ * @returns A copy of the snapshot with a `formattedBalance` on each asset.
+ *
+ * @example
+ * ```ts
+ * const formatted = formatWalletBalances(await astroid.wallets.balance('wlt_123'));
+ * formatted.balances[0]?.formattedBalance; // "1,234.0000001"
+ * ```
+ */
+export function formatWalletBalances(
+  balance: WalletBalance,
+  locale = 'en-US',
+): FormattedWalletBalance {
+  const integerFormatter = new Intl.NumberFormat(locale, {
+    maximumFractionDigits: 0,
+    useGrouping: true,
+  });
+  const decimalSeparator = new Intl.NumberFormat(locale)
+    .formatToParts(1.1)
+    .find((part) => part.type === 'decimal')?.value ?? '.';
+
+  return {
+    ...balance,
+    balances: balance.balances.map((assetBalance) => {
+      const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(assetBalance.balance);
+      let formattedBalance = assetBalance.balance;
+
+      if (match) {
+        const [, sign, integer, fraction] = match;
+        formattedBalance = `${sign}${integerFormatter.format(BigInt(integer!))}`;
+        if (fraction !== undefined) {
+          formattedBalance += `${decimalSeparator}${fraction}`;
+        }
+      }
+
+      return { ...assetBalance, formattedBalance };
+    }),
+  };
+}
 
 export { SecureKeystore, type EncryptedPayload } from './keystore.js';
+
+// Stellar amount conversion, formatting & validation utilities (issue #453).
+export {
+  STELLAR_DECIMALS,
+  STROOPS_PER_UNIT,
+  toBaseUnits,
+  fromBaseUnits,
+  formatAmount,
+  isValidStellarAmount,
+  type FromBaseUnitsOptions,
+  type FormatAmountOptions,
+  type FormatRoundingMode,
+} from './utils.js';
 
 // Wallet key management & Ed25519 message signing utilities (issue #235).
 export {
@@ -273,6 +365,51 @@ export class WalletResource extends Resource {
   }
 
   /**
+   * Query on-chain asset balances across multiple managed agent wallets in a single
+   * optimized batch request (issue #461).
+   *
+   * Aggregates live balances across the supplied wallet identifiers (Astroid
+   * wallet IDs or Stellar public addresses), optionally filtered by asset code
+   * or issuer, and returns a strongly typed mapping of Stellar addresses to
+   * asset balance arrays.
+   *
+   * @param walletIds Array of wallet identifiers (Astroid wallet IDs or Stellar addresses).
+   * @param filters Optional asset code, issuer, or asset list filters.
+   * @param options Optional per-request HTTP options or method overrides.
+   * @returns A strongly typed mapping of wallet addresses to asset balance arrays.
+   *
+   * @example
+   * ```ts
+   * const balances = await astroid.wallets.fetchWalletBalancesBatch(
+   *   ['wlt_1', 'wlt_2'],
+   *   { assetCode: 'USDC' },
+   * );
+   * ```
+   */
+  async fetchWalletBalancesBatch(
+    walletIds: readonly string[],
+    filters?: WalletBalanceBatchFilter,
+    options?: BatchWalletBalancesOptions,
+  ): Promise<BatchWalletBalancesResult> {
+    return fetchWalletBalancesBatch(this.client, walletIds, filters, options);
+  }
+
+  /**
+   * Alias for {@link WalletResource.fetchWalletBalancesBatch}.
+   *
+   * @param walletIds Array of wallet identifiers.
+   * @param filters Optional asset filters.
+   * @param options Optional request options.
+   */
+  async getWalletBalancesBatch(
+    walletIds: readonly string[],
+    filters?: WalletBalanceBatchFilter,
+    options?: BatchWalletBalancesOptions,
+  ): Promise<BatchWalletBalancesResult> {
+    return this.fetchWalletBalancesBatch(walletIds, filters, options);
+  }
+
+  /**
    * Fund a wallet with an asset amount expressed as an exact decimal string.
    *
    * @param walletId Wallet identifier.
@@ -320,3 +457,11 @@ export class WalletResource extends Resource {
 }
 
 export * from './multisig.js';
+export {
+  verifyAssetTrustline,
+  hasAssetTrustline,
+  type TrustlineAsset,
+  type TrustlineVerificationResult,
+  type TrustlineErrorCodeValue,
+  TrustlineErrorCode,
+} from './trustline.js';

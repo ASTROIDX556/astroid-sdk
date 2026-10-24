@@ -23,6 +23,7 @@ import type {
   BudgetUtilizationRow,
   CashflowReport,
   CursorPaginated,
+  GlobalAnalyticsParams,
   Paginated,
   RiskReport,
   SpendingSummaryParams,
@@ -34,11 +35,17 @@ import type {
   MetricsQueryParams,
 } from '@astroid/types';
 import { getMetricsInRange } from './analytics.js';
+import { getAgentMetrics, getGlobalAnalytics } from './metrics.js';
 // Re-export the aggregated-metrics query helpers (issue #78) from the package
 // entry point so consumers can call them directly as well as through
 // {@link AnalyticsResource}. These were previously imported but never used,
 // which failed the `dts` build (`TS6192: All imports in import declaration are
 // unused`).
+export {
+  getAgentMetrics,
+  getGlobalAnalytics,
+} from './metrics.js';
+
 export {
   AnalyticsQueryResource,
   getAgentExecutionCounts,
@@ -71,16 +78,38 @@ export {
   type JsonExportOptions,
 } from './exporter.js';
 
-// Local pure aggregation helpers (issue #269): decimal-safe transaction
-// telemetry and time-series query builders. Re-exported explicitly —
-// `metrics.ts` also defines an `AnalyticsResource` class, so it stays out of
-// the entrypoint to avoid a duplicate-export ambiguity.
+// Observability export formatters: Prometheus text exposition and OTLP/JSON.
+// Both are pure serialisers over the shared {@link MetricSample} model.
+export {
+  toPrometheusFormat,
+  toOpenTelemetryFormat,
+  type MetricLabelValue,
+  type MetricSample,
+  type MetricType,
+  type OpenTelemetryAttribute,
+  type OpenTelemetryAttributeValue,
+  type OpenTelemetryDataPoint,
+  type OpenTelemetryExportRequest,
+  type OpenTelemetryMetric,
+} from './formatters.js';
+
+// Local pure aggregation helpers (issues #269, #442): decimal-safe transaction
+// telemetry, time-series metrics aggregation, and query builders.
+// Re-exported explicitly — `metrics.ts` also defines an `AnalyticsResource`
+// class, so it stays out of the entrypoint to avoid duplicate-export ambiguity.
 export {
   aggregateTransactionMetrics,
+  aggregateTimeSeriesMetrics,
   type AggregateGranularity,
   type AggregateTelemetryOptions,
   type AggregatedTelemetry,
   type TransactionTelemetryBucket,
+  type TimeSeriesResolution,
+  type AggregateTimeSeriesOptions,
+  type AggregatedTimeSeriesBucket,
+  type AggregatedTimeSeriesResult,
+  type TimeSeriesInputPoint,
+  type TimeSeriesMetricsInput,
 } from './aggregations.js';
 
 export {
@@ -94,13 +123,43 @@ export {
   type TimeSeriesQueryParams,
 } from './time-series.js';
 
-// Publicly re-export the metrics aggregation DTOs (issue #86) so consumers can
+// Telemetry event tracking (issue #380): non-blocking, batching analytics
+// client with graceful failure handling and zero-overhead disabled mode.
+export {
+  AnalyticsClient,
+  normalizeAnalyticsEvent,
+  generateEventId,
+  DEFAULT_ANALYTICS_ENDPOINT,
+  DEFAULT_MAX_BATCH_SIZE,
+  DEFAULT_MAX_QUEUE_SIZE,
+  DEFAULT_FLUSH_INTERVAL_MS,
+  DEFAULT_MAX_RETRIES_PER_BATCH,
+  type AnalyticsClientOptions,
+  type AnalyticsFlushResult,
+  type AnalyticsQueueStats,
+  type AnalyticsTransport,
+} from './client.js';
+
+// Wire DTOs for telemetry events, re-exported so consumers can name them
+// without reaching into `@astroid/types`.
+export type {
+  AnalyticsEvent,
+  AnalyticsEventBatch,
+  AnalyticsEventBatchAck,
+  AnalyticsEventContext,
+  AnalyticsEventInput,
+  AnalyticsEventPropertyValue,
+  AnalyticsEventSeverity,
+} from '@astroid/types';
+
+// Publicly re-export the metrics aggregation DTOs (issues #86, #442) so consumers can
 // name them without reaching into `@astroid/types`.
 export type {
   MetricsInterval,
   AgentMetricsParams,
   AgentMetricsReport,
   AgentMetricsRow,
+  GlobalAnalyticsParams,
   AnalyticsCursorParams,
   AnalyticsListParams,
   CursorPaginated,
@@ -115,6 +174,10 @@ export type {
   TimeSeriesMetric,
   TimeRangeQueryParams,
   MetricsQueryParams,
+  TimeSeriesResolution as TypesTimeSeriesResolution,
+  AggregateTimeSeriesOptions as TypesAggregateTimeSeriesOptions,
+  AggregatedTimeSeriesBucket as TypesAggregatedTimeSeriesBucket,
+  AggregatedTimeSeriesResult as TypesAggregatedTimeSeriesResult,
 } from '@astroid/types';
 
 /**
@@ -259,7 +322,21 @@ export class AnalyticsResource extends Resource {
     query: AgentMetricsParams = {},
     options?: RequestOptionsExtras,
   ): Promise<AgentMetricsReport> {
-    return this.getData<AgentMetricsReport>('/analytics/agents/metrics', { ...query }, options);
+    return getAgentMetrics(this.client, query, options);
+  }
+
+  /**
+   * Fetch global transaction, fee, policy, and success metrics for a time range.
+   *
+   * @param query Optional reporting window and resolution.
+   * @param options Extra request options forwarded to the HTTP client.
+   * @returns The global analytics overview.
+   */
+  async getGlobalAnalytics(
+    query: GlobalAnalyticsParams = {},
+    options?: RequestOptionsExtras,
+  ): Promise<AnalyticsOverview> {
+    return getGlobalAnalytics(this.client, query, options);
   }
 
   /**

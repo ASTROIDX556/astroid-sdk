@@ -86,6 +86,14 @@ describe('AgentResource CRUD', () => {
       expect(http.post).toHaveBeenCalledWith('/agents', CREATE_PARAMS, undefined);
     });
 
+    it('createAgent() exposes the named alias and validates before posting', async () => {
+      const agent = makeAgent({ name: 'NewBot' });
+      http.post.mockResolvedValue(httpOk(agent));
+
+      await expect(resource.createAgent(CREATE_PARAMS)).resolves.toEqual(agent);
+      expect(http.post).toHaveBeenCalledWith('/agents', CREATE_PARAMS, undefined);
+    });
+
     it('forwards optional fields (description, role, provider, model, metadata)', async () => {
       const agent = makeAgent({ name: 'FullBot' });
       http.post.mockResolvedValue(httpOk(agent));
@@ -188,6 +196,18 @@ describe('AgentResource CRUD', () => {
       expect(http.get).toHaveBeenCalledWith('/agents', { query: {} });
     });
 
+    it('listAgents() exposes the named alias and forwards filters', async () => {
+      const agents = [makeAgent()];
+      http.get.mockResolvedValue(httpOk(agents));
+
+      const result = await resource.listAgents({ status: 'ACTIVE', limit: 5 });
+
+      expect(result.data).toEqual(agents);
+      expect(http.get).toHaveBeenCalledWith('/agents', {
+        query: { status: 'ACTIVE', limit: 5 },
+      });
+    });
+
     it('forwards status and role filters as query parameters', async () => {
       http.get.mockResolvedValue(httpOk([]));
 
@@ -233,6 +253,16 @@ describe('AgentResource CRUD', () => {
         },
         undefined,
       );
+    });
+
+    it('updateAgent() exposes the named alias for partial updates', async () => {
+      const updated = makeAgent({ name: 'RenamedBot' });
+      http.patch.mockResolvedValue(httpOk(updated));
+
+      await expect(resource.updateAgent('agt_1', { name: 'RenamedBot' })).resolves.toEqual(
+        updated,
+      );
+      expect(http.patch).toHaveBeenCalledWith('/agents/agt_1', { name: 'RenamedBot' }, undefined);
     });
 
     it('percent-encodes slashes in the agent id for PATCH', async () => {
@@ -325,7 +355,7 @@ describe('AgentResource CRUD', () => {
       const result = await resource.deactivate('agt_1');
 
       expect(result).toEqual(deactivated);
-      expect(http.post).toHaveBeenCalledWith('/agents/agt_1/deactivate', undefined, undefined);
+      expect(http.post).toHaveBeenCalledWith('/agents/agt_1/deactivate');
     });
 
     it('percent-encodes slashes in the agent id for deactivate', async () => {
@@ -333,7 +363,7 @@ describe('AgentResource CRUD', () => {
 
       await resource.deactivate('agt/special');
 
-      expect(http.post).toHaveBeenCalledWith('/agents/agt%2Fspecial/deactivate', undefined, undefined);
+      expect(http.post).toHaveBeenCalledWith('/agents/agt%2Fspecial/deactivate');
     });
   });
 
@@ -355,6 +385,44 @@ describe('AgentResource CRUD', () => {
 
       expect(result).toEqual(metrics);
       expect(http.get).toHaveBeenCalledWith('/agents/agt_1/status', {});
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // suspendAgent
+  // -------------------------------------------------------------------------
+
+  describe('suspendAgent()', () => {
+    it('PATCHes the agent status to SUSPENDED and returns the suspended agent', async () => {
+      const suspended = makeAgent({ status: 'SUSPENDED' });
+      http.patch.mockResolvedValue(httpOk(suspended));
+
+      await expect(resource.suspendAgent('agt_1')).resolves.toEqual(suspended);
+      expect(http.patch).toHaveBeenCalledWith(
+        '/agents/agt_1',
+        { status: 'SUSPENDED' },
+        undefined,
+      );
+    });
+
+    it('percent-encodes the agent id and forwards request options', async () => {
+      const options = { signal: new AbortController().signal };
+      http.patch.mockResolvedValue(httpOk(makeAgent({ status: 'SUSPENDED' })));
+
+      await resource.suspendAgent('agt/special', options);
+
+      expect(http.patch).toHaveBeenCalledWith(
+        '/agents/agt%2Fspecial',
+        { status: 'SUSPENDED' },
+        options,
+      );
+    });
+
+    it('propagates API errors', async () => {
+      const error = new Error('suspension failed');
+      http.patch.mockRejectedValue(error);
+
+      await expect(resource.suspendAgent('agt_1')).rejects.toBe(error);
     });
   });
 });
