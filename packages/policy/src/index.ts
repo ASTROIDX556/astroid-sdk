@@ -93,6 +93,23 @@ export {
   POLICY_SIMULATE_BY_ID_PATH,
 } from './simulation.js';
 
+/**
+ * Strongly typed simulation result parser — parses simulation JSON into
+ * clear summary objects showing whether a transaction passed or failed and
+ * identifying any violated policy rules.
+ */
+export {
+  parseSimulationResult,
+  parsePolicySimulationResult,
+  parseSimulation,
+  parsePolicyResult,
+  extractViolatedRules,
+  isSimulationFailed,
+  isSimulationPassed,
+  type SimulationResultSummary,
+  type ViolatedPolicyRule,
+} from './parser.js';
+
 /** Offline policy-engine types and helpers (see {@link evaluatePolicyRules}). */
 export {
   simulatePolicyLocal,
@@ -515,9 +532,7 @@ export class PolicyResource extends Resource {
    * }
    * ```
    */
-  async simulatePolicyRule(
-    request: PolicyEvaluationRequest,
-  ): Promise<PolicyEvaluationOutcome> {
+  async simulatePolicyRule(request: PolicyEvaluationRequest): Promise<PolicyEvaluationOutcome> {
     return simulatePolicyRuleEvaluation(this.client, request);
   }
 
