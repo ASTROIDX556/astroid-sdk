@@ -20,7 +20,19 @@ export {
   type ThresholdResult,
   type BurnRateResult,
 } from './metrics.js';
-export { checkBudgetLimit, type BudgetValidationResult } from './validation.js';
+export {
+  checkBudgetLimit,
+  validateRemainingAllowance,
+  validateDailyLimit,
+  validateAssetSpendingCap,
+  validateBudgetSpending,
+  type BudgetValidationResult,
+  type BudgetSpendingValidationResult,
+  type SpendingLimitViolation,
+  type SpendingLimitViolationType,
+  type ValidateDailyLimitOptions,
+  type ValidateBudgetSpendingOptions,
+} from './validation.js';
 
 export {
   assertValidThresholdPercent,

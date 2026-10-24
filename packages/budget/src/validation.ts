@@ -77,7 +77,8 @@ function decAdd(a: DecimalString | number, b: DecimalString | number): DecimalSt
   const padded = result.padStart(maxScale + 1, '0');
   const intPart = padded.slice(0, padded.length - maxScale) || '0';
   const fracPart = padded.slice(padded.length - maxScale);
-  return `${intPart}.${fracPart.replace(/0+$/, '')}`;
+  const trimmedFrac = fracPart.replace(/0+$/, '');
+  return trimmedFrac ? `${intPart}.${trimmedFrac}` : intPart;
 }
 
 /**
@@ -106,7 +107,8 @@ function decSub(a: DecimalString | number, b: DecimalString | number): DecimalSt
   const padded = result.padStart(maxScale + 1, '0');
   const intPart = padded.slice(0, padded.length - maxScale) || '0';
   const fracPart = padded.slice(padded.length - maxScale);
-  return `${intPart}.${fracPart.replace(/0+$/, '')}`;
+  const trimmedFrac = fracPart.replace(/0+$/, '');
+  return trimmedFrac ? `${intPart}.${trimmedFrac}` : intPart;
 }
 
 /** Compare two decimal strings.  Returns -1, 0, or 1. */
@@ -232,6 +234,395 @@ function normaliseAmount(amount: DecimalString | number): DecimalString {
     return String(amount);
   }
   return amount;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Structured Spending Validation API (Issue #429)                            */
+/* -------------------------------------------------------------------------- */
+
+/** Machine-readable classification of a spending limit breach. */
+export type SpendingLimitViolationType =
+  | 'REMAINING_ALLOWANCE_EXCEEDED'
+  | 'DAILY_LIMIT_EXCEEDED'
+  | 'ASSET_CAP_EXCEEDED'
+  | 'DISABLED_BUDGET'
+  | 'CURRENCY_MISMATCH'
+  | 'INVALID_AMOUNT';
+
+/** A single spending restriction violation. */
+export interface SpendingLimitViolation {
+  /** Machine-readable violation code. */
+  type: SpendingLimitViolationType;
+  /** Human-readable explanation. */
+  message: string;
+  /** The limit that was evaluated (decimal string), if applicable. */
+  limit?: DecimalString;
+  /** The current spent amount before the requested draw (decimal string), if applicable. */
+  currentSpent?: DecimalString;
+  /** The requested spend amount (decimal string), if applicable. */
+  requestedAmount?: DecimalString;
+}
+
+/** Structured outcome of spending validation. */
+export interface BudgetSpendingValidationResult {
+  /** Whether the spend request is permitted under all evaluated limits. */
+  allowed: boolean;
+  /** Remaining allowance headroom after applying the request (clamped at 0). */
+  remainingAllowance: DecimalString;
+  /** Total spent in the active window before the request (decimal string). */
+  spentInWindow: DecimalString;
+  /** List of violated limits (empty when permitted). */
+  violations: SpendingLimitViolation[];
+  /** Human-readable summary of the validation decision. */
+  explanation: string;
+}
+
+/** Input options for daily limit validation. */
+export interface ValidateDailyLimitOptions {
+  /** Explicit daily spending limit (decimal string or number). Defaults to budget's daily limit. */
+  dailyLimit?: DecimalString | number;
+  /** Evaluation instant (Date or ISO string); defaults to current time. */
+  now?: Date | string;
+}
+
+/** Input options for comprehensive spending validation. */
+export interface ValidateBudgetSpendingOptions {
+  /** Historical entries used to aggregate spending in the active window. */
+  spentHistory?: BudgetHistoryEntry[];
+  /** Optional explicit daily limit. */
+  dailyLimit?: DecimalString | number;
+  /** Asset-specific spending caps (e.g. `{ XLM: '1000.00', USDC: '500.00' }`). */
+  assetCaps?: Record<string, DecimalString | number> | Map<string, DecimalString | number>;
+  /** Current spent amounts by asset for cap validation. */
+  currentSpentByAsset?: Record<string, DecimalString | number> | Map<string, DecimalString | number>;
+  /** Evaluation instant (Date or ISO string); defaults to current time. */
+  now?: Date | string;
+}
+
+/**
+ * Check if a value is a valid non-negative finite decimal string or number.
+ */
+function isValidAmount(val: unknown): boolean {
+  if (typeof val === 'number') {
+    return Number.isFinite(val) && val >= 0;
+  }
+  if (typeof val !== 'string') return false;
+  const s = val.trim();
+  if (s === '') return false;
+  return /^\d+(?:\.\d+)?$/.test(s);
+}
+
+/**
+ * Validate remaining allowance for a budget against a prospective spend request.
+ *
+ * Uses precise integer/decimal arithmetic for Stellar amounts. Exact-limit
+ * boundaries are permitted (`amount === remaining`).
+ *
+ * @param budget Budget definition or cached state.
+ * @param request Spend request payload (`asset` and `amount`).
+ * @param spentHistory Optional history entries to derive spent amount if budget.spent is missing.
+ */
+export function validateRemainingAllowance(
+  budget: Partial<Budget> & Pick<Budget, 'limitAmount'>,
+  request: SpendRequest,
+  spentHistory?: BudgetHistoryEntry[],
+): BudgetSpendingValidationResult {
+  const violations: SpendingLimitViolation[] = [];
+
+  const rawAmount = request.amount;
+  if (!isValidAmount(rawAmount)) {
+    const message = `Invalid spend amount "${String(rawAmount)}". Amount must be a non-negative finite decimal number or string.`;
+    violations.push({
+      type: 'INVALID_AMOUNT',
+      message,
+      requestedAmount: String(rawAmount),
+    });
+    return {
+      allowed: false,
+      remainingAllowance: '0',
+      spentInWindow: '0',
+      violations,
+      explanation: message,
+    };
+  }
+
+  const reqAmount = normaliseAmount(rawAmount);
+
+  if (budget.enabled === false) {
+    violations.push({
+      type: 'DISABLED_BUDGET',
+      message: `Budget ${budget.id ?? ''} is disabled.`,
+    });
+  }
+
+  const budgetCurrency = (budget.currency ?? request.asset).trim().toUpperCase();
+  const reqAsset = request.asset.trim().toUpperCase();
+  if (budgetCurrency !== reqAsset) {
+    violations.push({
+      type: 'CURRENCY_MISMATCH',
+      message: `Asset mismatch: budget is in ${budgetCurrency}, request is in ${reqAsset}.`,
+    });
+  }
+
+  const limitAmount = isValidAmount(budget.limitAmount) ? normaliseAmount(budget.limitAmount) : '0';
+
+  let spent = '0';
+  const rawSpent = budget.spent;
+  if (rawSpent !== undefined && isValidAmount(rawSpent)) {
+    spent = normaliseAmount(rawSpent);
+  } else if (spentHistory && Array.isArray(spentHistory)) {
+    const activeEntries = budget.period && budget.periodStart
+      ? spentHistory.filter((entry) => {
+          const { start, end } = getWindow(budget.period!, budget.periodStart!);
+          const t = new Date(entry.createdAt).getTime();
+          return t >= start.getTime() && t < end.getTime();
+        })
+      : spentHistory;
+    spent = decSum(activeEntries.map((e) => normaliseAmount(e.amount)));
+  }
+
+  const remaining = decSub(limitAmount, spent);
+  const wouldExceed = decGtZero(reqAmount) && decCmp(reqAmount, remaining) === 1;
+
+  if (wouldExceed) {
+    violations.push({
+      type: 'REMAINING_ALLOWANCE_EXCEEDED',
+      message: `Spend of ${reqAmount} exceeds remaining allowance of ${remaining} (limit: ${limitAmount}, spent: ${spent}).`,
+      limit: limitAmount,
+      currentSpent: spent,
+      requestedAmount: reqAmount,
+    });
+  }
+
+  const allowed = violations.length === 0;
+  const remainingAfter = decSub(remaining, reqAmount);
+
+  return {
+    allowed,
+    remainingAllowance: remainingAfter,
+    spentInWindow: spent,
+    violations,
+    explanation: allowed
+      ? `Spend of ${reqAmount} is within remaining allowance of ${remaining}.`
+      : violations.map((v) => v.message).join(' '),
+  };
+}
+
+/**
+ * Validate a spend request against daily spending limits.
+ *
+ * @param budget Budget definition or daily limit options.
+ * @param request Spend request payload.
+ * @param spentHistory Historical entries to filter within the current daily 24h window.
+ * @param options Options specifying an explicit daily limit or evaluation instant.
+ */
+export function validateDailyLimit(
+  budget: Partial<Budget>,
+  request: SpendRequest,
+  spentHistory?: BudgetHistoryEntry[],
+  options: ValidateDailyLimitOptions = {},
+): BudgetSpendingValidationResult {
+  const violations: SpendingLimitViolation[] = [];
+
+  if (!isValidAmount(request.amount)) {
+    const message = `Invalid spend amount "${String(request.amount)}". Amount must be a non-negative finite decimal number or string.`;
+    violations.push({
+      type: 'INVALID_AMOUNT',
+      message,
+      requestedAmount: String(request.amount),
+    });
+    return {
+      allowed: false,
+      remainingAllowance: '0',
+      spentInWindow: '0',
+      violations,
+      explanation: message,
+    };
+  }
+
+  const reqAmount = normaliseAmount(request.amount);
+
+  const rawDailyLimit = options.dailyLimit ?? (budget.period === 'DAILY' ? budget.limitAmount : undefined);
+  if (rawDailyLimit === undefined || !isValidAmount(rawDailyLimit)) {
+    // If no daily limit is configured, pass validation safely
+    return {
+      allowed: true,
+      remainingAllowance: '0',
+      spentInWindow: '0',
+      violations: [],
+      explanation: 'No daily limit configured.',
+    };
+  }
+
+  const dailyLimit = normaliseAmount(rawDailyLimit);
+
+  const evalDate = options.now ? new Date(options.now) : new Date();
+  const dayStart = startOfDay(evalDate);
+  const dayEnd = addDays(dayStart, 1);
+
+  let dailySpent = '0';
+  const rawBudgetSpent = budget.spent;
+  if (spentHistory && Array.isArray(spentHistory)) {
+    const dailyEntries = spentHistory.filter((e) => {
+      const t = new Date(e.createdAt).getTime();
+      return t >= dayStart.getTime() && t < dayEnd.getTime();
+    });
+    dailySpent = decSum(dailyEntries.map((e) => normaliseAmount(e.amount)));
+  } else if (budget.period === 'DAILY' && rawBudgetSpent !== undefined && isValidAmount(rawBudgetSpent)) {
+    dailySpent = normaliseAmount(rawBudgetSpent);
+  }
+
+  const remainingDaily = decSub(dailyLimit, dailySpent);
+  const wouldExceed = decGtZero(reqAmount) && decCmp(reqAmount, remainingDaily) === 1;
+
+  if (wouldExceed) {
+    violations.push({
+      type: 'DAILY_LIMIT_EXCEEDED',
+      message: `Spend of ${reqAmount} exceeds daily limit of ${dailyLimit} (spent today: ${dailySpent}, remaining today: ${remainingDaily}).`,
+      limit: dailyLimit,
+      currentSpent: dailySpent,
+      requestedAmount: reqAmount,
+    });
+  }
+
+  const allowed = violations.length === 0;
+  const remainingAfter = decSub(remainingDaily, reqAmount);
+
+  return {
+    allowed,
+    remainingAllowance: remainingAfter,
+    spentInWindow: dailySpent,
+    violations,
+    explanation: allowed
+      ? `Spend of ${reqAmount} is within daily limit of ${dailyLimit}.`
+      : violations.map((v) => v.message).join(' '),
+  };
+}
+
+/**
+ * Validate asset-specific spending caps.
+ *
+ * @param request Spend request payload.
+ * @param assetCaps Asset cap definition map or record (e.g. `{ XLM: '1000' }`).
+ * @param currentSpentByAsset Current spent amount per asset.
+ */
+export function validateAssetSpendingCap(
+  request: SpendRequest,
+  assetCaps?: Record<string, DecimalString | number> | Map<string, DecimalString | number>,
+  currentSpentByAsset?: Record<string, DecimalString | number> | Map<string, DecimalString | number>,
+): BudgetSpendingValidationResult {
+  const violations: SpendingLimitViolation[] = [];
+
+  if (!isValidAmount(request.amount)) {
+    const message = `Invalid spend amount "${String(request.amount)}". Amount must be a non-negative finite decimal number or string.`;
+    violations.push({
+      type: 'INVALID_AMOUNT',
+      message,
+      requestedAmount: String(request.amount),
+    });
+    return {
+      allowed: false,
+      remainingAllowance: '0',
+      spentInWindow: '0',
+      violations,
+      explanation: message,
+    };
+  }
+
+  const reqAmount = normaliseAmount(request.amount);
+  const assetKey = request.asset.trim().toUpperCase();
+
+  let capValue: DecimalString | number | undefined;
+  if (assetCaps instanceof Map) {
+    capValue = assetCaps.get(assetKey) ?? assetCaps.get(request.asset);
+  } else if (assetCaps && typeof assetCaps === 'object') {
+    capValue = assetCaps[assetKey] ?? assetCaps[request.asset];
+  }
+
+  if (capValue === undefined || !isValidAmount(capValue)) {
+    return {
+      allowed: true,
+      remainingAllowance: '0',
+      spentInWindow: '0',
+      violations: [],
+      explanation: `No asset spending cap configured for asset "${request.asset}".`,
+    };
+  }
+
+  const cap = normaliseAmount(capValue);
+
+  let spentValue: DecimalString | number | undefined;
+  if (currentSpentByAsset instanceof Map) {
+    spentValue = currentSpentByAsset.get(assetKey) ?? currentSpentByAsset.get(request.asset);
+  } else if (currentSpentByAsset && typeof currentSpentByAsset === 'object') {
+    spentValue = currentSpentByAsset[assetKey] ?? currentSpentByAsset[request.asset];
+  }
+
+  const currentSpent = spentValue !== undefined && isValidAmount(spentValue) ? normaliseAmount(spentValue) : '0';
+  const remaining = decSub(cap, currentSpent);
+  const wouldExceed = decGtZero(reqAmount) && decCmp(reqAmount, remaining) === 1;
+
+  if (wouldExceed) {
+    violations.push({
+      type: 'ASSET_CAP_EXCEEDED',
+      message: `Spend of ${reqAmount} ${request.asset} exceeds spending cap of ${cap} ${request.asset} (current spent: ${currentSpent}, remaining: ${remaining}).`,
+      limit: cap,
+      currentSpent,
+      requestedAmount: reqAmount,
+    });
+  }
+
+  const allowed = violations.length === 0;
+  const remainingAfter = decSub(remaining, reqAmount);
+
+  return {
+    allowed,
+    remainingAllowance: remainingAfter,
+    spentInWindow: currentSpent,
+    violations,
+    explanation: allowed
+      ? `Spend of ${reqAmount} ${request.asset} is within asset cap of ${cap}.`
+      : violations.map((v) => v.message).join(' '),
+  };
+}
+
+/**
+ * Validate a prospective spend request against all budget limits (remaining allowance,
+ * daily limit, asset caps).
+ *
+ * @param budget Budget definition or DTO.
+ * @param request Spend request payload.
+ * @param options Additional validation options including history, daily limits, asset caps.
+ */
+export function validateBudgetSpending(
+  budget: Partial<Budget> & Pick<Budget, 'limitAmount'>,
+  request: SpendRequest,
+  options: ValidateBudgetSpendingOptions = {},
+): BudgetSpendingValidationResult {
+  const allowanceResult = validateRemainingAllowance(budget, request, options.spentHistory);
+  const dailyResult = validateDailyLimit(budget, request, options.spentHistory, {
+    dailyLimit: options.dailyLimit,
+    now: options.now,
+  });
+  const assetCapResult = validateAssetSpendingCap(request, options.assetCaps, options.currentSpentByAsset);
+
+  const allViolations: SpendingLimitViolation[] = [
+    ...allowanceResult.violations,
+    ...dailyResult.violations,
+    ...assetCapResult.violations,
+  ];
+
+  const allowed = allViolations.length === 0;
+
+  return {
+    allowed,
+    remainingAllowance: allowanceResult.remainingAllowance,
+    spentInWindow: allowanceResult.spentInWindow,
+    violations: allViolations,
+    explanation: allowed
+      ? 'Spend request passed all budget spending validations.'
+      : allViolations.map((v) => v.message).join(' '),
+  };
 }
 
 /* -------------------------------------------------------------------------- */
