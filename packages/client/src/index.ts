@@ -828,8 +828,14 @@ export {
   type SessionManagerConfig,
   type AuthFailureCallback,
 } from '@astroid/auth';
-export { WalletResource, type WalletListParams } from '@astroid/wallet';
-export { AgentResource, type AgentListParams, type AgentCursorListParams } from '@astroid/agent';
+export {
+  WalletResource,
+  fetchWalletBalancesBatch,
+  type WalletListParams,
+  type BatchWalletBalancesOptions,
+  type BatchWalletBalancesResult,
+  type BatchClientLike,
+} from '@astroid/wallet';
 export { PolicyResource, type PolicyListParams } from '@astroid/policy';
 export { BudgetResource, type BudgetListParams } from '@astroid/budget';
 export { TransactionResource, type ProposalListParams } from '@astroid/transaction';
