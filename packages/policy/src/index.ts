@@ -203,8 +203,10 @@ export { PolicyType } from '@astroid/types';
  */
 export type PolicyCreateInput = Omit<
   Policy,
-  'id' | 'organizationId' | 'createdAt' | 'updatedAt' | 'deletedAt'
->;
+  'id' | 'organizationId' | 'createdAt' | 'updatedAt' | 'deletedAt' | 'enabled'
+> & {
+  enabled?: boolean;
+};
 
 /**
  * The payload accepted by {@link PolicyResource.update}.

@@ -89,7 +89,7 @@ export const PolicyCreateInputSchema: z.ZodType<PolicyCreateInput> = z
     type: PolicyTypeSchema,
     configuration: PolicyConfigurationSchema,
     priority: z.number(),
-    enabled: z.boolean(),
+    enabled: z.boolean().optional(),
     agentId: z.string().nullable().optional(),
   })
   .passthrough();
