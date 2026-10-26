@@ -93,7 +93,7 @@ export {
   type OpenTelemetryMetric,
 } from './formatters.js';
 
-// Local pure aggregation helpers (issues #269, #442): decimal-safe transaction
+// Local pure aggregation helpers (issues #269, #442, #456, #464): decimal-safe transaction
 // telemetry, time-series metrics aggregation, and query builders.
 // Re-exported explicitly — `metrics.ts` also defines an `AnalyticsResource`
 // class, so it stays out of the entrypoint to avoid duplicate-export ambiguity.
@@ -111,6 +111,12 @@ export {
   type TimeSeriesInputPoint,
   type TimeSeriesMetricsInput,
 } from './aggregations.js';
+
+export {
+  aggregateTimeSeries,
+  groupTimeSeriesData,
+  type TimeSeriesAggregationOptions,
+} from './aggregation.js';
 
 export {
   buildTimeSeriesPath,
