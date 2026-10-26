@@ -42,6 +42,12 @@ export type {
   AuthFailureReason,
 } from './session.js';
 export { parseJwt, getTokenExpiration, isTokenExpired, SessionManager } from './session.js';
+export {
+  decodeSessionToken,
+  hasRole,
+  type DecodedSessionToken,
+  type SessionTokenPayload,
+} from './jwt.js';
 export { wireSessionToHttpClient, createSessionMiddleware } from './auth.js';
 export { RefreshManager, createRefreshManager, wireRefreshManagerToHttpClient } from './refresh.js';
 export type { RefreshManagerConfig } from './refresh.js';
