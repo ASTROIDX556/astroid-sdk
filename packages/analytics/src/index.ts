@@ -113,6 +113,15 @@ export {
 } from './aggregations.js';
 
 export {
+  computeTelemetrySummary,
+  calculateExpenditures,
+  calculateSuccessRate,
+  type TelemetryRecord,
+  type AggregationWindowOptions,
+  type TelemetrySummary,
+} from './aggregates.js';
+
+export {
   aggregateTimeSeries,
   groupTimeSeriesData,
   type TimeSeriesAggregationOptions,
