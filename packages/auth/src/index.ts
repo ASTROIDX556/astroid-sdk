@@ -48,6 +48,20 @@ export {
   type DecodedSessionToken,
   type SessionTokenPayload,
 } from './jwt.js';
+export {
+  isValidScopeString,
+  matchScope,
+  validateScope,
+  validateScopes,
+  extractScopes,
+  hasScope,
+  hasAnyScope,
+  assertScope,
+  requireScope,
+  type ApiKeyPermissionSource,
+  type ScopeInspectionSource,
+  type ScopeCheckOptions,
+} from './scopes.js';
 export { wireSessionToHttpClient, createSessionMiddleware } from './auth.js';
 export { RefreshManager, createRefreshManager, wireRefreshManagerToHttpClient } from './refresh.js';
 export type { RefreshManagerConfig } from './refresh.js';
