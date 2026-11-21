@@ -1,6 +1,8 @@
 import { Networks, TransactionBuilder } from '@stellar/stellar-base';
 import type { FeeBumpTransaction, Transaction } from '@stellar/stellar-base';
 import type {
+  PolicyBudgetImpact,
+  PolicyRiskAssessment,
   TransactionFeeBumpSuggestion,
   TransactionFeeEstimate,
   TransactionResourceEstimate,
@@ -8,7 +10,10 @@ import type {
   TransactionSimulationErrorCode,
   TransactionSimulationOptions,
   TransactionSimulationOutcome,
+  TransactionSimulationPolicyEvaluation,
+  TransactionSimulationPolicyViolation,
   TransactionSimulationRemoteResult,
+  TransactionSimulationRequest,
   TransactionSimulationStatus,
 } from '@astroid/types';
 
@@ -118,6 +123,223 @@ function parseNonNegativeNumber(value: unknown): number | undefined {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
 }
 
+const SIMULATION_ERROR_CODES = [
+  'INVALID_ENVELOPE',
+  'ZERO_OR_NEGATIVE_FEE',
+  'FEE_BELOW_MINIMUM',
+  'FEE_TOO_HIGH',
+  'FEE_BUMP_REQUIRED',
+  'POLICY_VIOLATION',
+  'NO_OPERATIONS',
+  'VALIDATION_FAILED',
+  'SIMULATION_FAILED',
+  'MALFORMED_RESPONSE',
+  'NETWORK_ERROR',
+] as const satisfies ReadonlyArray<TransactionSimulationErrorCode>;
+
+function parseSimulationErrorCode(value: unknown): TransactionSimulationErrorCode | undefined {
+  return typeof value === 'string' &&
+    (SIMULATION_ERROR_CODES as readonly string[]).includes(value)
+    ? (value as TransactionSimulationErrorCode)
+    : undefined;
+}
+
+function firstString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === 'string' && value.length > 0) return value;
+  }
+  return undefined;
+}
+
+function parsePolicyViolation(value: unknown): TransactionSimulationPolicyViolation | undefined {
+  const record = isRecord(value);
+  if (!record) return undefined;
+
+  const policyId = firstString(record.policyId, record.ruleId, record.id);
+  const reasonCode = firstString(record.reasonCode, record.code);
+  const message = firstString(record.message, record.reason, record.detail, record.description);
+  if (policyId === undefined && message === undefined && reasonCode === undefined) return undefined;
+
+  const violation: TransactionSimulationPolicyViolation = {
+    policyId: policyId ?? 'unknown',
+    message: message ?? reasonCode ?? 'Policy rule violated.',
+  };
+  const parsedPolicyType = firstString(record.policyType, record.type);
+  const parsedPolicyName = firstString(record.policyName, record.name);
+  const parsedLimit = record.limit;
+  const parsedActual = record.actual;
+  if (parsedPolicyType !== undefined) violation.policyType = parsedPolicyType;
+  if (parsedPolicyName !== undefined) violation.policyName = parsedPolicyName;
+  if (reasonCode !== undefined) violation.reasonCode = reasonCode;
+  if (
+    typeof parsedLimit === 'string' ||
+    (typeof parsedLimit === 'number' && Number.isFinite(parsedLimit))
+  ) {
+    violation.limit = parsedLimit;
+  }
+  if (
+    typeof parsedActual === 'string' ||
+    (typeof parsedActual === 'number' && Number.isFinite(parsedActual))
+  ) {
+    violation.actual = parsedActual;
+  }
+  return violation;
+}
+
+function parsePolicyViolations(value: unknown): TransactionSimulationPolicyViolation[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const violations = value
+    .map(parsePolicyViolation)
+    .filter((violation): violation is TransactionSimulationPolicyViolation => violation !== undefined);
+  return violations.length > 0 || value.length === 0 ? violations : undefined;
+}
+
+function parsePolicyEvaluation(
+  raw: Record<string, unknown>,
+): TransactionSimulationPolicyEvaluation | undefined {
+  const containers = [
+    raw.policyEvaluation,
+    raw.policy,
+    raw.policySimulation,
+    raw.policyResult,
+    raw.error,
+    raw,
+  ]
+    .map(isRecord)
+    .filter((record): record is Record<string, unknown> => record !== undefined);
+
+  let container: Record<string, unknown> | undefined;
+  for (const candidate of containers) {
+    if (
+      typeof candidate.allowed === 'boolean' ||
+      typeof candidate.denied === 'boolean' ||
+      candidate.decision !== undefined ||
+      candidate.violations !== undefined ||
+      candidate.policyId !== undefined ||
+      candidate.reasonCode !== undefined ||
+      candidate.explanation !== undefined
+    ) {
+      container = candidate;
+      break;
+    }
+  }
+  if (!container) return undefined;
+
+  const violations =
+    parsePolicyViolations(container.violations) ??
+    parsePolicyViolations(raw.violations) ??
+    parsePolicyViolations(isRecord(raw.error)?.violations) ??
+    [];
+  const decision = firstString(container.decision, raw.decision);
+  const upperDecision = decision?.toUpperCase();
+  const explicitCode = firstString(
+    container.code,
+    container.errorCode,
+    isRecord(raw.error)?.code,
+    raw.code,
+    raw.errorCode,
+  );
+
+  let allowed: boolean | undefined;
+  if (typeof container.allowed === 'boolean') allowed = container.allowed;
+  else if (typeof container.denied === 'boolean') allowed = !container.denied;
+  else if (typeof raw.allowed === 'boolean') allowed = raw.allowed;
+  else if (typeof raw.denied === 'boolean') allowed = !raw.denied;
+  else if (upperDecision === 'DENIED') allowed = false;
+  else if (upperDecision === 'ALLOWED') allowed = true;
+  else if (explicitCode === 'POLICY_VIOLATION') allowed = false;
+  else if (violations.length > 0) allowed = false;
+  if (allowed === undefined) return undefined;
+
+  const evaluation: TransactionSimulationPolicyEvaluation = { allowed, violations };
+  if (typeof container.denied === 'boolean') evaluation.denied = container.denied;
+  else if (typeof raw.denied === 'boolean') evaluation.denied = raw.denied;
+  else evaluation.denied = !allowed;
+  if (upperDecision === 'DENIED' || upperDecision === 'ALLOWED') {
+    evaluation.decision = upperDecision;
+  }
+
+  const reasonCode = firstString(container.reasonCode, raw.reasonCode, violations[0]?.reasonCode);
+  if (reasonCode !== undefined) evaluation.reasonCode = reasonCode;
+  if (Array.isArray(container.requiredApprovals)) {
+    const approvals = container.requiredApprovals.filter(
+      (approval): approval is string => typeof approval === 'string' && approval.length > 0,
+    );
+    if (approvals.length > 0) evaluation.requiredApprovals = approvals;
+  }
+
+  const riskRecord = isRecord(container.risk);
+  if (
+    riskRecord &&
+    typeof riskRecord.score === 'number' &&
+    typeof riskRecord.band === 'string' &&
+    Array.isArray(riskRecord.factors)
+  ) {
+    evaluation.risk = riskRecord as unknown as PolicyRiskAssessment;
+  }
+  if (Array.isArray(container.budgetImpact)) {
+    const budgetImpact = container.budgetImpact
+      .map(isRecord)
+      .filter((impact): impact is Record<string, unknown> => impact !== undefined)
+      .map((impact) => ({
+        budgetId: firstString(impact.budgetId, impact.id),
+        beforeRemaining: firstString(impact.beforeRemaining),
+        afterRemaining: firstString(impact.afterRemaining),
+      }))
+      .filter(
+        (impact): impact is PolicyBudgetImpact =>
+          impact.budgetId !== undefined &&
+          impact.beforeRemaining !== undefined &&
+          impact.afterRemaining !== undefined,
+      );
+    if (budgetImpact.length > 0) evaluation.budgetImpact = budgetImpact;
+  }
+
+  const explanation = firstString(
+    container.explanation,
+    container.message,
+    container.detail,
+    raw.explanation,
+    allowed ? undefined : firstString(raw.message, firstRecordString(raw.error, 'message')),
+  );
+  if (explanation !== undefined) evaluation.explanation = explanation;
+  return evaluation;
+}
+
+function firstRecordString(value: unknown, key: string): string | undefined {
+  const record = isRecord(value);
+  return record ? firstString(record[key]) : undefined;
+}
+
+function parseFailureReasons(
+  raw: Record<string, unknown>,
+  policyEvaluation: TransactionSimulationPolicyEvaluation | undefined,
+  diagnostics: TransactionSimulationDiagnostics | undefined,
+): string[] | undefined {
+  const reasons: string[] = [];
+  const add = (value: unknown): void => {
+    if (typeof value === 'string' && value.length > 0 && !reasons.includes(value)) {
+      reasons.push(value);
+    }
+  };
+
+  const rawReasons = raw.failureReasons ?? raw.reasons;
+  if (Array.isArray(rawReasons)) rawReasons.forEach(add);
+  add(firstString(raw.explanation, firstRecordString(raw.error, 'message')));
+  if (policyEvaluation) {
+    add(policyEvaluation.explanation);
+    policyEvaluation.violations.forEach((violation) => add(violation.message));
+  }
+  add(diagnostics?.detail);
+  return reasons.length > 0 ? reasons : undefined;
+}
+
+function withLeadingReason(reasons: string[] | undefined, message: string | undefined): string[] {
+  const result = [...(reasons ?? [])];
+  if (message && !result.includes(message)) result.unshift(message);
+  return result;
+}
+
 /** Map a protocol validator code onto the simulation error taxonomy. */
 function mapValidationCode(code: TransactionValidationCode): TransactionSimulationErrorCode {
   switch (code) {
@@ -154,7 +376,10 @@ interface ParsedSimulationResponse {
   status?: TransactionSimulationStatus;
   diagnostics?: TransactionSimulationDiagnostics;
   resourceUsage?: TransactionResourceEstimate;
+  estimatedFee?: number;
   feeBumpSuggestion?: TransactionFeeBumpSuggestion;
+  policyEvaluation?: TransactionSimulationPolicyEvaluation;
+  failureReasons?: string[];
 }
 
 /**
@@ -173,16 +398,25 @@ function parseSimulationResponse(
   currentFee: number,
   operationCount: number,
 ): ParsedSimulationResponse {
-  const status = parseSimulationStatus(raw.status);
+  const status =
+    parseSimulationStatus(raw.status) ??
+    (raw.success === false ? 'failed' : undefined) ??
+    parseSimulationStatus(raw.state);
   const diagnostics = parseSimulationDiagnostics(raw);
   const resourceUsage = parseResourceEstimate(raw.resourceUsage ?? raw.resources);
+  const estimatedFee = parseNonNegativeNumber(raw.estimatedFee ?? raw.fee ?? raw.minResourceFee);
   const feeBumpSuggestion = parseFeeBumpSuggestion(raw, diagnostics, currentFee, operationCount);
+  const policyEvaluation = parsePolicyEvaluation(raw);
+  const failureReasons = parseFailureReasons(raw, policyEvaluation, diagnostics);
 
   const parsed: ParsedSimulationResponse = {};
   if (status !== undefined) parsed.status = status;
   if (diagnostics !== undefined) parsed.diagnostics = diagnostics;
   if (resourceUsage !== undefined) parsed.resourceUsage = resourceUsage;
+  if (estimatedFee !== undefined) parsed.estimatedFee = estimatedFee;
   if (feeBumpSuggestion !== undefined) parsed.feeBumpSuggestion = feeBumpSuggestion;
+  if (policyEvaluation !== undefined) parsed.policyEvaluation = policyEvaluation;
+  if (failureReasons !== undefined) parsed.failureReasons = failureReasons;
   return parsed;
 }
 
@@ -193,6 +427,7 @@ function parseSimulationStatus(value: unknown): TransactionSimulationStatus | un
     case 'success':
     case 'failed':
     case 'fee_bump_required':
+    case 'policy_violation':
       return value;
     default:
       return undefined;
@@ -505,14 +740,17 @@ export async function simulateTransaction(
     feeEstimate = undefined;
   }
 
-  const estimatedFee = feeEstimate ? Math.max(feeEstimate.recommendedFee, baseFee) : baseFee;
+  const localEstimatedFee = feeEstimate ? Math.max(feeEstimate.recommendedFee, baseFee) : baseFee;
+
+  const request: TransactionSimulationRequest = { transactionXdr: xdr };
+  if (options.agentId !== undefined) request.agentId = options.agentId;
+  if (options.walletId !== undefined) request.walletId = options.walletId;
+  if (options.metadata !== undefined) request.metadata = options.metadata;
 
   let remote: TransactionSimulationRemoteResult | undefined;
   if (options.client && !options.skipRemote) {
     try {
-      const response = await options.client.post<unknown>('/transactions/simulate', {
-        transactionXdr: xdr,
-      });
+      const response = await options.client.post<unknown>('/transactions/simulate', request);
       const raw = isRecord(response.data);
       if (!raw) {
         // A non-object payload from the API is a malformed response, not a
@@ -522,21 +760,52 @@ export async function simulateTransaction(
           success: false,
           errorCode: 'MALFORMED_RESPONSE',
           errorMessage: 'Simulation endpoint returned a non-object response body.',
+          failureReasons: ['Simulation endpoint returned a non-object response body.'],
           data: response.data === undefined ? undefined : { value: response.data },
         };
       } else {
         const parsed = parseSimulationResponse(raw, baseFee, operationCount);
         const reportedFee = parsed.feeBumpSuggestion?.suggestedFee;
+        const policyDenied =
+          (parsed.policyEvaluation !== undefined && !parsed.policyEvaluation.allowed) ||
+          parsed.status === 'policy_violation' ||
+          firstString(raw.code, raw.errorCode, firstRecordString(raw.error, 'code')) ===
+            'POLICY_VIOLATION';
+
         remote = {
           performed: true,
-          success: parsed.status === undefined ? true : parsed.status !== 'failed',
+          success:
+            !policyDenied &&
+            raw.success !== false &&
+            (parsed.status === undefined ||
+              (parsed.status !== 'failed' && parsed.status !== 'policy_violation')),
           status: parsed.status,
           diagnostics: parsed.diagnostics,
           resourceUsage: parsed.resourceUsage,
+          estimatedFee: parsed.estimatedFee,
           feeBumpSuggestion: parsed.feeBumpSuggestion,
           data: raw,
         };
-        if (parsed.status === 'failed') {
+        if (parsed.policyEvaluation !== undefined) {
+          remote.policyEvaluation = parsed.policyEvaluation;
+        } else if (policyDenied) {
+          remote.policyEvaluation = {
+            allowed: false,
+            violations: parsePolicyViolations(raw.violations) ?? [],
+          };
+        }
+        if (parsed.failureReasons !== undefined) remote.failureReasons = parsed.failureReasons;
+
+        if (policyDenied) {
+          const policyEvaluation = remote.policyEvaluation as TransactionSimulationPolicyEvaluation;
+          remote.errorCode = 'POLICY_VIOLATION';
+          remote.errorMessage = firstString(
+            policyEvaluation.explanation,
+            policyEvaluation.violations[0]?.message,
+            remote.failureReasons?.[0],
+            firstString(raw.message, firstRecordString(raw.error, 'message')),
+          ) ?? 'Transaction rejected by the Astroid policy engine.';
+        } else if (parsed.status === 'failed') {
           remote.errorCode = 'SIMULATION_FAILED';
           remote.errorMessage =
             parsed.diagnostics?.detail ??
@@ -548,6 +817,13 @@ export async function simulateTransaction(
           remote.errorMessage =
             parsed.feeBumpSuggestion?.reason ??
             'The simulation indicates a higher fee (fee bump) is required.';
+        } else if (raw.success === false) {
+          remote.errorCode =
+            parseSimulationErrorCode(raw.code ?? raw.errorCode ?? firstRecordString(raw.error, 'code')) ??
+            'SIMULATION_FAILED';
+          remote.errorMessage =
+            firstString(raw.message, firstRecordString(raw.error, 'message')) ??
+            'Remote simulation reported a failed outcome.';
         }
         // A reported minimum fee above the current bid must not be silently
         // swallowed either, even when the backend kept `success: true`: at the
@@ -560,14 +836,44 @@ export async function simulateTransaction(
             remote.errorMessage ??
             `The simulation requires a fee of at least ${reportedFee} stroops (current bid: ${baseFee}).`;
         }
+        if (!remote.success) {
+          remote.failureReasons = withLeadingReason(remote.failureReasons, remote.errorMessage);
+        }
       }
     } catch (error) {
+      const errorRecord = isRecord(error);
+      const details = isRecord(errorRecord?.details) ?? errorRecord;
+      const code =
+        parseSimulationErrorCode(errorRecord?.code ?? errorRecord?.errorCode) ??
+        parseSimulationErrorCode(details?.code ?? details?.errorCode);
+      const isPolicyViolation =
+        code === 'POLICY_VIOLATION' ||
+        errorRecord?.name === 'PolicyViolationError' ||
+        firstString(errorRecord?.code, details?.code) === 'POLICY_VIOLATION';
+      const message = error instanceof Error ? error.message : 'Remote simulation failed';
+
       remote = {
         performed: true,
         success: false,
-        errorCode: 'SIMULATION_FAILED',
-        errorMessage: error instanceof Error ? error.message : 'Remote simulation failed',
+        errorCode: isPolicyViolation ? 'POLICY_VIOLATION' : 'SIMULATION_FAILED',
+        errorMessage: message,
       };
+      if (isPolicyViolation && details) {
+        const policyEvaluation =
+          parsePolicyEvaluation(details) ??
+          ({
+            allowed: false,
+            violations: parsePolicyViolations(details.violations) ?? [],
+          } as TransactionSimulationPolicyEvaluation);
+        remote.policyEvaluation = policyEvaluation;
+        remote.failureReasons = withLeadingReason(
+          parseFailureReasons(details, policyEvaluation, undefined),
+          message,
+        );
+        remote.data = code !== undefined ? { ...details, code } : details;
+      } else {
+        remote.failureReasons = [message];
+      }
     }
   }
 
@@ -576,13 +882,16 @@ export async function simulateTransaction(
   // A fee-bump requirement is a viability signal of its own: the caller must
   // rebuild or wrap the transaction before it can be accepted.
   const needsFeeBump = remoteFeeBump !== undefined;
+  const policyViolation = remote?.policyEvaluation?.allowed === false;
 
   const result: TransactionSimulationResult = {
     viable: !remoteFailed,
+    success: !remoteFailed,
+    status: remote?.status ?? (remoteFailed ? 'failed' : 'success'),
     valid: report.valid,
     operationCount,
     baseFee,
-    estimatedFee,
+    estimatedFee: remote?.estimatedFee ?? localEstimatedFee,
     sourceAccount: decoded.sourceAccount,
     transactionXdr: xdr,
   };
@@ -592,13 +901,36 @@ export async function simulateTransaction(
   if (remoteFeeBump) result.feeBumpSuggestion = remoteFeeBump;
   if (remote) {
     result.remote = remote;
+    if (remote.policyEvaluation !== undefined) {
+      result.policyEvaluation = remote.policyEvaluation;
+      result.violations = remote.policyEvaluation.violations;
+    }
+    if (remote.failureReasons !== undefined) result.failureReasons = remote.failureReasons;
     if (remoteFailed || needsFeeBump) {
       // A fee-bump requirement is the more actionable signal — surface it over
       // the generic failure code so callers know to rebuild or wrap the tx.
-      result.errorCode = needsFeeBump
-        ? 'FEE_BUMP_REQUIRED'
-        : (remote.errorCode ?? 'SIMULATION_FAILED');
+      result.errorCode = policyViolation
+        ? 'POLICY_VIOLATION'
+        : needsFeeBump
+          ? 'FEE_BUMP_REQUIRED'
+          : (remote.errorCode ?? 'SIMULATION_FAILED');
       result.errorMessage = remote.errorMessage;
+      if (result.errorCode !== undefined && result.errorMessage !== undefined) {
+        result.failureReasons = withLeadingReason(remote.failureReasons, result.errorMessage);
+        result.error = new TransactionSimulationError(result.errorMessage, {
+          code: result.errorCode,
+          status: 400,
+          transactionXdr: xdr,
+          stellarCode: remote.diagnostics?.stellarCode,
+          operationCode: remote.diagnostics?.operationCode,
+          operationResultCodes: remote.diagnostics?.operationResultCodes,
+          details: {
+            policyEvaluation: remote.policyEvaluation,
+            violations: remote.policyEvaluation?.violations,
+            data: remote.data,
+          },
+        });
+      }
     }
   }
   return result;
