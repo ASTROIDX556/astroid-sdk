@@ -28,4 +28,10 @@ describe('@astroid/react entry point exports', () => {
     expect(typeof reactPackage.useArchiveAgent).toBe('function');
     expect(typeof reactPackage.useBudgetAlerts).toBe('function');
   });
+
+  it('exports budget threshold and subscription hooks as functions (issue #378)', () => {
+    expect(typeof reactPackage.useBudgetExpenditureSummary).toBe('function');
+    expect(typeof reactPackage.useBudgetAlertSubscriptions).toBe('function');
+    expect(typeof reactPackage.budgetExpenditureKeys.summary).toBe('function');
+  });
 });

@@ -91,13 +91,17 @@ export {
   useBudget,
   useBudgetUtilization,
   useBudgetThreshold,
+  useBudgetExpenditureSummary,
+  budgetExpenditureKeys,
   type BudgetThresholdResult,
   type BudgetThresholdStatus,
+  type UseBudgetExpenditureSummaryOptions,
   type UseBudgetQueryOptions,
   type UseBudgetThresholdOptions,
 } from './hooks/use-budget.js';
 export {
   useBudgetAlerts,
+  useBudgetAlertSubscriptions,
   budgetAlertKeys,
   type UseBudgetAlertsOptions,
 } from './hooks/useBudgetAlerts.js';

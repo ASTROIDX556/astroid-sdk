@@ -1,6 +1,11 @@
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { queryKeys, useAstroidClient } from '../hooks.js';
-import type { Budget, BudgetUtilization } from '@astroid/types';
+import type {
+  Budget,
+  BudgetExpenditureSummary,
+  BudgetExpenditureSummaryParams,
+  BudgetUtilization,
+} from '@astroid/types';
 
 /**
  * Aggregate health bucket reported by {@link useBudgetThreshold}.
@@ -262,4 +267,48 @@ export function useBudgetThreshold(
     nearLimitPercent,
     exceededPercent,
   };
+}
+
+export const budgetExpenditureKeys = {
+  all: (budgetId: string) => ['astroid', 'budgets', budgetId, 'expenditure'] as const,
+  summary: (budgetId: string, params?: BudgetExpenditureSummaryParams) =>
+    queryKeys.budgets.expenditure(budgetId, params),
+} as const;
+
+export interface UseBudgetExpenditureSummaryOptions extends UseBudgetQueryOptions {
+  interval?: number;
+}
+
+function isBudgetExpenditureParams(
+  value: BudgetExpenditureSummaryParams | UseBudgetExpenditureSummaryOptions | undefined,
+): value is BudgetExpenditureSummaryParams {
+  if (typeof value !== 'object' || value === null) return false;
+  return 'from' in value || 'to' in value || 'thresholdPercent' in value;
+}
+
+export function useBudgetExpenditureSummary(
+  id: string | undefined,
+  paramsOrOptions?: BudgetExpenditureSummaryParams | UseBudgetExpenditureSummaryOptions,
+  options?: UseBudgetExpenditureSummaryOptions,
+): UseQueryResult<BudgetExpenditureSummary, Error> {
+  const astroid = useAstroidClient();
+  const hasExplicitOptions = options !== undefined;
+  const params =
+    hasExplicitOptions || isBudgetExpenditureParams(paramsOrOptions)
+      ? ((paramsOrOptions as BudgetExpenditureSummaryParams | undefined) ?? {})
+      : {};
+  const queryOptions: UseBudgetExpenditureSummaryOptions = hasExplicitOptions
+    ? options
+    : isBudgetExpenditureParams(paramsOrOptions)
+      ? {}
+      : (paramsOrOptions ?? {});
+  const { enabled = true, refetchInterval, interval, staleTime } = queryOptions;
+
+  return useQuery<BudgetExpenditureSummary, Error>({
+    queryKey: budgetExpenditureKeys.summary(id ?? '', params),
+    queryFn: () => astroid.budgets.getBudgetExpenditureSummary(id as string, params),
+    enabled: isEnabled(id, enabled),
+    refetchInterval: refetchInterval ?? interval ?? false,
+    staleTime,
+  });
 }

@@ -8,7 +8,11 @@ export * from './helpers.js';
 // aliasing the allocation variant, to avoid duplicate-export ambiguity.
 export {
   calculateUtilization as calculateBudgetAllocation,
+  calculateBudgetUtilization,
+  isBudgetExceeded,
   type AssetUtilization,
+  type BudgetAmount,
+  type BudgetUtilizationInput,
   type BudgetUtilizationResult,
 } from './utils.js';
 export {
@@ -70,10 +74,7 @@ export {
   type DeriveAllocationOptions,
   type ListBudgetsParams,
 } from './budget.js';
-export {
-  requestBudgetAdjustment,
-  type BudgetAdjustmentOptions,
-} from './adjustments.js';
+export { requestBudgetAdjustment, type BudgetAdjustmentOptions } from './adjustments.js';
 export type {
   BudgetAdjustmentRequest,
   BudgetAdjustmentResponse,
@@ -134,7 +135,11 @@ import {
   type BudgetAlertSubscription,
 } from './alerts.js';
 import { requestBudgetAdjustment } from './adjustments.js';
-import type { BudgetAdjustmentRequest, BudgetAdjustmentResponse, DecimalString } from '@astroid/types';
+import type {
+  BudgetAdjustmentRequest,
+  BudgetAdjustmentResponse,
+  DecimalString,
+} from '@astroid/types';
 
 /** Filters accepted by {@link BudgetResource.list}. */
 export interface BudgetListParams extends PaginationParams {
