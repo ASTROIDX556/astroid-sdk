@@ -153,6 +153,8 @@ export interface ListAgentsParams {
    * Mutually exclusive with {@link page}: pass one or the other, never both.
    */
   cursor?: string;
+  /** Sort direction of the listed agents (`'asc'` or `'desc'`). */
+  order?: 'asc' | 'desc';
   /** Restrict to agents with this status. */
   status?: AgentStatus;
   /** Restrict to agents with this role. */

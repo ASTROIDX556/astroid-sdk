@@ -46,6 +46,22 @@ export interface ApiError {
   details?: Record<string, unknown>;
 }
 
+/**
+ * Minimum page size accepted by the Astroid API (`limit` on list endpoints).
+ *
+ * Shared so every package that validates or clamps a list `limit` agrees on
+ * the backend contract; re-exported by `@astroid/client` as `MIN_PAGE_LIMIT`.
+ */
+export const MIN_PAGINATION_LIMIT = 1;
+
+/**
+ * Maximum page size accepted by the Astroid API (`limit` on list endpoints).
+ *
+ * Shared so every package that validates or clamps a list `limit` agrees on
+ * the backend contract; re-exported by `@astroid/client` as `MAX_PAGE_LIMIT`.
+ */
+export const MAX_PAGINATION_LIMIT = 200;
+
 /** Standard pagination request parameters. */
 export interface PaginationParams {
   /** 1-based page number (offset pagination). */

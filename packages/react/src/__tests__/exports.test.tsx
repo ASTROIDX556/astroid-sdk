@@ -28,4 +28,8 @@ describe('@astroid/react entry point exports', () => {
     expect(typeof reactPackage.useArchiveAgent).toBe('function');
     expect(typeof reactPackage.useBudgetAlerts).toBe('function');
   });
+
+  it('exports the useAgentMutations hook as a function (issue #545)', () => {
+    expect(typeof reactPackage.useAgentMutations).toBe('function');
+  });
 });

@@ -19,16 +19,27 @@
  */
 
 import type { PaginatedResponse, PaginationParams, ResponseMeta } from '@astroid/types';
+import { MAX_PAGINATION_LIMIT, MIN_PAGINATION_LIMIT } from '@astroid/types';
 import type { QueryValue } from '@astroid/core';
 
 export type { PaginatedResponse, PaginationParams };
 export type { ResponseMeta };
 
-/** Minimum page size accepted by the Astroid API. */
-export const MIN_PAGE_LIMIT = 1;
+/**
+ * Minimum page size accepted by the Astroid API.
+ *
+ * Alias of the shared {@link MIN_PAGINATION_LIMIT} constant from
+ * `@astroid/types` so every package agrees on the backend contract.
+ */
+export const MIN_PAGE_LIMIT = MIN_PAGINATION_LIMIT;
 
-/** Maximum page size accepted by the Astroid API. */
-export const MAX_PAGE_LIMIT = 200;
+/**
+ * Maximum page size accepted by the Astroid API.
+ *
+ * Alias of the shared {@link MAX_PAGINATION_LIMIT} constant from
+ * `@astroid/types` so every package agrees on the backend contract.
+ */
+export const MAX_PAGE_LIMIT = MAX_PAGINATION_LIMIT;
 
 /** Default page size used when no explicit `limit` is supplied. */
 export const DEFAULT_PAGE_LIMIT = 20;
