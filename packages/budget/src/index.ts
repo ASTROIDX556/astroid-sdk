@@ -8,7 +8,11 @@ export * from './helpers.js';
 // aliasing the allocation variant, to avoid duplicate-export ambiguity.
 export {
   calculateUtilization as calculateBudgetAllocation,
+  calculateBudgetUtilization,
+  isBudgetExceeded,
   type AssetUtilization,
+  type BudgetAmount,
+  type BudgetUtilizationInput,
   type BudgetUtilizationResult,
 } from './utils.js';
 export {
@@ -34,6 +38,24 @@ export {
   type ValidateBudgetSpendingOptions,
 } from './validation.js';
 
+export {
+  DEFAULT_BUDGET_THRESHOLDS,
+  createBudgetThresholdMonitor,
+  evaluateBudgetThresholds,
+  getHighestReachedThreshold,
+  normalizeBudgetThresholds,
+  type BudgetThresholdAlert,
+  type BudgetThresholdDefinition,
+  type BudgetThresholdEvaluation,
+  type BudgetThresholdInput,
+  type BudgetThresholdLevel,
+  type BudgetThresholdListener,
+  type BudgetThresholdMatch,
+  type BudgetThresholdMonitor,
+  type BudgetThresholdMonitorOptions,
+  type BudgetThresholdOptions,
+  type BudgetThresholdSubject,
+} from './thresholds.js';
 export {
   assertValidThresholdPercent,
   assertValidUtilizationThreshold,
@@ -70,10 +92,7 @@ export {
   type DeriveAllocationOptions,
   type ListBudgetsParams,
 } from './budget.js';
-export {
-  requestBudgetAdjustment,
-  type BudgetAdjustmentOptions,
-} from './adjustments.js';
+export { requestBudgetAdjustment, type BudgetAdjustmentOptions } from './adjustments.js';
 export type {
   BudgetAdjustmentRequest,
   BudgetAdjustmentResponse,
@@ -134,7 +153,11 @@ import {
   type BudgetAlertSubscription,
 } from './alerts.js';
 import { requestBudgetAdjustment } from './adjustments.js';
-import type { BudgetAdjustmentRequest, BudgetAdjustmentResponse, DecimalString } from '@astroid/types';
+import type {
+  BudgetAdjustmentRequest,
+  BudgetAdjustmentResponse,
+  DecimalString,
+} from '@astroid/types';
 
 /** Filters accepted by {@link BudgetResource.list}. */
 export interface BudgetListParams extends PaginationParams {

@@ -113,6 +113,7 @@ export {
   computeTelemetrySummary,
   calculateExpenditures,
   calculateSuccessRate,
+  calculateFailureRate,
   type TelemetryRecord,
   type AggregationWindowOptions,
   type TelemetrySummary,

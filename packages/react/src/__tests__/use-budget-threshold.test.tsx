@@ -223,6 +223,37 @@ describe('useBudgetThreshold — exceeded budget state', () => {
   });
 });
 
+describe('useBudgetThreshold — zero budget', () => {
+  it('flags any spend against a zero limit as exceeded', async () => {
+    const client = makeClient();
+    vi.spyOn(client.budgets, 'utilization').mockResolvedValue({
+      ...utilizationAt(0),
+      limit: '0.00',
+      spent: '1.00',
+      remaining: '0.00',
+      utilization: 0,
+      percent: 0,
+      state: 'exhausted',
+    });
+
+    const captured = createCapture();
+    function TestComponent() {
+      captured.current = useBudgetThreshold('bud_42');
+      return null;
+    }
+
+    const { unmount } = renderInProviders(createElement(TestComponent), { client });
+
+    await waitFor(() => expect(captured.current?.data?.spent).toBe('1.00'));
+
+    expect(captured.current!.utilizationPercent).toBe(0);
+    expect(captured.current!.isExceeded).toBe(true);
+    expect(captured.current!.isNearLimit).toBe(true);
+    expect(captured.current!.status).toBe('exceeded');
+    unmount();
+  });
+});
+
 describe('useBudgetThreshold — loading, error and disabled states', () => {
   it('stays in the unknown status with zero percent while loading', async () => {
     const client = makeClient();

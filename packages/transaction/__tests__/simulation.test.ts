@@ -11,7 +11,12 @@ import { describe, expect, it } from 'vitest';
 
 import type { SimulateTransactionClient } from '@astroid/types';
 
+import {
+  simulateTransaction as exportedSimulateTransaction,
+  simulateTransactionReport as exportedSimulationReport,
+} from '../src/index.js';
 import { simulateTransaction, simulateTransactionFee } from '../src/simulation.js';
+import { simulateTransaction as simulateTransactionReport } from '../src/simulate.js';
 import { TransactionSimulationError } from '../src/errors.js';
 
 const TESTNET = Networks.TESTNET;
@@ -503,5 +508,128 @@ describe('simulateTransaction — typed remote simulation responses', () => {
 
     expect(result.operationCount).toBe(2);
     expect(result.feeBumpSuggestion?.suggestedBaseFee).toBe(500); // ceil(1000 / 2)
+  });
+});
+
+describe('simulateTransaction — public helper and policy evaluation', () => {
+  it('exports the typed simulation report helper from the package barrel', () => {
+    expect(exportedSimulationReport).toBe(simulateTransactionReport);
+  });
+
+  it('is exported from the package barrel and reports an allowed policy evaluation', async () => {
+    expect(exportedSimulateTransaction).toBe(simulateTransaction);
+
+    const xdr = buildPaymentXdr(100);
+    const { client, calls } = mockSimulateClient({
+      status: 'success',
+      estimatedFee: 250,
+      policyEvaluation: {
+        allowed: true,
+        decision: 'ALLOWED',
+        violations: [],
+        explanation: 'All active policies passed.',
+      },
+      resourceUsage: { cpuInstructions: 1_000 },
+    });
+
+    const result = await exportedSimulateTransaction(xdr, {
+      networkPassphrase: TESTNET,
+      client,
+      agentId: 'agent-377',
+    });
+
+    expect(result.viable).toBe(true);
+    expect(result.success).toBe(true);
+    expect(result.status).toBe('success');
+    expect(result.estimatedFee).toBe(250);
+    expect(result.remote?.estimatedFee).toBe(250);
+    expect(result.policyEvaluation).toMatchObject({
+      allowed: true,
+      decision: 'ALLOWED',
+      violations: [],
+    });
+    expect(result.violations).toEqual([]);
+    expect(result.error).toBeUndefined();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.path).toBe('/transactions/simulate');
+    expect(calls[0]?.body).toEqual({ transactionXdr: xdr, agentId: 'agent-377' });
+  });
+
+  it('rejects a policy violation with structured violations and failure reasons', async () => {
+    const violation = {
+      policyId: 'pol_daily_limit',
+      policyName: 'Daily spend limit',
+      policyType: 'DAILY_LIMIT',
+      message: 'Transfer exceeds the agent daily limit of 1000 XLM.',
+      reasonCode: 'DAILY_LIMIT_EXCEEDED',
+      limit: '1000',
+      actual: '1500',
+    };
+    const { client } = mockSimulateClient({
+      success: false,
+      status: 'failed',
+      code: 'POLICY_VIOLATION',
+      policyEvaluation: {
+        allowed: false,
+        decision: 'DENIED',
+        reasonCode: 'DAILY_LIMIT_EXCEEDED',
+        explanation: 'Transaction denied by the daily spend policy.',
+        violations: [violation],
+      },
+    });
+
+    const result = await simulateTransaction(buildPaymentXdr(100), {
+      networkPassphrase: TESTNET,
+      client,
+    });
+
+    expect(result.viable).toBe(false);
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('POLICY_VIOLATION');
+    expect(result.errorMessage).toBe('Transaction denied by the daily spend policy.');
+    expect(result.policyEvaluation?.allowed).toBe(false);
+    expect(result.policyEvaluation?.violations).toEqual([violation]);
+    expect(result.violations).toEqual([violation]);
+    expect(result.failureReasons).toEqual(
+      expect.arrayContaining(['Transaction denied by the daily spend policy.', violation.message]),
+    );
+    expect(result.remote?.success).toBe(false);
+    expect(result.error).toBeInstanceOf(TransactionSimulationError);
+    expect(result.error?.code).toBe('POLICY_VIOLATION');
+  });
+
+  it('normalizes a thrown POLICY_VIOLATION from the client into a policy result', async () => {
+    const client: SimulateTransactionClient = {
+      async post<T>(): Promise<{ data: T }> {
+        const error = new Error('Agent approval required for this transfer.') as Error & {
+          code: string;
+          details: Record<string, unknown>;
+        };
+        error.code = 'POLICY_VIOLATION';
+        error.details = {
+          violations: [
+            {
+              policyId: 'pol_approval',
+              message: 'Approval from the treasury role is required.',
+              reasonCode: 'APPROVAL_REQUIRED',
+            },
+          ],
+        };
+        throw error;
+      },
+    };
+
+    const result = await simulateTransaction(buildPaymentXdr(100), {
+      networkPassphrase: TESTNET,
+      client,
+    });
+
+    expect(result.viable).toBe(false);
+    expect(result.errorCode).toBe('POLICY_VIOLATION');
+    expect(result.errorMessage).toContain('approval required');
+    expect(result.policyEvaluation?.violations).toEqual([
+      expect.objectContaining({ policyId: 'pol_approval' }),
+    ]);
+    expect(result.remote?.data).toMatchObject({ code: 'POLICY_VIOLATION' });
   });
 });
