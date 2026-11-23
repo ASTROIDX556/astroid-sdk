@@ -106,6 +106,28 @@ describe('Issue #374 — AstroidHttpClient constructor interface & imports', () 
     });
   });
 
+  describe('Issue #534 — retry request timeouts', () => {
+    it('retries HTTP 408 using the configured backoff policy', async () => {
+      const fetchMock = createFetchQueue(
+        errorResponse(408, 'REQUEST_TIMEOUT', 'Request timed out'),
+        okResponse({ recovered: true }),
+      );
+      const client = new Astroid({
+        ...BASE_CONFIG,
+        fetch: fetchMock,
+        retries: 1,
+        baseDelayMs: 1,
+        maxDelayMs: 1,
+        jitter: false,
+      });
+
+      const response = await client.http.get('/retry-timeout');
+
+      expect(response.data).toEqual({ recovered: true });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+  });
+
   it('accepts retry options via retryPolicy object alias', () => {
     const noopFetch = vi.fn() as unknown as typeof fetch;
     const client = new AstroidHttpClient({
@@ -491,9 +513,7 @@ describe('Issue #374 — Transient 503/429 simulation and recovery', () => {
       jitter: false,
     });
 
-    await expect(
-      client.post('/wallets', { label: 'New Custodial' }),
-    ).rejects.toThrow();
+    await expect(client.post('/wallets', { label: 'New Custodial' })).rejects.toThrow();
 
     // POST without idempotency key or explicit retryable flag is called exactly once
     expect(fetchMock).toHaveBeenCalledTimes(1);

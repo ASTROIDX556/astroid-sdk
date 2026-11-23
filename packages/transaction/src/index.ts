@@ -3,8 +3,22 @@ export * from './asset-builder.js';
 export * from './multi-operation.js';
 export * from './feeBump.js';
 export * from './decoder.js';
-export { simulateTransactionFee, type SimulationOptions, type SimulationResult, type TransactionSimulationResult } from './simulation.js';
-export * from './simulate.js';
+export {
+  simulateTransaction,
+  simulateTransactionFee,
+  type SimulationOptions,
+  type SimulationResult,
+  type TransactionSimulationResult,
+} from './simulation.js';
+export {
+  simulateTransaction as simulateTransactionReport,
+  type TransactionEnvelopeSource,
+  type SimulationResourceUsage,
+  type SimulationDiagnostics,
+  type FeeBumpSuggestion,
+  type SimulateTransactionOptions,
+  type TransactionSimulationReport,
+} from './simulate.js';
 export * from './submit.js';
 export * from './status.js';
 export * from './history.js';

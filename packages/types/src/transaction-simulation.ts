@@ -11,6 +11,13 @@
  * @module
  */
 
+import type {
+  PolicyBudgetImpact,
+  PolicyReasonCode,
+  PolicyRiskAssessment,
+  PolicySimulationDecision,
+} from './policy.js';
+
 /**
  * Congestion classification derived from live Horizon fee statistics.
  *
@@ -28,6 +35,7 @@ export type TransactionSimulationErrorCode =
   | 'FEE_BELOW_MINIMUM'
   | 'FEE_TOO_HIGH'
   | 'FEE_BUMP_REQUIRED'
+  | 'POLICY_VIOLATION'
   | 'NO_OPERATIONS'
   | 'VALIDATION_FAILED'
   | 'SIMULATION_FAILED'
@@ -74,7 +82,11 @@ export type TransactionEnvelopeLike = string | { toXDR(): string };
  * Ledger-side execution status for a simulated transaction, mirroring the
  * Stellar protocol's transaction outcome taxonomy.
  */
-export type TransactionSimulationStatus = 'success' | 'failed' | 'fee_bump_required';
+export type TransactionSimulationStatus =
+  | 'success'
+  | 'failed'
+  | 'fee_bump_required'
+  | 'policy_violation';
 
 /* -------------------------------------------------------------------------- */
 /* Fee estimation                                                              */
@@ -134,6 +146,39 @@ export interface TransactionFeeEstimate {
 /* Simulation                                                                  */
 /* -------------------------------------------------------------------------- */
 
+export interface TransactionSimulationRequest {
+  transactionXdr: string;
+  networkPassphrase?: string;
+  agentId?: string;
+  walletId?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface TransactionSimulationPolicyViolation {
+  policyId: string;
+  policyName?: string;
+  policyType?: string;
+  message: string;
+  reasonCode?: PolicyReasonCode | string;
+  limit?: number | string;
+  actual?: number | string;
+}
+
+export interface TransactionSimulationPolicyEvaluation {
+  allowed: boolean;
+  denied?: boolean;
+  decision?: PolicySimulationDecision;
+  reasonCode?: PolicyReasonCode | string;
+  violations: TransactionSimulationPolicyViolation[];
+  requiredApprovals?: string[];
+  risk?: PolicyRiskAssessment;
+  budgetImpact?: PolicyBudgetImpact[];
+  explanation?: string;
+}
+
+export type TransactionPolicyViolation = TransactionSimulationPolicyViolation;
+export type TransactionPolicyEvaluation = TransactionSimulationPolicyEvaluation;
+
 /**
  * Minimal HTTP client surface needed for remote simulation.
  *
@@ -158,6 +203,9 @@ export interface TransactionSimulationOptions {
   client?: SimulateTransactionClient;
   /** Skip the remote API call even when a `client` is supplied. */
   skipRemote?: boolean;
+  agentId?: string;
+  walletId?: string;
+  metadata?: Record<string, unknown>;
 }
 
 /** Outcome of an optional remote simulation round-trip. */
@@ -176,8 +224,11 @@ export interface TransactionSimulationRemoteResult {
   diagnostics?: TransactionSimulationDiagnostics;
   /** Estimated on-chain resource usage, when the backend reported it. */
   resourceUsage?: TransactionResourceEstimate;
+  estimatedFee?: number;
   /** Present when the backend indicates a fee bump is required. */
   feeBumpSuggestion?: TransactionFeeBumpSuggestion;
+  policyEvaluation?: TransactionSimulationPolicyEvaluation;
+  failureReasons?: string[];
   /** Raw backend payload, when it returned one. */
   data?: Record<string, unknown>;
 }
@@ -251,6 +302,9 @@ export interface TransactionSimulationOutcome {
   diagnostics?: TransactionSimulationDiagnostics;
   /** Present when the simulation indicates a fee bump is required. */
   feeBumpSuggestion?: TransactionFeeBumpSuggestion;
+  policyEvaluation?: TransactionSimulationPolicyEvaluation;
+  violations?: TransactionSimulationPolicyViolation[];
+  failureReasons?: string[];
   /** Decoded source account, when available. */
   sourceAccount?: string;
   /** Base64 XDR that was simulated. */
@@ -261,4 +315,6 @@ export interface TransactionSimulationOutcome {
   errorCode?: TransactionSimulationErrorCode;
   /** Human-readable failure reason when `viable` is `false`. */
   errorMessage?: string;
+  success?: boolean;
+  status?: TransactionSimulationStatus;
 }

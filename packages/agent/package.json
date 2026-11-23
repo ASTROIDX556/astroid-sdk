@@ -18,7 +18,8 @@
   "dependencies": {
     "@astroid/core": "workspace:*",
     "@astroid/errors": "workspace:*",
-    "@astroid/types": "workspace:*"
+    "@astroid/types": "workspace:*",
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "@types/node": "22.10.5",

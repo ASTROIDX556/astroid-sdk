@@ -22,6 +22,11 @@ import {
   validateCreateAgentParams,
   validateUpdateAgentParams,
 } from './validation.js';
+import {
+  assertValidAgentQueryParams,
+  assertValidCreateAgentSchema,
+  assertValidUpdateAgentSchema,
+} from './schemas.js';
 
 /** Filters accepted by {@link AgentResource.list}. */
 export type AgentListParams = ListAgentsParams;
@@ -94,6 +99,9 @@ export class AgentResource extends Resource {
    */
   async create(params: CreateAgentParams, options?: RequestOptionsExtras): Promise<Agent> {
     validateCreateAgentParams(params);
+    // Second pass against the canonical Zod wire contract (issue #527); the
+    // guards above produce the field-addressed user-facing messages.
+    assertValidCreateAgentSchema(params);
     const res = await this.client.post<Agent>('/agents', params, options);
     return res.data;
   }
@@ -141,6 +149,7 @@ export class AgentResource extends Resource {
     params: AgentListOptions = {},
     options?: RequestOptionsExtras,
   ): Promise<Paginated<Agent>> {
+    assertValidAgentQueryParams(params);
     return this.listData<Agent>('/agents', toAgentListQuery(params), options);
   }
 
@@ -167,6 +176,7 @@ export class AgentResource extends Resource {
     params: AgentListParams = {},
     options?: RequestOptionsExtras,
   ): AsyncGenerator<Agent, void, void> {
+    assertValidAgentQueryParams(params);
     return this.iterateData<Agent>('/agents', { ...params }, options);
   }
 
@@ -200,6 +210,7 @@ export class AgentResource extends Resource {
     params: AgentCursorListParams = {},
     options?: RequestOptionsExtras,
   ): AsyncGenerator<Agent, void, void> {
+    assertValidAgentQueryParams(params);
     return this.iterateCursorData<Agent>('/agents', { ...params }, options);
   }
 
@@ -228,6 +239,8 @@ export class AgentResource extends Resource {
   ): Promise<Agent> {
     assertValidAgentId(agentId);
     validateUpdateAgentParams(params);
+    // Second pass against the canonical Zod wire contract (issue #527).
+    assertValidUpdateAgentSchema(params);
     const res = await this.client.patch<Agent>(
       `/agents/${encodeURIComponent(agentId)}`,
       params,
@@ -287,11 +300,10 @@ export class AgentResource extends Resource {
    * ```
    */
   async deactivate(agentId: string, options?: RequestOptionsExtras): Promise<Agent> {
-    const res = await this.client.post<Agent>(
-      `/agents/${encodeURIComponent(agentId)}/deactivate`,
-      undefined,
-      options,
-    );
+    const path = `/agents/${encodeURIComponent(agentId)}/deactivate`;
+    const res = options
+      ? await this.client.post<Agent>(path, undefined, options)
+      : await this.client.post<Agent>(path);
     return res.data;
   }
 
