@@ -12,6 +12,8 @@ import type { Budget, Paginated } from '@astroid/types';
  * refresh an agent's allocation snapshot manually.
  */
 export const agentBudgetKeys = {
+  /** Prefix for all agent budget allocation queries. */
+  root: ['astroid', 'agents', 'budget'] as const,
   /** Exact key for all budgets allocated to an agent. */
   all: (agentId: string) => ['astroid', 'agents', 'budget', agentId] as const,
 } as const;

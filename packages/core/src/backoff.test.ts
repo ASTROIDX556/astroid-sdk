@@ -54,17 +54,17 @@ describe('backoffDelay', () => {
 });
 
 describe('isRetryableStatus', () => {
-  it('exposes the default transient set: 429, 500 and gateway errors', () => {
-    expect([...DEFAULT_RETRYABLE_STATUSES]).toEqual([429, 500, 502, 503, 504]);
+  it('exposes the default transient set: 408, 429, 500 and gateway errors', () => {
+    expect([...DEFAULT_RETRYABLE_STATUSES]).toEqual([408, 429, 500, 502, 503, 504]);
   });
 
   it('retries only the default transient statuses', () => {
-    for (const status of [429, 500, 502, 503, 504]) {
+    for (const status of [408, 429, 500, 502, 503, 504]) {
       expect(isRetryableStatus(status)).toBe(true);
     }
     // Other 5xx codes are not in the default set, and neither are ordinary
     // 4xx client errors.
-    for (const status of [400, 401, 403, 404, 408, 422, 499, 501, 505, 599]) {
+    for (const status of [400, 401, 403, 404, 422, 499, 501, 505, 599]) {
       expect(isRetryableStatus(status)).toBe(false);
     }
   });
