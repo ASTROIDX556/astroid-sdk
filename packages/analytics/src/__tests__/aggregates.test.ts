@@ -3,6 +3,7 @@ import {
   computeTelemetrySummary,
   calculateExpenditures,
   calculateSuccessRate,
+  calculateFailureRate,
   type TelemetryRecord,
 } from '../aggregates.js';
 
@@ -47,6 +48,7 @@ describe('Analytics aggregates helper functions', () => {
     expect(summary.successfulTransactions).toBe(2);
     expect(summary.failedTransactions).toBe(1);
     expect(summary.successRate).toBeCloseTo(2 / 3, 4);
+    expect(summary.failureRate).toBeCloseTo(1 / 3, 4);
     expect(Number(summary.totalVolume)).toBeCloseTo(350.75, 2);
     expect(Number(summary.totalFees)).toBeCloseTo(0.06, 2);
     expect(Number(summary.totalGasUsed)).toBe(3000);
@@ -82,6 +84,40 @@ describe('Analytics aggregates helper functions', () => {
     expect(assetSummary.successRate).toBe(1);
   });
 
+  it('requires records to match requested identifiers and supports timezone offsets', () => {
+    const records: TelemetryRecord[] = [
+      {
+        timestamp: '2026-10-01T12:00:00+02:00',
+        amount: '0.1',
+        fee: '0.0000001',
+        agentId: 'agent-1',
+      },
+      { timestamp: '2026-10-01T10:00:00Z', amount: '0.2', agentId: 'agent-1' },
+      { timestamp: '2026-10-01T10:00:00Z', amount: '100' },
+    ];
+
+    const summary = computeTelemetrySummary(records, {
+      agentId: 'agent-1',
+      from: '2026-10-01T12:00:00+02:00',
+      to: '2026-10-01T10:00:00Z',
+    });
+
+    expect(summary.totalTransactions).toBe(2);
+    expect(summary.totalVolume).toBe('0.3');
+    expect(summary.totalFees).toBe('0.0000001');
+  });
+
+  it('preserves decimal precision when totaling fees and transaction volume', () => {
+    const summary = computeTelemetrySummary([
+      { timestamp: '2026-10-01T10:00:00Z', amount: '0.1', fee: '0.0000001' },
+      { timestamp: '2026-10-01T11:00:00Z', amount: '0.2', fee: '0.0000002' },
+    ]);
+
+    expect(summary.totalVolume).toBe('0.3');
+    expect(summary.totalFees).toBe('0.0000003');
+    expect(summary.averageFee).toBe('0.0000002');
+  });
+
   it('calculates expenditures accurately', () => {
     const exp = calculateExpenditures(sampleRecords);
     expect(Number(exp.totalFees)).toBeCloseTo(0.06, 2);
@@ -92,6 +128,8 @@ describe('Analytics aggregates helper functions', () => {
   it('calculates success rate cleanly', () => {
     expect(calculateSuccessRate(sampleRecords)).toBeCloseTo(2 / 3, 4);
     expect(calculateSuccessRate([])).toBe(0);
+    expect(calculateFailureRate(sampleRecords)).toBeCloseTo(1 / 3, 4);
+    expect(calculateFailureRate([])).toBe(0);
   });
 
   it('handles empty records cleanly', () => {
@@ -99,6 +137,7 @@ describe('Analytics aggregates helper functions', () => {
     expect(summary.totalTransactions).toBe(0);
     expect(summary.totalVolume).toBe('0');
     expect(summary.totalFees).toBe('0');
+    expect(summary.failureRate).toBe(0);
     expect(summary.averageFee).toBe('0');
   });
 });
