@@ -1,6 +1,7 @@
 # Contributor Covenant Code of Conduct
 
 # Our Pledge
+s
 
 We as members, contributors, and leaders pledge to make participation in the
 Astroid community a harassment-free experience for everyone, regardless of age,
