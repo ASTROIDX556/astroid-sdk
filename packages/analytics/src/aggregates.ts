@@ -76,6 +76,8 @@ export interface TelemetrySummary {
   readonly failedTransactions: number;
   /** Success rate ratio between 0 and 1 (or 0 if no transactions). */
   readonly successRate: number;
+  /** Failure rate ratio between 0 and 1 (or 0 if no transactions). */
+  readonly failureRate: number;
   /** Total volume summed across transactions formatted as decimal string. */
   readonly totalVolume: string;
   /** Total fee expenditure summed across transactions formatted as decimal string. */
@@ -86,6 +88,63 @@ export interface TelemetrySummary {
   readonly averageFee: string;
   /** Average transaction volume formatted as decimal string. */
   readonly averageVolume: string;
+}
+
+interface DecimalTotal {
+  coefficient: bigint;
+  scale: number;
+}
+
+function parseDecimal(value: string | number): DecimalTotal | undefined {
+  const text = String(value).trim();
+  const match = /^([+-]?)(\d*)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/.exec(text);
+  if (!match || (match[2] === '' && (match[3] ?? '') === '')) return undefined;
+
+  const exponent = Number(match[4] ?? 0);
+  if (!Number.isSafeInteger(exponent) || Math.abs(exponent) > 1000) return undefined;
+
+  const fraction = match[3] ?? '';
+  let scale = fraction.length - exponent;
+  let coefficient = BigInt(`${match[1] === '-' ? '-' : ''}${match[2]}${fraction}` || '0');
+  if (scale < 0) {
+    coefficient *= 10n ** BigInt(-scale);
+    scale = 0;
+  }
+  return { coefficient, scale };
+}
+
+function addDecimal(total: DecimalTotal, value: string | number): DecimalTotal {
+  const parsed = parseDecimal(value);
+  if (!parsed) return total;
+
+  const scale = Math.max(total.scale, parsed.scale);
+  return {
+    coefficient:
+      total.coefficient * 10n ** BigInt(scale - total.scale) +
+      parsed.coefficient * 10n ** BigInt(scale - parsed.scale),
+    scale,
+  };
+}
+
+function formatDecimal(coefficient: bigint, scale: number): string {
+  const negative = coefficient < 0n;
+  let digits = (negative ? -coefficient : coefficient).toString().padStart(scale + 1, '0');
+  if (scale > 0) {
+    digits = `${digits.slice(0, -scale)}.${digits.slice(-scale)}`.replace(/\.?0+$/, '');
+  }
+  return `${negative ? '-' : ''}${digits || '0'}`;
+}
+
+function averageDecimal(total: DecimalTotal, count: number): string {
+  if (count === 0) return '0';
+
+  const outputScale = 7;
+  const numerator = total.coefficient * 10n ** BigInt(outputScale);
+  const denominator = 10n ** BigInt(total.scale) * BigInt(count);
+  const absoluteNumerator = numerator < 0n ? -numerator : numerator;
+  let quotient = absoluteNumerator / denominator;
+  if ((absoluteNumerator % denominator) * 2n >= denominator) quotient++;
+  return formatDecimal(numerator < 0n ? -quotient : quotient, outputScale);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -127,6 +186,7 @@ export function computeTelemetrySummary(
       successfulTransactions: 0,
       failedTransactions: 0,
       successRate: 0,
+      failureRate: 0,
       totalVolume: '0',
       totalFees: '0',
       totalGasUsed: '0',
@@ -141,9 +201,9 @@ export function computeTelemetrySummary(
   let totalCount = 0;
   let successCount = 0;
   let failCount = 0;
-  let volumeSum = 0;
-  let feeSum = 0;
-  let gasSum = 0;
+  let volumeSum: DecimalTotal = { coefficient: 0n, scale: 0 };
+  let feeSum: DecimalTotal = { coefficient: 0n, scale: 0 };
+  let gasSum: DecimalTotal = { coefficient: 0n, scale: 0 };
 
   for (const rec of records) {
     const t = new Date(rec.timestamp).getTime();
@@ -151,11 +211,11 @@ export function computeTelemetrySummary(
       continue;
     }
 
-    if (options?.agentId && rec.agentId && rec.agentId !== options.agentId) {
+    if (options?.agentId !== undefined && rec.agentId !== options.agentId) {
       continue;
     }
 
-    if (options?.asset && rec.asset && rec.asset !== options.asset) {
+    if (options?.asset !== undefined && rec.asset !== options.asset) {
       continue;
     }
 
@@ -174,36 +234,25 @@ export function computeTelemetrySummary(
       failCount++;
     }
 
-    const amt = typeof rec.amount === 'string' ? parseFloat(rec.amount) : (rec.amount ?? 0);
-    if (!isNaN(amt)) {
-      volumeSum += amt;
-    }
-
-    const fee = typeof rec.fee === 'string' ? parseFloat(rec.fee) : (rec.fee ?? 0);
-    if (!isNaN(fee)) {
-      feeSum += fee;
-    }
-
-    const gas = typeof rec.gasUsed === 'string' ? parseFloat(rec.gasUsed) : (rec.gasUsed ?? 0);
-    if (!isNaN(gas)) {
-      gasSum += gas;
-    }
+    volumeSum = addDecimal(volumeSum, rec.amount ?? 0);
+    feeSum = addDecimal(feeSum, rec.fee ?? 0);
+    gasSum = addDecimal(gasSum, rec.gasUsed ?? 0);
   }
 
   const successRate = totalCount > 0 ? successCount / totalCount : 0;
-  const avgFee = totalCount > 0 ? (feeSum / totalCount).toFixed(7).replace(/\.?0+$/, '') || '0' : '0';
-  const avgVol = totalCount > 0 ? (volumeSum / totalCount).toFixed(7).replace(/\.?0+$/, '') || '0' : '0';
+  const failureRate = totalCount > 0 ? failCount / totalCount : 0;
 
   return {
     totalTransactions: totalCount,
     successfulTransactions: successCount,
     failedTransactions: failCount,
     successRate: Math.round(successRate * 10000) / 10000,
-    totalVolume: volumeSum.toFixed(7).replace(/\.?0+$/, '') || '0',
-    totalFees: feeSum.toFixed(7).replace(/\.?0+$/, '') || '0',
-    totalGasUsed: gasSum.toFixed(7).replace(/\.?0+$/, '') || '0',
-    averageFee: avgFee,
-    averageVolume: avgVol,
+    failureRate: Math.round(failureRate * 10000) / 10000,
+    totalVolume: formatDecimal(volumeSum.coefficient, volumeSum.scale),
+    totalFees: formatDecimal(feeSum.coefficient, feeSum.scale),
+    totalGasUsed: formatDecimal(gasSum.coefficient, gasSum.scale),
+    averageFee: averageDecimal(feeSum, totalCount),
+    averageVolume: averageDecimal(volumeSum, totalCount),
   };
 }
 
@@ -237,4 +286,17 @@ export function calculateSuccessRate(
   options?: AggregationWindowOptions,
 ): number {
   return computeTelemetrySummary(records, options).successRate;
+}
+
+/**
+ * Calculates overall transaction failure rate (0 to 1).
+ *
+ * @param records Telemetry records.
+ * @param options Optional windowing options.
+ */
+export function calculateFailureRate(
+  records: readonly TelemetryRecord[],
+  options?: AggregationWindowOptions,
+): number {
+  return computeTelemetrySummary(records, options).failureRate;
 }
