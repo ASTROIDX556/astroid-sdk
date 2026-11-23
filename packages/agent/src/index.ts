@@ -47,6 +47,23 @@ export {
 } from './validation.js';
 export { AgentClient } from './client.js';
 export {
+  // Zod schemas for create / update / query params (issue #527)
+  CreateAgentParamsSchema,
+  UpdateAgentParamsSchema,
+  AgentQueryParamsSchema,
+  parseCreateAgentParams,
+  parseUpdateAgentParams,
+  parseAgentQueryParams,
+  assertValidCreateAgentSchema,
+  assertValidUpdateAgentSchema,
+  assertValidAgentQueryParams,
+  formatIssuePath,
+  toAstroidValidationError,
+  type CreateAgentParamsInput,
+  type UpdateAgentParamsInput,
+  type AgentQueryParams,
+} from './schemas.js';
+export {
   hasAgentScope,
   validateAgentScopes,
   getMissingScopes,

@@ -1,5 +1,6 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import { useBudgetAlertSubscriptions } from '../index.js';
 import { useBudgetAlerts } from '../hooks/useBudgetAlerts.js';
 import { createMockClient, createWrapper } from './test-utils.js';
 import type { BudgetAlert, Paginated } from '@astroid/types';
@@ -95,5 +96,21 @@ describe('useBudgetAlerts', () => {
     await waitFor(() => expect(result.current.isError).toBe(true));
 
     expect(result.current.error).toEqual(mockError);
+  });
+});
+
+describe('useBudgetAlertSubscriptions', () => {
+  it('fetches alert subscriptions through the shared alert hook', async () => {
+    const client = createMockClient();
+    client.budgets.listAlerts = vi.fn(async () => MOCK_PAGINATED_ALERTS);
+
+    const { Wrapper } = createWrapper(client);
+    const { result } = renderHook(() => useBudgetAlertSubscriptions('bud_123'), {
+      wrapper: Wrapper,
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual(MOCK_PAGINATED_ALERTS);
+    expect(client.budgets.listAlerts).toHaveBeenCalledWith('bud_123', undefined);
   });
 });

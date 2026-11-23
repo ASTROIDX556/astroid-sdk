@@ -15,6 +15,8 @@ import type { Budget, BudgetPeriod, DecimalString, IsoDateTime, Transaction } fr
 /* Public types                                                                */
 /* -------------------------------------------------------------------------- */
 
+export type BudgetAmount = DecimalString | number;
+
 /** Per-asset spending statistics when transactions span multiple currencies. */
 export interface AssetUtilization {
   /** Asset identifier (e.g. `"XLM"`, `"USDC"`, `"USDC:G...Issuer"`). */
@@ -29,6 +31,12 @@ export interface AssetUtilization {
   utilizationPercentage: number;
   /** Whether this asset's spending exceeds its attributed limit. */
   isOverBudget: boolean;
+  limit?: DecimalString;
+  spent?: DecimalString;
+  remaining?: DecimalString;
+  percent?: number;
+  utilization?: number;
+  isExceeded?: boolean;
 }
 
 /** The aggregate result of running a budget against its transactions. */
@@ -45,34 +53,99 @@ export interface BudgetUtilizationResult {
   isOverBudget: boolean;
   /** Per-asset breakdown of spending. */
   assets: AssetUtilization[];
+  limit?: DecimalString;
+  spent?: DecimalString;
+  remaining?: DecimalString;
+  percent?: number;
+  utilization?: number;
+  isExceeded?: boolean;
+}
+
+export interface BudgetUtilizationInput {
+  budget?: Budget;
+  transactions?: readonly Transaction[];
+  spent?: BudgetAmount;
+  limit?: BudgetAmount;
 }
 
 /* -------------------------------------------------------------------------- */
 /* Internal helpers                                                            */
 /* -------------------------------------------------------------------------- */
 
+function normalizeDecimal(value: BudgetAmount): DecimalString {
+  let text = String(value).trim();
+  if (text === '') return '0';
+
+  let negative = false;
+  if (text.startsWith('-') || text.startsWith('+')) {
+    negative = text.startsWith('-');
+    text = text.slice(1);
+  }
+
+  const match = /^(\d+(?:\.\d*)?|\.\d+)(?:[eE]([+-]?\d+))?$/.exec(text);
+  if (!match) return '0';
+
+  const baseMatch = match[1] ?? '0';
+  const base = baseMatch.startsWith('.') ? `0${baseMatch}` : baseMatch.replace(/\.$/, '');
+  const exponent = match[2] === undefined ? 0 : Number(match[2]);
+  if (!Number.isSafeInteger(exponent)) return '0';
+
+  const [integer = '0', fraction = ''] = base.split('.');
+  const digits = `${integer}${fraction}`;
+
+  let normalized: string;
+  if (exponent >= 0) {
+    const padded = digits.padEnd(integer.length + exponent, '0');
+    normalized =
+      exponent > fraction.length
+        ? padded
+        : `${padded.slice(0, integer.length + exponent)}.${padded.slice(integer.length + exponent)}`;
+  } else {
+    const shift = -exponent;
+    if (shift >= integer.length) {
+      normalized = `0.${'0'.repeat(shift - integer.length)}${digits}`;
+    } else {
+      normalized = `${integer.slice(0, integer.length - shift)}.${integer.slice(integer.length - shift)}${fraction}`;
+    }
+  }
+
+  const [normalizedInteger = '0', normalizedFraction = ''] = normalized.split('.');
+  const trimmedInteger = normalizedInteger.replace(/^0+(?=\d)/, '') || '0';
+  const trimmedFraction = normalizedFraction.replace(/0+$/, '');
+  const result = trimmedFraction === '' ? trimmedInteger : `${trimmedInteger}.${trimmedFraction}`;
+
+  if (negative && /[1-9]/.test(result)) return '0';
+  return result;
+}
+
+function scaledDecimal(value: BudgetAmount, scale: number): bigint {
+  const normalized = normalizeDecimal(value);
+  const [integer = '0', fraction = ''] = normalized.split('.');
+  return BigInt(`${integer}${fraction.padEnd(scale, '0').slice(0, scale)}`);
+}
+
 /**
  * Decimal-string addition.  Both operands are non-negative finite decimals.
  * Scales both to the longer fractional length using integer arithmetic so no
  * floating-point error is introduced.
  */
-function decAdd(a: DecimalString | number, b: DecimalString | number): DecimalString {
-  const [intA, fracA = ''] = String(a).split('.');
-  const [intB, fracB = ''] = String(b).split('.');
-  const scaleA = fracA.length;
-  const scaleB = fracB.length;
+function decAdd(a: BudgetAmount, b: BudgetAmount): DecimalString {
+  const normalizedA = normalizeDecimal(a);
+  const normalizedB = normalizeDecimal(b);
+  const scaleA = (normalizedA.split('.')[1] ?? '').length;
+  const scaleB = (normalizedB.split('.')[1] ?? '').length;
   const maxScale = Math.max(scaleA, scaleB);
-
-  const aScaled = BigInt(intA + fracA.padEnd(scaleA, '0') + '0'.repeat(maxScale - scaleA));
-  const bScaled = BigInt(intB + fracB.padEnd(scaleB, '0') + '0'.repeat(maxScale - scaleB));
-  const result = (aScaled + bScaled).toString();
+  const result = (
+    scaledDecimal(normalizedA, maxScale) + scaledDecimal(normalizedB, maxScale)
+  ).toString();
 
   if (maxScale === 0) return result;
 
   const padded = result.padStart(maxScale + 1, '0');
   const intPart = padded.slice(0, padded.length - maxScale) || '0';
   const fracPart = padded.slice(padded.length - maxScale);
-  return `${intPart}.${fracPart.replace(/0+$/, '')}`;
+  const trimmedFraction = fracPart.replace(/0+$/, '');
+  return trimmedFraction === '' ? intPart : `${intPart}.${trimmedFraction}`;
 }
 
 /**
@@ -80,17 +153,13 @@ function decAdd(a: DecimalString | number, b: DecimalString | number): DecimalSt
  * remaining budget never goes negative.  Both operands are non-negative
  * finite decimals.
  */
-function decSub(a: DecimalString | number, b: DecimalString | number): DecimalString {
-  const [intA, fracA = ''] = String(a).split('.');
-  const [intB, fracB = ''] = String(b).split('.');
-  const scaleA = fracA.length;
-  const scaleB = fracB.length;
+function decSub(a: BudgetAmount, b: BudgetAmount): DecimalString {
+  const normalizedA = normalizeDecimal(a);
+  const normalizedB = normalizeDecimal(b);
+  const scaleA = (normalizedA.split('.')[1] ?? '').length;
+  const scaleB = (normalizedB.split('.')[1] ?? '').length;
   const maxScale = Math.max(scaleA, scaleB);
-
-  const aScaled = BigInt(intA + fracA.padEnd(scaleA, '0') + '0'.repeat(maxScale - scaleA));
-  const bScaled = BigInt(intB + fracB.padEnd(scaleB, '0') + '0'.repeat(maxScale - scaleB));
-
-  const diff = aScaled - bScaled;
+  const diff = scaledDecimal(normalizedA, maxScale) - scaledDecimal(normalizedB, maxScale);
   if (diff <= 0n) return '0';
 
   const result = diff.toString();
@@ -99,19 +168,19 @@ function decSub(a: DecimalString | number, b: DecimalString | number): DecimalSt
   const padded = result.padStart(maxScale + 1, '0');
   const intPart = padded.slice(0, padded.length - maxScale) || '0';
   const fracPart = padded.slice(padded.length - maxScale);
-  return `${intPart}.${fracPart.replace(/0+$/, '')}`;
+  const trimmedFraction = fracPart.replace(/0+$/, '');
+  return trimmedFraction === '' ? intPart : `${intPart}.${trimmedFraction}`;
 }
 
 /** Compare two non-negative decimal strings.  Returns -1, 0, or 1. */
-function decCmp(a: DecimalString | number, b: DecimalString | number): -1 | 0 | 1 {
-  const [intA, fracA = ''] = String(a).split('.');
-  const [intB, fracB = ''] = String(b).split('.');
-  const scaleA = fracA.length;
-  const scaleB = fracB.length;
+function decCmp(a: BudgetAmount, b: BudgetAmount): -1 | 0 | 1 {
+  const normalizedA = normalizeDecimal(a);
+  const normalizedB = normalizeDecimal(b);
+  const scaleA = (normalizedA.split('.')[1] ?? '').length;
+  const scaleB = (normalizedB.split('.')[1] ?? '').length;
   const maxScale = Math.max(scaleA, scaleB);
-
-  const aScaled = BigInt(intA + fracA.padEnd(scaleA, '0') + '0'.repeat(maxScale - scaleA));
-  const bScaled = BigInt(intB + fracB.padEnd(scaleB, '0') + '0'.repeat(maxScale - scaleB));
+  const aScaled = scaledDecimal(normalizedA, maxScale);
+  const bScaled = scaledDecimal(normalizedB, maxScale);
 
   if (aScaled < bScaled) return -1;
   if (aScaled > bScaled) return 1;
@@ -119,7 +188,7 @@ function decCmp(a: DecimalString | number, b: DecimalString | number): -1 | 0 | 
 }
 
 /** Whether the decimal representation of `a` is `> 0`. */
-function decGtZero(a: DecimalString | number): boolean {
+function decGtZero(a: BudgetAmount): boolean {
   return decCmp(a, 0) === 1;
 }
 
@@ -141,30 +210,19 @@ function intToDecimal(intStr: string, digits: number): DecimalString {
  * places, using integer arithmetic so no floating-point error is introduced.
  * Returns `0` when the limit is absent or zero to avoid division by zero.
  */
-function utilizationPercent(spent: DecimalString, limit: DecimalString): number {
+function utilizationPercent(spent: BudgetAmount, limit: BudgetAmount): number {
   if (decCmp(limit, 0) === 0) return 0;
 
-  // Scale both operands to the longer fractional length so the ratio is exact.
-  const [, spentFrac = ''] = String(spent).split('.');
-  const [, limitFrac = ''] = String(limit).split('.');
+  const normalizedSpent = normalizeDecimal(spent);
+  const normalizedLimit = normalizeDecimal(limit);
+  const spentFrac = normalizedSpent.split('.')[1] ?? '';
+  const limitFrac = normalizedLimit.split('.')[1] ?? '';
   const maxScale = Math.max(spentFrac.length, limitFrac.length);
-  const spentScaled = decScaleUp(spent, maxScale);
-  const limitScaled = decScaleUp(limit, maxScale);
+  const spentScaled = scaledDecimal(normalizedSpent, maxScale);
+  const limitScaled = scaledDecimal(normalizedLimit, maxScale);
 
-  // percentage * 1e6, rounded half-up.
-  const scaled =
-    (BigInt(spentScaled) * 100000000n + BigInt(limitScaled) / 2n) / BigInt(limitScaled);
+  const scaled = (spentScaled * 100000000n + limitScaled / 2n) / limitScaled;
   return Number(intToDecimal(scaled.toString(), 6));
-}
-
-/**
- * Return the decimal string of `value` scaled up to exactly `scale` fraction
- * digits (padding with zeros, dropping the decimal point) as a plain integer
- * string suitable for `BigInt`.
- */
-function decScaleUp(value: DecimalString, scale: number): string {
-  const [intPart, frac = ''] = String(value).split('.');
-  return intPart + frac.padEnd(scale, '0');
 }
 
 /** ISO-8601 day boundary (00:00 UTC) for a given date. */
@@ -310,17 +368,117 @@ export function calculateUtilization(
     });
   }
 
-  const overallRemaining = decSub(totalLimit, totalSpent);
-  const overallOver = decGtZero(totalSpent) && decCmp(totalSpent, totalLimit) === 1;
+  return buildUtilizationResult(totalLimit, totalSpent, assets);
+}
 
-  const overallUtilization = utilizationPercent(totalSpent, totalLimit);
+function roundNumber(value: number, digits: number): number {
+  const factor = 10 ** digits;
+  return Math.round(value * factor) / factor;
+}
+
+function addAssetAliases(asset: AssetUtilization): AssetUtilization {
+  return {
+    ...asset,
+    limit: asset.totalLimit,
+    spent: asset.spentAmount,
+    remaining: asset.remainingAmount,
+    percent: asset.utilizationPercentage,
+    utilization: roundNumber(asset.utilizationPercentage / 100, 12),
+    isExceeded: asset.isOverBudget,
+  };
+}
+
+function buildUtilizationResult(
+  totalLimit: BudgetAmount,
+  spentAmount: BudgetAmount,
+  assets: AssetUtilization[],
+): BudgetUtilizationResult {
+  const limit = normalizeDecimal(totalLimit);
+  const spent = normalizeDecimal(spentAmount);
+  const remaining = decSub(limit, spent);
+  const isOverBudget = decGtZero(spent) && decCmp(spent, limit) === 1;
+  const utilizationPercentage = utilizationPercent(spent, limit);
 
   return {
-    totalLimit,
-    spentAmount: totalSpent,
-    remainingAmount: overallRemaining,
-    utilizationPercentage: overallUtilization,
-    isOverBudget: overallOver,
-    assets,
+    totalLimit: limit,
+    spentAmount: spent,
+    remainingAmount: remaining,
+    utilizationPercentage,
+    isOverBudget,
+    assets: assets.map(addAssetAliases),
+    limit,
+    spent,
+    remaining,
+    percent: utilizationPercentage,
+    utilization: roundNumber(utilizationPercentage / 100, 12),
+    isExceeded: isOverBudget,
   };
+}
+
+function isAmount(value: unknown): value is BudgetAmount {
+  return typeof value === 'string' || typeof value === 'number';
+}
+
+function isBudgetLike(value: unknown): value is Budget {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    'limitAmount' in candidate &&
+    'spent' in candidate &&
+    'period' in candidate &&
+    'periodStart' in candidate
+  );
+}
+
+function toUtilizationInput(
+  first: Budget | BudgetUtilizationInput | BudgetAmount,
+  second?: readonly Transaction[] | BudgetAmount,
+): BudgetUtilizationInput {
+  if (isAmount(first)) {
+    return { spent: first, limit: isAmount(second) ? second : 0 };
+  }
+  if (isBudgetLike(first)) {
+    return { budget: first, transactions: Array.isArray(second) ? second : undefined };
+  }
+  return first;
+}
+
+function computeBudgetUtilization(input: BudgetUtilizationInput): BudgetUtilizationResult {
+  const { budget, transactions } = input;
+
+  if (budget && transactions !== undefined) {
+    return calculateUtilization(budget, [...transactions]);
+  }
+
+  return buildUtilizationResult(
+    input.limit ?? budget?.limitAmount ?? 0,
+    input.spent ?? budget?.spent ?? 0,
+    [],
+  );
+}
+
+export function calculateBudgetUtilization(input: BudgetUtilizationInput): BudgetUtilizationResult;
+export function calculateBudgetUtilization(
+  budget: Budget,
+  transactions?: readonly Transaction[],
+): BudgetUtilizationResult;
+export function calculateBudgetUtilization(
+  spent: BudgetAmount,
+  limit: BudgetAmount,
+): BudgetUtilizationResult;
+export function calculateBudgetUtilization(
+  first: Budget | BudgetUtilizationInput | BudgetAmount,
+  second?: readonly Transaction[] | BudgetAmount,
+): BudgetUtilizationResult {
+  return computeBudgetUtilization(toUtilizationInput(first, second));
+}
+
+export function isBudgetExceeded(budget: Budget, transactions?: readonly Transaction[]): boolean;
+export function isBudgetExceeded(spent: BudgetAmount, limit: BudgetAmount): boolean;
+export function isBudgetExceeded(input: BudgetUtilizationInput): boolean;
+export function isBudgetExceeded(
+  first: Budget | BudgetUtilizationInput | BudgetAmount,
+  second?: readonly Transaction[] | BudgetAmount,
+): boolean {
+  return computeBudgetUtilization(toUtilizationInput(first, second)).isOverBudget;
 }

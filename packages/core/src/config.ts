@@ -49,7 +49,7 @@ export interface AuthConfig {
  * const retry: RetryOptions = {
  *   maxRetries: 3,
  *   baseDelayMs: 250,
- *   retryableStatuses: [429, 500, 502, 503, 504],
+ *   retryableStatuses: [408, 429, 500, 502, 503, 504],
  * };
  * ```
  */
@@ -66,8 +66,8 @@ export interface RetryOptions {
   maxDelay?: number;
   /**
    * HTTP statuses that should be retried. Defaults to the SDK set
-   * `[429, 500, 502, 503, 504]` (rate limiting, internal server errors and
-   * gateway errors).
+   * `[408, 429, 500, 502, 503, 504]` (request timeout, rate limiting, internal
+   * server errors and gateway errors).
    */
   retryableStatuses?: number[];
   /**
@@ -83,9 +83,10 @@ export interface RetryOptions {
   /**
    * The HTTP status codes that warrant a retry.
    *
-   * When omitted, the SDK-wide default applies: `429`, `500`, `502`, `503` and
-   * `504`. Supply an explicit list to retry only those statuses — useful when
-   * an upstream gateway emits transient codes outside the standard set.
+   * When omitted, the SDK-wide default applies: `408`, `429`, `500`, `502`,
+   * `503` and `504`. Supply an explicit list to retry only those statuses —
+   * useful when an upstream gateway emits transient codes outside the standard
+   * set.
    * `shouldRetryStatus` on the retry middleware takes precedence over this.
    */
   retryableStatusCodes?: number[];

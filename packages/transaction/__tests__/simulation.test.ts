@@ -11,8 +11,12 @@ import { describe, expect, it } from 'vitest';
 
 import type { SimulateTransactionClient } from '@astroid/types';
 
-import { simulateTransaction as exportedSimulateTransaction } from '../src/index.js';
+import {
+  simulateTransaction as exportedSimulateTransaction,
+  simulateTransactionReport as exportedSimulationReport,
+} from '../src/index.js';
 import { simulateTransaction, simulateTransactionFee } from '../src/simulation.js';
+import { simulateTransaction as simulateTransactionReport } from '../src/simulate.js';
 import { TransactionSimulationError } from '../src/errors.js';
 
 const TESTNET = Networks.TESTNET;
@@ -508,6 +512,10 @@ describe('simulateTransaction — typed remote simulation responses', () => {
 });
 
 describe('simulateTransaction — public helper and policy evaluation', () => {
+  it('exports the typed simulation report helper from the package barrel', () => {
+    expect(exportedSimulationReport).toBe(simulateTransactionReport);
+  });
+
   it('is exported from the package barrel and reports an allowed policy evaluation', async () => {
     expect(exportedSimulateTransaction).toBe(simulateTransaction);
 
@@ -583,10 +591,7 @@ describe('simulateTransaction — public helper and policy evaluation', () => {
     expect(result.policyEvaluation?.violations).toEqual([violation]);
     expect(result.violations).toEqual([violation]);
     expect(result.failureReasons).toEqual(
-      expect.arrayContaining([
-        'Transaction denied by the daily spend policy.',
-        violation.message,
-      ]),
+      expect.arrayContaining(['Transaction denied by the daily spend policy.', violation.message]),
     );
     expect(result.remote?.success).toBe(false);
     expect(result.error).toBeInstanceOf(TransactionSimulationError);

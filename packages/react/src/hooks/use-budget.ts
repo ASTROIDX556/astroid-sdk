@@ -1,6 +1,11 @@
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { queryKeys, useAstroidClient } from '../hooks.js';
-import type { Budget, BudgetUtilization } from '@astroid/types';
+import type {
+  Budget,
+  BudgetExpenditureSummary,
+  BudgetExpenditureSummaryParams,
+  BudgetUtilization,
+} from '@astroid/types';
 
 /**
  * Aggregate health bucket reported by {@link useBudgetThreshold}.
@@ -157,6 +162,17 @@ function computeUtilizationPercent(snapshot: BudgetUtilization | undefined): num
 }
 
 /**
+ * A zero budget has no meaningful percentage, but any spend against it is a
+ * breach. Mirror the `isBudgetExceeded` semantics from `@astroid/budget`.
+ */
+function isZeroLimitOverrun(snapshot: BudgetUtilization | undefined): boolean {
+  if (!snapshot) return false;
+  const limit = Number(snapshot.limit);
+  const spent = Number(snapshot.spent);
+  return Number.isFinite(limit) && Number.isFinite(spent) && limit === 0 && spent > 0;
+}
+
+/**
  * Fetch the current utilization snapshot for a budget.
  *
  * Cached under the budget's utilization key, which {@link useUpdateBudget}
@@ -239,7 +255,7 @@ export function useBudgetThreshold(
   const query = useBudgetUtilization(id, queryOptions);
 
   const utilizationPercent = computeUtilizationPercent(query.data);
-  const isExceeded = utilizationPercent >= exceededPercent;
+  const isExceeded = isZeroLimitOverrun(query.data) || utilizationPercent >= exceededPercent;
   const isNearLimit = isExceeded || utilizationPercent >= nearLimitPercent;
   const status: BudgetThresholdStatus = query.data
     ? isExceeded
@@ -262,4 +278,51 @@ export function useBudgetThreshold(
     nearLimitPercent,
     exceededPercent,
   };
+}
+
+/** Centralized query key factory for live budget expenditure summaries. */
+export const budgetExpenditureKeys = {
+  /** Prefix shared by every expenditure summary query for a budget. */
+  all: (budgetId: string) => queryKeys.budgets.expenditureAll(budgetId),
+  /** Key for a summary fetched with a specific set of filter params. */
+  summary: (budgetId: string, params?: BudgetExpenditureSummaryParams) =>
+    queryKeys.budgets.expenditure(budgetId, params),
+} as const;
+
+export interface UseBudgetExpenditureSummaryOptions extends UseBudgetQueryOptions {
+  interval?: number;
+}
+
+function isBudgetExpenditureParams(
+  value: BudgetExpenditureSummaryParams | UseBudgetExpenditureSummaryOptions | undefined,
+): value is BudgetExpenditureSummaryParams {
+  if (typeof value !== 'object' || value === null) return false;
+  return 'from' in value || 'to' in value || 'thresholdPercent' in value;
+}
+
+export function useBudgetExpenditureSummary(
+  id: string | undefined,
+  paramsOrOptions?: BudgetExpenditureSummaryParams | UseBudgetExpenditureSummaryOptions,
+  options?: UseBudgetExpenditureSummaryOptions,
+): UseQueryResult<BudgetExpenditureSummary, Error> {
+  const astroid = useAstroidClient();
+  const hasExplicitOptions = options !== undefined;
+  const params =
+    hasExplicitOptions || isBudgetExpenditureParams(paramsOrOptions)
+      ? ((paramsOrOptions as BudgetExpenditureSummaryParams | undefined) ?? {})
+      : {};
+  const queryOptions: UseBudgetExpenditureSummaryOptions = hasExplicitOptions
+    ? options
+    : isBudgetExpenditureParams(paramsOrOptions)
+      ? {}
+      : (paramsOrOptions ?? {});
+  const { enabled = true, refetchInterval, interval, staleTime } = queryOptions;
+
+  return useQuery<BudgetExpenditureSummary, Error>({
+    queryKey: budgetExpenditureKeys.summary(id ?? '', params),
+    queryFn: () => astroid.budgets.getBudgetExpenditureSummary(id as string, params),
+    enabled: isEnabled(id, enabled),
+    refetchInterval: refetchInterval ?? interval ?? false,
+    staleTime,
+  });
 }
