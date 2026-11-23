@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatBalance, parseBalance, XLM_DECIMAL_PLACES, DEFAULT_ASSET_DECIMAL_PLACES } from '../balance.js';
+import {
+  formatBalance,
+  parseBalance,
+  XLM_DECIMAL_PLACES,
+  DEFAULT_ASSET_DECIMAL_PLACES,
+} from '../balance.js';
 
 describe('formatBalance', () => {
   it('formats a positive stroop amount with 7 decimal places (XLM)', () => {
@@ -23,9 +28,10 @@ describe('formatBalance', () => {
     expect(formatBalance(1n, 7)).toBe('0.0000001');
   });
 
-  it('formats with custom decimal places', () => {
-    expect(formatBalance(5000000n, 6)).toBe('0.500000');
+  it('formats with custom asset precision', () => {
+    expect(formatBalance(5000000n, 6)).toBe('5.000000');
     expect(formatBalance(12345n, 3)).toBe('12.345');
+    expect(formatBalance(0n, 0)).toBe('0');
   });
 
   it('throws on negative stroops', () => {
@@ -62,6 +68,15 @@ describe('parseBalance', () => {
 
   it('handles integer-only strings', () => {
     expect(parseBalance('123', 2)).toBe(12300n);
+  });
+
+  it('rejects more fraction digits than the asset precision', () => {
+    expect(() => parseBalance('0.00000001', 7)).toThrow('at most 7 decimal places');
+  });
+
+  it('rejects malformed amounts', () => {
+    expect(() => parseBalance('1e7', 7)).toThrow();
+    expect(() => parseBalance('1,000', 7)).toThrow();
   });
 });
 
