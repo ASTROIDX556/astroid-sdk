@@ -17,10 +17,12 @@ import {
   AstroidProvider,
   invalidateQueries,
   queryKeys,
+  budgetExpenditureKeys,
   useBudget,
+  useBudgetExpenditureSummary,
   useBudgetUtilization,
 } from '../index.js';
-import type { Budget, BudgetUtilization } from '@astroid/types';
+import type { Budget, BudgetExpenditureSummary, BudgetUtilization } from '@astroid/types';
 
 /* -------------------------------------------------------------------------- */
 /* Fixtures & harness                                                          */
@@ -56,6 +58,24 @@ const UTILIZATION: BudgetUtilization = {
   utilization: 0.25,
   percent: 25,
   state: 'healthy',
+};
+
+const EXPENDITURE_SUMMARY: BudgetExpenditureSummary = {
+  budgetId: 'bud_42',
+  currency: 'USDC',
+  period: 'MONTHLY',
+  periodStart: '2026-09-01T00:00:00.000Z',
+  periodEnd: '2026-10-01T00:00:00.000Z',
+  limit: '5000.00',
+  spent: '4250.00',
+  remaining: '750.00',
+  utilization: 0.85,
+  percent: 85,
+  state: 'warning',
+  thresholdPercent: 80,
+  thresholdExceeded: true,
+  thresholdWarning: 'Budget is 85% utilized',
+  generatedAt: '2026-09-15T00:00:00.000Z',
 };
 
 function makeClient() {
@@ -422,5 +442,118 @@ describe('useBudgetUtilization', () => {
     expect(isLoading).toBe(false);
     expect(data?.state).toBe('healthy');
     unmount();
+  });
+});
+
+describe('useBudgetExpenditureSummary', () => {
+  it('fetches a live summary and exposes threshold flags', async () => {
+    const client = makeClient();
+    const summarySpy = vi
+      .spyOn(client.budgets, 'getBudgetExpenditureSummary')
+      .mockResolvedValue(EXPENDITURE_SUMMARY);
+
+    let data: BudgetExpenditureSummary | undefined;
+    function TestComponent() {
+      data = useBudgetExpenditureSummary(
+        'bud_42',
+        { thresholdPercent: 80 },
+        { refetchInterval: 5000 },
+      ).data;
+      return null;
+    }
+
+    const { unmount } = renderInProviders(createElement(TestComponent), { client });
+
+    await waitFor(() => expect(data?.budgetId).toBe('bud_42'));
+    expect(summarySpy).toHaveBeenCalledWith('bud_42', { thresholdPercent: 80 });
+    expect(data?.thresholdExceeded).toBe(true);
+    expect(data?.thresholdWarning).toBe('Budget is 85% utilized');
+    unmount();
+  });
+
+  it('accepts query options as the second argument', () => {
+    const client = makeClient();
+    const summarySpy = vi.spyOn(client.budgets, 'getBudgetExpenditureSummary');
+
+    function TestComponent() {
+      useBudgetExpenditureSummary('bud_42', { enabled: false });
+      return null;
+    }
+
+    const { unmount } = renderInProviders(createElement(TestComponent), { client });
+    expect(summarySpy).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('does not fetch when the budget id is undefined', () => {
+    const client = makeClient();
+    const summarySpy = vi.spyOn(client.budgets, 'getBudgetExpenditureSummary');
+
+    function TestComponent() {
+      useBudgetExpenditureSummary(undefined);
+      return null;
+    }
+
+    const { unmount } = renderInProviders(createElement(TestComponent), { client });
+    expect(summarySpy).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('uses a dedicated query key', () => {
+    const summaryKey = budgetExpenditureKeys.summary('bud_42', { thresholdPercent: 80 });
+
+    expect(summaryKey).toEqual([
+      'astroid',
+      'budgets',
+      'detail',
+      'bud_42',
+      'expenditure',
+      { thresholdPercent: 80 },
+    ]);
+    expect(summaryKey.slice(0, 5)).toEqual(budgetExpenditureKeys.all('bud_42'));
+  });
+
+  it('invalidates every summary variant through the all key', async () => {
+    const client = makeClient();
+    vi.spyOn(client.budgets, 'getBudgetExpenditureSummary').mockResolvedValue(EXPENDITURE_SUMMARY);
+    const summaryKey = budgetExpenditureKeys.summary('bud_42', { thresholdPercent: 80 });
+
+    function TestComponent() {
+      useBudgetExpenditureSummary('bud_42', { thresholdPercent: 80 });
+      return null;
+    }
+
+    const { queryClient, unmount } = renderInProviders(createElement(TestComponent), { client });
+
+    await waitFor(() => expect(queryClient.getQueryData(summaryKey)).toBeDefined());
+    unmount();
+
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: budgetExpenditureKeys.all('bud_42') });
+    });
+
+    expect(queryClient.getQueryState(summaryKey)?.isInvalidated).toBe(true);
+  });
+
+  it('is invalidated by the budget-domain invalidation helper', async () => {
+    const client = makeClient();
+    vi.spyOn(client.budgets, 'getBudgetExpenditureSummary').mockResolvedValue(EXPENDITURE_SUMMARY);
+    const summaryKey = budgetExpenditureKeys.summary('bud_42', { thresholdPercent: 80 });
+
+    function TestComponent() {
+      useBudgetExpenditureSummary('bud_42', { thresholdPercent: 80 });
+      return null;
+    }
+
+    const { queryClient, unmount } = renderInProviders(createElement(TestComponent), { client });
+
+    await waitFor(() => expect(queryClient.getQueryData(summaryKey)).toBeDefined());
+    unmount();
+
+    await act(async () => {
+      await invalidateQueries.budget(queryClient, 'bud_42');
+    });
+
+    expect(queryClient.getQueryState(summaryKey)?.isInvalidated).toBe(true);
   });
 });
