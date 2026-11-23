@@ -162,6 +162,17 @@ function computeUtilizationPercent(snapshot: BudgetUtilization | undefined): num
 }
 
 /**
+ * A zero budget has no meaningful percentage, but any spend against it is a
+ * breach. Mirror the `isBudgetExceeded` semantics from `@astroid/budget`.
+ */
+function isZeroLimitOverrun(snapshot: BudgetUtilization | undefined): boolean {
+  if (!snapshot) return false;
+  const limit = Number(snapshot.limit);
+  const spent = Number(snapshot.spent);
+  return Number.isFinite(limit) && Number.isFinite(spent) && limit === 0 && spent > 0;
+}
+
+/**
  * Fetch the current utilization snapshot for a budget.
  *
  * Cached under the budget's utilization key, which {@link useUpdateBudget}
@@ -244,7 +255,7 @@ export function useBudgetThreshold(
   const query = useBudgetUtilization(id, queryOptions);
 
   const utilizationPercent = computeUtilizationPercent(query.data);
-  const isExceeded = utilizationPercent >= exceededPercent;
+  const isExceeded = isZeroLimitOverrun(query.data) || utilizationPercent >= exceededPercent;
   const isNearLimit = isExceeded || utilizationPercent >= nearLimitPercent;
   const status: BudgetThresholdStatus = query.data
     ? isExceeded
@@ -269,8 +280,11 @@ export function useBudgetThreshold(
   };
 }
 
+/** Centralized query key factory for live budget expenditure summaries. */
 export const budgetExpenditureKeys = {
-  all: (budgetId: string) => ['astroid', 'budgets', budgetId, 'expenditure'] as const,
+  /** Prefix shared by every expenditure summary query for a budget. */
+  all: (budgetId: string) => queryKeys.budgets.expenditureAll(budgetId),
+  /** Key for a summary fetched with a specific set of filter params. */
   summary: (budgetId: string, params?: BudgetExpenditureSummaryParams) =>
     queryKeys.budgets.expenditure(budgetId, params),
 } as const;

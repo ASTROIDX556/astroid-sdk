@@ -500,7 +500,9 @@ describe('useBudgetExpenditureSummary', () => {
   });
 
   it('uses a dedicated query key', () => {
-    expect(budgetExpenditureKeys.summary('bud_42', { thresholdPercent: 80 })).toEqual([
+    const summaryKey = budgetExpenditureKeys.summary('bud_42', { thresholdPercent: 80 });
+
+    expect(summaryKey).toEqual([
       'astroid',
       'budgets',
       'detail',
@@ -508,5 +510,50 @@ describe('useBudgetExpenditureSummary', () => {
       'expenditure',
       { thresholdPercent: 80 },
     ]);
+    expect(summaryKey.slice(0, 5)).toEqual(budgetExpenditureKeys.all('bud_42'));
+  });
+
+  it('invalidates every summary variant through the all key', async () => {
+    const client = makeClient();
+    vi.spyOn(client.budgets, 'getBudgetExpenditureSummary').mockResolvedValue(EXPENDITURE_SUMMARY);
+    const summaryKey = budgetExpenditureKeys.summary('bud_42', { thresholdPercent: 80 });
+
+    function TestComponent() {
+      useBudgetExpenditureSummary('bud_42', { thresholdPercent: 80 });
+      return null;
+    }
+
+    const { queryClient, unmount } = renderInProviders(createElement(TestComponent), { client });
+
+    await waitFor(() => expect(queryClient.getQueryData(summaryKey)).toBeDefined());
+    unmount();
+
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: budgetExpenditureKeys.all('bud_42') });
+    });
+
+    expect(queryClient.getQueryState(summaryKey)?.isInvalidated).toBe(true);
+  });
+
+  it('is invalidated by the budget-domain invalidation helper', async () => {
+    const client = makeClient();
+    vi.spyOn(client.budgets, 'getBudgetExpenditureSummary').mockResolvedValue(EXPENDITURE_SUMMARY);
+    const summaryKey = budgetExpenditureKeys.summary('bud_42', { thresholdPercent: 80 });
+
+    function TestComponent() {
+      useBudgetExpenditureSummary('bud_42', { thresholdPercent: 80 });
+      return null;
+    }
+
+    const { queryClient, unmount } = renderInProviders(createElement(TestComponent), { client });
+
+    await waitFor(() => expect(queryClient.getQueryData(summaryKey)).toBeDefined());
+    unmount();
+
+    await act(async () => {
+      await invalidateQueries.budget(queryClient, 'bud_42');
+    });
+
+    expect(queryClient.getQueryState(summaryKey)?.isInvalidated).toBe(true);
   });
 });
