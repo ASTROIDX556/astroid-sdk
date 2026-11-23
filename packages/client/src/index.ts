@@ -111,12 +111,12 @@ export interface AstroidClientConfig extends CoreClientConfig {
   maxDelayMs?: number;
   /**
    * HTTP statuses that should be retried (shorthand for
-   * `retry.retryableStatuses`). Defaults to `[429, 500, 502, 503, 504]`.
+   * `retry.retryableStatuses`). Defaults to `[408, 429, 500, 502, 503, 504]`.
    */
   retryableStatuses?: number[];
   /**
    * HTTP status codes that should be retried (alias for `retryableStatuses` /
-   * `retry.retryableStatusCodes`). Defaults to `[429, 500, 502, 503, 504]`.
+   * `retry.retryableStatusCodes`). Defaults to `[408, 429, 500, 502, 503, 504]`.
    */
   retryableStatusCodes?: number[];
   /**
@@ -143,7 +143,8 @@ export interface AstroidClientConfig extends CoreClientConfig {
    */
   retryDelay?: number;
   /**
-   * Configurable retry policy for transient errors (429, 502, 503, 504, timeouts).
+   * Configurable retry policy for transient errors (408, 429, 5xx gateway errors,
+   * and transport timeouts).
    * Alias for `retry`.
    */
   retryPolicy?: boolean | Partial<RetryConfig>;

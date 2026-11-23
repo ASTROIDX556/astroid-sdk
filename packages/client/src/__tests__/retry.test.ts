@@ -460,7 +460,7 @@ describe('Astroid client — non-retryable errors', () => {
     expect(mockFetch).toHaveBeenCalledTimes(1); // no retries
   });
 
-  it('does not retry on 408 (Request Timeout) despite the transient-sounding name', async () => {
+  it('retries 408 (Request Timeout) as a transient request failure', async () => {
     const mockFetch = vi
       .fn()
       .mockImplementation(async () => errorResponse(408, 'REQUEST_TIMEOUT', 'Request Timeout'));
@@ -472,7 +472,7 @@ describe('Astroid client — non-retryable errors', () => {
     client.use(createRetryMiddleware({ maxRetries: 3, baseDelayMs: 5, maxDelayMs: 50 }));
 
     await expect(client.wallets.get('w_408')).rejects.toBeDefined();
-    expect(mockFetch).toHaveBeenCalledTimes(1); // no retries
+    expect(mockFetch).toHaveBeenCalledTimes(4); // initial attempt + 3 retries
   });
 
   it('does not retry on 425 (Too Early)', async () => {
