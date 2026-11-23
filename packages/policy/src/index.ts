@@ -23,6 +23,11 @@ import { simulatePolicyRuleEvaluation } from './rule-evaluation.js';
 import { simulatePolicyUpdate } from './simulate-policy-update.js';
 import { simulatePolicyEvaluation } from './simulation.js';
 import {
+  getPolicySimulationHistory as fetchPolicySimulationHistory,
+  type PolicySimulationHistoryParams,
+  type PolicySimulationHistoryResponse,
+} from './history.js';
+import {
   assertPolicyCreateInput,
   assertPolicySimulationRequest,
   PolicyUpdateInputSchema,
@@ -511,7 +516,9 @@ export class PolicyResource extends Resource {
     }
     const request = assertPolicySimulationRequest(policyOrRequest) as PolicySimulationRequest;
     const reqOptions = (options ??
-      (typeof input === 'object' && input !== null && ('signal' in input || 'timeoutMs' in input || 'headers' in input)
+      (typeof input === 'object' &&
+      input !== null &&
+      ('signal' in input || 'timeoutMs' in input || 'headers' in input)
         ? input
         : undefined)) as RequestOptionsExtras | undefined;
     return simulatePolicy(this.client, request, reqOptions);
@@ -609,6 +616,19 @@ export class PolicyResource extends Resource {
   }
 
   /**
+   * Retrieve paginated policy simulation audit history.
+   *
+   * @param params Date range, agent, policy, pass/fail, and pagination filters.
+   * @param options Extra request options forwarded to the HTTP client.
+   */
+  async getPolicySimulationHistory(
+    params: PolicySimulationHistoryParams = {},
+    options?: RequestOptionsExtras,
+  ): Promise<PolicySimulationHistoryResponse> {
+    return fetchPolicySimulationHistory(this.client, params, options);
+  }
+
+  /**
    * Perform a pre-flight server-side policy simulation against every policy in
    * scope.
    *
@@ -674,3 +694,10 @@ export const PoliciesResource = PolicyResource;
 
 export * from './builder.js';
 export * from './validation.js';
+export {
+  getPolicySimulationHistory,
+  POLICY_SIMULATION_HISTORY_PATH,
+  type PolicySimulationHistoryEntry,
+  type PolicySimulationHistoryParams,
+  type PolicySimulationHistoryResponse,
+} from './history.js';
