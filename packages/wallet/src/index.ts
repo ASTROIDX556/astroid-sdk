@@ -29,6 +29,7 @@ import type {
 } from '@astroid/types';
 
 import { fetchWalletBalancesBatch, type BatchWalletBalancesOptions } from './batch.js';
+import { formatAssetAmount, type AssetAmountFormatOptions } from './balance-utils.js';
 
 export {
   fetchWalletBalancesBatch,
@@ -52,6 +53,23 @@ export {
   XLM_DECIMAL_PLACES,
   DEFAULT_ASSET_DECIMAL_PLACES,
 } from './balance.js';
+
+export {
+  isNativeAssetBalance,
+  assetBalanceKey,
+  findAssetBalance,
+  findNativeBalance,
+  sumAssetBalances,
+  aggregateWalletBalances,
+  summarizeWalletBalances,
+  formatAssetAmount,
+  assetBalanceToBaseUnits,
+  assetBalanceFromBaseUnits,
+  convertAssetAmount,
+  type AggregatedAssetBalance,
+  type WalletBalanceSummary,
+  type AssetAmountFormatOptions,
+} from './balance-utils.js';
 
 /**
  * Balance DTOs re-exported from `@astroid/types` so consumers of
@@ -102,9 +120,9 @@ export function formatWalletBalances(
     maximumFractionDigits: 0,
     useGrouping: true,
   });
-  const decimalSeparator = new Intl.NumberFormat(locale)
-    .formatToParts(1.1)
-    .find((part) => part.type === 'decimal')?.value ?? '.';
+  const decimalSeparator =
+    new Intl.NumberFormat(locale).formatToParts(1.1).find((part) => part.type === 'decimal')
+      ?.value ?? '.';
 
   return {
     ...balance,
@@ -123,6 +141,27 @@ export function formatWalletBalances(
       return { ...assetBalance, formattedBalance };
     }),
   };
+}
+
+/**
+ * Format a single asset balance for display, preserving the exact decimal
+ * amount while adding locale-independent grouping and an optional symbol.
+ *
+ * @param balance The asset balance DTO to format.
+ * @param options Grouping, fraction, rounding and symbol options.
+ * @returns A copy of the balance with a `formattedBalance` string.
+ *
+ * @example
+ * ```ts
+ * formatAssetBalance({ asset: 'XLM', balance: '1234.5' }, { symbol: 'XLM' });
+ * // { asset: 'XLM', balance: '1234.5', formattedBalance: '1,234.5 XLM' }
+ * ```
+ */
+export function formatAssetBalance(
+  balance: AssetBalance,
+  options: AssetAmountFormatOptions = {},
+): FormattedAssetBalance {
+  return { ...balance, formattedBalance: formatAssetAmount(balance.balance, options) };
 }
 
 export { SecureKeystore, type EncryptedPayload } from './keystore.js';
