@@ -35,6 +35,24 @@ export {
 } from './validation.js';
 
 export {
+  DEFAULT_BUDGET_THRESHOLDS,
+  createBudgetThresholdMonitor,
+  evaluateBudgetThresholds,
+  getHighestReachedThreshold,
+  normalizeBudgetThresholds,
+  type BudgetThresholdAlert,
+  type BudgetThresholdDefinition,
+  type BudgetThresholdEvaluation,
+  type BudgetThresholdInput,
+  type BudgetThresholdLevel,
+  type BudgetThresholdListener,
+  type BudgetThresholdMatch,
+  type BudgetThresholdMonitor,
+  type BudgetThresholdMonitorOptions,
+  type BudgetThresholdOptions,
+  type BudgetThresholdSubject,
+} from './thresholds.js';
+export {
   assertValidThresholdPercent,
   assertValidUtilizationThreshold,
   createBudgetAlert,
