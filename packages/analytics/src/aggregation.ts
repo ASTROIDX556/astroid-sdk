@@ -18,6 +18,7 @@ import {
   type TimeSeriesMetricsInput,
   type TimeSeriesResolution,
 } from './aggregations.js';
+import { groupTimeSeriesByInterval } from './time-series-helpers.js';
 
 export {
   aggregateTimeSeriesMetrics,
@@ -38,6 +39,11 @@ export interface TimeSeriesAggregationOptions extends AggregateTimeSeriesOptions
    * Sort direction for output buckets. Defaults to `'asc'` (chronological).
    */
   sortBy?: 'asc' | 'desc';
+  /**
+   * Number of base intervals in each output bucket (for example, `6` six-hour
+   * buckets when `interval` is `'hour'`). Defaults to `1`.
+   */
+  step?: number;
 }
 
 /**
@@ -65,15 +71,27 @@ export function aggregateTimeSeries(
   input: TimeSeriesMetricsInput,
   options: TimeSeriesAggregationOptions = {},
 ): AggregatedTimeSeriesResult {
-  const result = aggregateTimeSeriesMetrics(input, options);
-
-  if (options.sortBy === 'desc') {
-    result.reverse();
-    result.points = result;
-    result.buckets = result;
+  if (options.step !== undefined && options.step !== 1) {
+    return groupTimeSeriesByInterval(input, options);
   }
 
-  return result;
+  const result = aggregateTimeSeriesMetrics(input, options);
+  if (options.sortBy !== 'desc') return result;
+
+  const sorted = [...result].reverse();
+  return Object.assign(sorted, {
+    interval: result.interval,
+    resolution: result.resolution,
+    points: sorted,
+    buckets: sorted,
+    summary: result.summary,
+    totalVolume: result.totalVolume,
+    totalFees: result.totalFees,
+    totalCount: result.totalCount,
+    successCount: result.successCount,
+    failureCount: result.failureCount,
+    successRate: result.successRate,
+  }) as AggregatedTimeSeriesResult;
 }
 
 /**
@@ -83,6 +101,14 @@ export function aggregateTimeSeries(
  * @param interval Bucket interval resolution ('hour' | 'day' | 'week'). Defaults to 'day'.
  * @param zeroFill Whether to fill missing intervals with zero values. Defaults to true.
  * @returns Bucketed and sorted time-series result.
+ *
+ * @example
+ * ```ts
+ * import { groupTimeSeriesData } from '@astroid/analytics';
+ *
+ * const daily = groupTimeSeriesData(events, 'day', true);
+ * console.log(daily.map((bucket) => bucket.formattedDate));
+ * ```
  */
 export function groupTimeSeriesData(
   input: TimeSeriesMetricsInput,
@@ -91,3 +117,18 @@ export function groupTimeSeriesData(
 ): AggregatedTimeSeriesResult {
   return aggregateTimeSeries(input, { interval, zeroFill });
 }
+
+export {
+  binTimeSeries,
+  fillMissingTimeBuckets,
+  formatTimeSeries,
+  formatTimeSeriesForChart,
+  groupTimeSeriesByInterval,
+  sortTimeSeriesByTimestamp,
+  type TimeSeriesChartFormatOptions,
+  type TimeSeriesChartLabel,
+  type TimeSeriesChartPoint,
+  type TimeSeriesChartValue,
+  type TimeSeriesGroupingOptions,
+  type TimeSeriesSortDirection,
+} from './time-series-helpers.js';

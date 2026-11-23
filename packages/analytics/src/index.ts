@@ -41,10 +41,7 @@ import { getAgentMetrics, getGlobalAnalytics } from './metrics.js';
 // {@link AnalyticsResource}. These were previously imported but never used,
 // which failed the `dts` build (`TS6192: All imports in import declaration are
 // unused`).
-export {
-  getAgentMetrics,
-  getGlobalAnalytics,
-} from './metrics.js';
+export { getAgentMetrics, getGlobalAnalytics } from './metrics.js';
 
 export {
   AnalyticsQueryResource,
@@ -127,6 +124,22 @@ export {
   groupTimeSeriesData,
   type TimeSeriesAggregationOptions,
 } from './aggregation.js';
+
+// Time-series grouping, gap-filling, and chart formatting helpers (issue #432).
+export {
+  binTimeSeries,
+  fillMissingTimeBuckets,
+  formatTimeSeries,
+  formatTimeSeriesForChart,
+  groupTimeSeriesByInterval,
+  sortTimeSeriesByTimestamp,
+  type TimeSeriesChartFormatOptions,
+  type TimeSeriesChartLabel,
+  type TimeSeriesChartPoint,
+  type TimeSeriesChartValue,
+  type TimeSeriesGroupingOptions,
+  type TimeSeriesSortDirection,
+} from './time-series-helpers.js';
 
 export {
   buildTimeSeriesPath,
