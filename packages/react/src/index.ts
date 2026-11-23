@@ -55,6 +55,11 @@ export {
   type UseAgentStatusOptions,
 } from './hooks/useAgentStatus.js';
 export {
+  useAgentTransaction,
+  type UseAgentTransactionResult,
+  type UseAgentTransactionVariables,
+} from './hooks/useAgentTransaction.js';
+export {
   useAgentMetrics,
   type UseAgentMetricsOptions,
   type AgentMetricsData,
