@@ -66,8 +66,6 @@ import {
   type QueryArrayFormat,
   type SerializeQueryOptions,
 } from './query.js';
-
-import { AnalyticsResource } from '@astroid/analytics';
 import { AuthResource, SessionManager, createSessionMiddleware } from '@astroid/auth';
 import { BudgetResource } from '@astroid/budget';
 import { NotificationResource } from '@astroid/notification';
