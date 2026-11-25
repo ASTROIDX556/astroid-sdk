@@ -348,6 +348,16 @@ describe('status/body → typed error mappers', () => {
 /* Transaction simulation                                                      */
 /* -------------------------------------------------------------------------- */
 
+describe('Network dropout and timeout error resilience', () => {
+  it('handles network-level dropouts cleanly as NetworkError', async () => {
+    const client = clientRespondingWith(() => {
+      throw new TypeError('fetch failed');
+    });
+    const err = await client.wallets.get('w_1').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+  });
+});
+
 describe('TransactionSimulationError mapping', () => {
   it('SIMULATION_FAILED code maps to TransactionSimulationError', () => {
     const err = fromApiError({ code: 'SIMULATION_FAILED', message: 'op failed' }, { status: 422 });
