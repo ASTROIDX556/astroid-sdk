@@ -3,6 +3,9 @@ export * from './asset-builder.js';
 export * from './multi-operation.js';
 export * from './feeBump.js';
 export * from './decoder.js';
+/**
+ * Simulates a Stellar transaction against the Astroid simulation endpoint.
+ */
 export {
   simulateTransaction,
   simulateTransactionFee,
@@ -10,6 +13,7 @@ export {
   type SimulationRequest,
   type SimulationResult,
   type TransactionSimulationResult,
+  type TransactionSimulationRequest,
 } from './simulation.js';
 export {
   simulateTransaction as simulateTransactionReport,
