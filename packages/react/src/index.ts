@@ -124,6 +124,7 @@ export { useTransactions, useTransaction, useCreateTransaction } from './hooks/u
 export {
   useWalletBalance,
   walletBalanceKeys,
+  isStellarPublicKey,
   type UseWalletBalanceOptions,
   type UseWalletBalanceResult,
 } from './hooks/use-wallet-balance.js';
