@@ -109,6 +109,11 @@ export interface TransactionFeeEstimate {
   transactionXdr?: string;
 }
 
+export type PolicyReasonCode = string;
+export type PolicySimulationDecision = 'allow' | 'deny' | 'require_approval';
+export type PolicyRiskAssessment = 'low' | 'medium' | 'high' | 'critical';
+export type PolicyBudgetImpact = { budgetId: string; impactAmount: string }
+
 export interface TransactionSimulationPolicyViolation {
   policyId: string;
   policyName?: string;
@@ -130,6 +135,8 @@ export interface TransactionSimulationPolicyEvaluation {
   budgetImpact?: PolicyBudgetImpact[];
   explanation?: string;
 }
+
+export type TransactionSimulationErrorCode = string;
 
 export type TransactionPolicyViolation = TransactionSimulationPolicyViolation;
 
