@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import type { Budget, Transaction } from '@astroid/types';
 
-import { calculateUtilization } from './utils.js';
+import {
+  calculateBudgetUtilization as exportedCalculateBudgetUtilization,
+  isBudgetExceeded as exportedIsBudgetExceeded,
+} from './index.js';
+import { calculateBudgetUtilization, calculateUtilization, isBudgetExceeded } from './utils.js';
 
 /* -------------------------------------------------------------------------- */
 /* Helpers                                                                     */
@@ -188,5 +192,95 @@ describe('calculateUtilization', () => {
 
       expect(result.isOverBudget).toBe(true);
     });
+  });
+});
+
+describe('calculateBudgetUtilization', () => {
+  it('computes utilization and aliases from a budget with transactions', () => {
+    const budget = makeBudget({ limitAmount: '200' });
+    const result = calculateBudgetUtilization(budget, [makeTx({ amount: '50' })]);
+
+    expect(result.limit).toBe('200');
+    expect(result.spent).toBe('50');
+    expect(result.remaining).toBe('150');
+    expect(result.percent).toBe(25);
+    expect(result.utilization).toBe(0.25);
+    expect(result.isExceeded).toBe(false);
+  });
+
+  it('accepts spent and limit amounts directly', () => {
+    const result = calculateBudgetUtilization('75', '100');
+
+    expect(result.utilizationPercentage).toBe(75);
+    expect(result.remainingAmount).toBe('25');
+    expect(result.isOverBudget).toBe(false);
+  });
+
+  it('accepts an input object without transactions', () => {
+    const result = calculateBudgetUtilization({ spent: '120', limit: '100' });
+
+    expect(result.spentAmount).toBe('120');
+    expect(result.utilizationPercentage).toBe(120);
+    expect(result.isOverBudget).toBe(true);
+  });
+
+  it('adds fractional asset amounts without floating-point drift', () => {
+    const budget = makeBudget({ limitAmount: '0.3' });
+    const transactions = [makeTx({ amount: '0.1' }), makeTx({ amount: '0.2', id: 'tx-2' })];
+
+    const result = calculateBudgetUtilization(budget, transactions);
+
+    expect(result.spentAmount).toBe('0.3');
+    expect(result.utilizationPercentage).toBe(100);
+    expect(result.isOverBudget).toBe(false);
+  });
+
+  it('handles exponent notation in amounts', () => {
+    const result = calculateBudgetUtilization('1e-1', '1e0');
+
+    expect(result.spentAmount).toBe('0.1');
+    expect(result.totalLimit).toBe('1');
+    expect(result.utilizationPercentage).toBe(10);
+  });
+
+  it('handles a zero budget with no spend and with spend', () => {
+    const idle = calculateBudgetUtilization('0', '0');
+    const spent = calculateBudgetUtilization('1', '0');
+
+    expect(idle.utilizationPercentage).toBe(0);
+    expect(idle.isOverBudget).toBe(false);
+    expect(spent.utilizationPercentage).toBe(0);
+    expect(spent.isOverBudget).toBe(true);
+  });
+});
+
+describe('isBudgetExceeded', () => {
+  it('checks a budget against its transactions', () => {
+    const budget = makeBudget({ limitAmount: '30' });
+    const transactions = [makeTx({ amount: '30' })];
+
+    expect(isBudgetExceeded(budget, transactions)).toBe(false);
+    expect(isBudgetExceeded(budget, [makeTx({ amount: '30.000001' })])).toBe(true);
+  });
+
+  it('checks spent and limit amounts directly', () => {
+    expect(isBudgetExceeded('0.1', '0.3')).toBe(false);
+    expect(isBudgetExceeded('0.3', '0.3')).toBe(false);
+    expect(isBudgetExceeded('0.3000001', '0.3')).toBe(true);
+  });
+
+  it('honours the input-object overload', () => {
+    expect(isBudgetExceeded({ spent: '100', limit: '100' })).toBe(false);
+    expect(isBudgetExceeded({ spent: '100.01', limit: '100' })).toBe(true);
+  });
+
+  it('treats any spend against a zero limit as exceeded', () => {
+    expect(isBudgetExceeded('0', '0')).toBe(false);
+    expect(isBudgetExceeded('0.0000001', '0')).toBe(true);
+  });
+
+  it('exports the new helpers from the package entry point', () => {
+    expect(exportedCalculateBudgetUtilization).toBe(calculateBudgetUtilization);
+    expect(exportedIsBudgetExceeded).toBe(isBudgetExceeded);
   });
 });

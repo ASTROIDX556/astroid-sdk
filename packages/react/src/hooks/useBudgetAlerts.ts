@@ -68,3 +68,11 @@ export function useBudgetAlerts(
     staleTime,
   });
 }
+
+export function useBudgetAlertSubscriptions(
+  budgetId: string | undefined,
+  params?: ListBudgetAlertsParams,
+  options: UseBudgetAlertsOptions = {},
+): UseQueryResult<Paginated<BudgetAlert>, Error> {
+  return useBudgetAlerts(budgetId, params, options);
+}

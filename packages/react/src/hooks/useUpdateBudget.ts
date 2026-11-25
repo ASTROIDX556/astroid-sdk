@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient, type UseMutationResult } from '@tanstack/react-query';
 import { queryKeys, useAstroidClient } from '../hooks.js';
+import { agentBudgetKeys } from './useAgentBudget.js';
 import type { Budget, UpdateBudgetInput } from '@astroid/types';
 
 /** Variables for the `useUpdateBudget` mutation. */
@@ -31,10 +32,13 @@ export function useUpdateBudget(): UseMutationResult<Budget, Error, UpdateBudget
 
   return useMutation({
     mutationFn: ({ id, params }: UpdateBudgetVariables) => astroid.budgets.update(id, params),
-    onSuccess: (_data, { id }) => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.budgets.detail(id) });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.budgets.utilization(id) });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.budgets.all });
+    onSuccess: async (_data, { id }) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.budgets.detail(id) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.budgets.utilization(id) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.budgets.all }),
+        queryClient.invalidateQueries({ queryKey: agentBudgetKeys.root }),
+      ]);
     },
   });
 }

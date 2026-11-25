@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Astroid } from '@astroid/client';
 import { createElement, type ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { AstroidProvider, queryKeys, useUpdateBudget } from '../index.js';
+import { agentBudgetKeys, AstroidProvider, queryKeys, useUpdateBudget } from '../index.js';
 import type { Budget } from '@astroid/types';
 
 const BUDGET: Budget = {
@@ -58,5 +58,6 @@ describe('useUpdateBudget', () => {
       queryKey: queryKeys.budgets.utilization('bud_1'),
     });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.budgets.all });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: agentBudgetKeys.root });
   });
 });

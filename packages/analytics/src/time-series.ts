@@ -200,3 +200,19 @@ export const INTERVAL_TO_TIMEFRAME: Record<TimeSeriesInterval, Timeframe> = {
   day: 'day',
   week: 'week',
 };
+
+// Grouping/formatting helpers used to turn fetched time series into chart data.
+export {
+  binTimeSeries,
+  fillMissingTimeBuckets,
+  formatTimeSeries,
+  formatTimeSeriesForChart,
+  groupTimeSeriesByInterval,
+  sortTimeSeriesByTimestamp,
+  type TimeSeriesChartFormatOptions,
+  type TimeSeriesChartLabel,
+  type TimeSeriesChartPoint,
+  type TimeSeriesChartValue,
+  type TimeSeriesGroupingOptions,
+  type TimeSeriesSortDirection,
+} from './time-series-helpers.js';

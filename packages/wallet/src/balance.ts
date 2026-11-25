@@ -19,6 +19,8 @@
  * parseBalance('1.2500000', 7); // 12500000n
  * ```
  */
+import { fromBaseUnits, toBaseUnits } from './utils.js';
+
 export type { DecimalString } from '@astroid/types';
 
 /**
@@ -46,27 +48,7 @@ export function formatBalance(stroops: bigint, decimalPlaces: number): string {
     throw new Error(`Balance cannot be negative: ${stroops}`);
   }
 
-  if (stroops === 0n) {
-    return '0'.padStart(decimalPlaces + 1, '0').replace(/0$/, '0');
-  }
-
-  // Stroops = integer_part * 10^decimalPlaces + fractional_part
-  // We want: integer_part.fractional_part (padded to decimalPlaces)
-  const separator = decimalPlaces;
-
-  // Calculate integer part and fractional part using BigInt
-  const factor = 10n ** BigInt(decimalPlaces);
-  const integerPart = stroops / factor;
-  const fractionalPart = stroops % factor;
-
-  // Format fractional part with leading zeros, trimmed of trailing zeros
-  // but always keeping at least one digit
-  const fractionalStr = fractionalPart
-    .toString()
-    .padStart(separator, '0');
-
-  // Combine integer and fractional parts
-  return `${integerPart}.${fractionalStr}`;
+  return fromBaseUnits(stroops, decimalPlaces, { trimTrailingZeros: false });
 }
 
 /**
@@ -80,8 +62,9 @@ export function formatBalance(stroops: bigint, decimalPlaces: number): string {
  * @param decimalPlaces Number of decimal places for the asset (7 for XLM,
  *                      varies for issued assets).
  * @returns The raw balance amount in stroops as a BigInt.
- * @throws {Error} If the amount string is not a valid decimal number or
- *         has incorrect decimal places.
+ * @throws {Error} If the amount string is not a valid non-negative decimal or
+ *         carries more fraction digits than `decimalPlaces` (no silent
+ *         truncation).
  *
  * @example
  * ```ts
@@ -95,35 +78,7 @@ export function parseBalance(amount: string, decimalPlaces: number): bigint {
     throw new Error(`Balance cannot be negative: ${amount}`);
   }
 
-  // Split into integer and fractional parts
-  const decimalIndex = amount.indexOf('.');
-  let integerPart = '0';
-  let fractionalPart = amount;
-
-  if (decimalIndex !== -1) {
-    integerPart = amount.substring(0, decimalIndex);
-    fractionalPart = amount.substring(decimalIndex + 1);
-  } else {
-    // No decimal point — assume all is integer part
-    fractionalPart = '';
-  }
-
-  // Pad or truncate fractional part to exactly decimalPlaces digits
-  if (fractionalPart.length < decimalPlaces) {
-    fractionalPart = fractionalPart.padEnd(decimalPlaces, '0');
-  } else if (fractionalPart.length > decimalPlaces) {
-    fractionalPart = fractionalPart.substring(0, decimalPlaces);
-  }
-
-  // Parse integer part as BigInt
-  const integerBigInt = BigInt(integerPart || '0');
-
-  // Parse fractional part as BigInt (it represents the digits after the decimal)
-  const fractionalBigInt = BigInt(fractionalPart || '0');
-
-  // Combine: integer * 10^decimalPlaces + fractional
-  const factor = 10n ** BigInt(decimalPlaces);
-  return integerBigInt * factor + fractionalBigInt;
+  return toBaseUnits(amount, decimalPlaces);
 }
 
 /**

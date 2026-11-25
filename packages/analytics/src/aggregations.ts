@@ -61,6 +61,8 @@ export type TimeSeriesInputPoint =
       successCount?: number;
       failureCount?: number;
       status?: string;
+      /** Flat custom properties carried by normalized analytics events. */
+      properties?: Record<string, string | number | boolean | null | undefined>;
     };
 
 /**
@@ -136,12 +138,23 @@ export interface AggregatedTelemetry {
 type Decimal = { n: bigint; scale: number };
 
 /** Parse a decimal string or number into a `Decimal` (integer numerator + scale). */
-function parseDecimal(value: string | number): Decimal {
-  const text = String(value).trim();
-  const sign = text.startsWith('-') ? -1n : 1n;
-  const unsigned = text.replace(/^[+-]/, '');
-  const [whole, fraction = ''] = unsigned.split('.');
-  return { n: sign * BigInt(`${whole || '0'}${fraction}`), scale: fraction.length };
+function parseDecimal(value: string | number): Decimal | undefined {
+  if (typeof value === 'number' && !Number.isFinite(value)) return undefined;
+  const match = /^([+-]?)(\d+(?:\.\d*)?|\.\d+)(?:[eE]([+-]?\d+))?$/.exec(String(value).trim());
+  if (!match) return undefined;
+
+  const exponent = Number(match[3] ?? '0');
+  if (!Number.isInteger(exponent) || Math.abs(exponent) > 100) return undefined;
+
+  const [whole, fraction = ''] = (match[2] ?? '').split('.');
+  const sign = match[1] === '-' ? -1n : 1n;
+  let n = sign * BigInt(`${whole || '0'}${fraction}`);
+  let scale = fraction.length - exponent;
+  if (scale < 0) {
+    n *= 10n ** BigInt(-scale);
+    scale = 0;
+  }
+  return { n, scale };
 }
 
 /** Align two `Decimal` values to the same scale and return their BigInt numerators. */
@@ -150,10 +163,10 @@ function alignDecimals(a: Decimal, b: Decimal): [bigint, bigint, number] {
   return [a.n * 10n ** BigInt(scale - a.scale), b.n * 10n ** BigInt(scale - b.scale), scale];
 }
 
-/** Add two decimal strings, returning a decimal string. */
+/** Add two decimal strings, treating malformed operands as zero. */
 function decAdd(a: string, b: string): string {
-  const da = parseDecimal(a);
-  const db = parseDecimal(b);
+  const da = parseDecimal(a) ?? { n: 0n, scale: 0 };
+  const db = parseDecimal(b) ?? { n: 0n, scale: 0 };
   const [x, y, scale] = alignDecimals(da, db);
   return formatDecimal({ n: x + y, scale });
 }
@@ -433,6 +446,8 @@ interface ParsedMetricPoint {
 function parsePoint(item: TimeSeriesInputPoint): ParsedMetricPoint | undefined {
   if (!item || typeof item !== 'object') return undefined;
 
+  const properties = 'properties' in item && item.properties ? item.properties : undefined;
+
   // 1. Timestamp resolution
   const rawTimestamp =
     'timestamp' in item && item.timestamp !== undefined
@@ -441,9 +456,11 @@ function parsePoint(item: TimeSeriesInputPoint): ParsedMetricPoint | undefined {
         ? item.date
         : 'createdAt' in item && item.createdAt !== undefined
           ? item.createdAt
-          : undefined;
+          : properties?.timestamp;
 
-  if (rawTimestamp === undefined) return undefined;
+  if (rawTimestamp === undefined || rawTimestamp === null || typeof rawTimestamp === 'boolean') {
+    return undefined;
+  }
   const date = rawTimestamp instanceof Date ? rawTimestamp : new Date(rawTimestamp);
   if (Number.isNaN(date.getTime())) return undefined;
 
@@ -455,8 +472,12 @@ function parsePoint(item: TimeSeriesInputPoint): ParsedMetricPoint | undefined {
     volume = String(item.amount).trim();
   } else if ('value' in item && item.value !== undefined && item.value !== null) {
     volume = String(item.value).trim();
+  } else if (properties?.amount !== undefined && properties.amount !== null) {
+    volume = String(properties.amount).trim();
+  } else if (properties?.volume !== undefined && properties.volume !== null) {
+    volume = String(properties.volume).trim();
   }
-  if (!volume || volume === 'NaN') volume = '0';
+  if (!parseDecimal(volume)) volume = '0';
 
   // 3. Fee resolution
   let fee = '0';
@@ -464,8 +485,10 @@ function parsePoint(item: TimeSeriesInputPoint): ParsedMetricPoint | undefined {
     fee = String(item.fee).trim();
   } else if ('gasEstimate' in item && item.gasEstimate !== undefined && item.gasEstimate !== null) {
     fee = String(item.gasEstimate).trim();
+  } else if (properties?.fee !== undefined && properties.fee !== null) {
+    fee = String(properties.fee).trim();
   }
-  if (!fee || fee === 'NaN') fee = '0';
+  if (!parseDecimal(fee)) fee = '0';
 
   // 4. Count resolution
   let count = 1;
@@ -477,25 +500,32 @@ function parsePoint(item: TimeSeriesInputPoint): ParsedMetricPoint | undefined {
     !Number.isNaN(item.transactionCount)
   ) {
     count = item.transactionCount;
+  } else if (typeof properties?.count === 'number' && !Number.isNaN(properties.count)) {
+    count = properties.count;
   }
 
   // 5. Success / Failure counts
   let successCount = 0;
   let failureCount = 0;
-  if ('successCount' in item && typeof item.successCount === 'number' && !Number.isNaN(item.successCount)) {
+  if (
+    'successCount' in item &&
+    typeof item.successCount === 'number' &&
+    !Number.isNaN(item.successCount)
+  ) {
     successCount = item.successCount;
   }
-  if ('failureCount' in item && typeof item.failureCount === 'number' && !Number.isNaN(item.failureCount)) {
+  if (
+    'failureCount' in item &&
+    typeof item.failureCount === 'number' &&
+    !Number.isNaN(item.failureCount)
+  ) {
     failureCount = item.failureCount;
   }
 
-  if (
-    !('successCount' in item) &&
-    !('failureCount' in item) &&
-    'status' in item &&
-    typeof item.status === 'string'
-  ) {
-    const status = item.status as TransactionStatus;
+  const rawStatus =
+    'status' in item && typeof item.status === 'string' ? item.status : properties?.status;
+  if (!('successCount' in item) && !('failureCount' in item) && typeof rawStatus === 'string') {
+    const status = rawStatus as TransactionStatus;
     if (SUCCESS_STATUSES.has(status)) {
       successCount = 1;
     } else if (FAILURE_STATUSES.has(status)) {
@@ -694,9 +724,7 @@ export function aggregateTimeSeriesMetrics(
           ? bucketStart(validStart, granularity)
           : earliestDataStart;
 
-      const rangeEndExclusive = validEnd
-        ? validEnd
-        : bucketEnd(latestDataStart, granularity);
+      const rangeEndExclusive = validEnd ? validEnd : bucketEnd(latestDataStart, granularity);
 
       let curr = rangeStart;
       while (curr.getTime() < rangeEndExclusive.getTime()) {
@@ -751,4 +779,3 @@ export function aggregateTimeSeriesMetrics(
     successRate: globalSuccessRate,
   }) as AggregatedTimeSeriesResult;
 }
-

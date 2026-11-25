@@ -63,6 +63,14 @@ export {
   type UseAgentMetricsResult,
 } from './hooks/useAgentMetrics.js';
 export {
+  useAgentStream,
+  AGENT_STREAM_STATUS_EVENTS,
+  type AgentStreamEvent,
+  type AgentStreamEventSourceFactory,
+  type UseAgentStreamOptions,
+  type UseAgentStreamResult,
+} from './hooks/useAgentStream.js';
+export {
   useInfiniteResource,
   createPaginatedResourceHook,
   type PaginatedResourceConfig,
@@ -93,13 +101,17 @@ export {
   useBudget,
   useBudgetUtilization,
   useBudgetThreshold,
+  useBudgetExpenditureSummary,
+  budgetExpenditureKeys,
   type BudgetThresholdResult,
   type BudgetThresholdStatus,
+  type UseBudgetExpenditureSummaryOptions,
   type UseBudgetQueryOptions,
   type UseBudgetThresholdOptions,
 } from './hooks/use-budget.js';
 export {
   useBudgetAlerts,
+  useBudgetAlertSubscriptions,
   budgetAlertKeys,
   type UseBudgetAlertsOptions,
 } from './hooks/useBudgetAlerts.js';

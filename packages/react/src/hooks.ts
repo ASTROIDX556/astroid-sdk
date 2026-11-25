@@ -133,6 +133,9 @@ export const queryKeys = {
     list: (params?: object) => ['astroid', 'budgets', 'list', params ?? {}] as const,
     detail: (id: string) => ['astroid', 'budgets', 'detail', id] as const,
     utilization: (id: string) => ['astroid', 'budgets', 'detail', id, 'utilization'] as const,
+    expenditureAll: (id: string) => ['astroid', 'budgets', 'detail', id, 'expenditure'] as const,
+    expenditure: (id: string, params?: object) =>
+      ['astroid', 'budgets', 'detail', id, 'expenditure', params ?? {}] as const,
     alerts: (budgetId: string, params?: object) =>
       ['astroid', 'budgets', budgetId, 'alerts', params ?? {}] as const,
   },
@@ -202,6 +205,7 @@ export const invalidateQueries = {
     return Promise.all([
       queryClient.invalidateQueries({ queryKey: queryKeys.budgets.detail(id) }),
       queryClient.invalidateQueries({ queryKey: queryKeys.budgets.utilization(id) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.budgets.expenditureAll(id) }),
     ]);
   },
   /** Invalidate the transaction history list. */
