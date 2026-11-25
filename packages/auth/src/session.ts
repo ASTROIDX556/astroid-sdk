@@ -377,7 +377,19 @@ export class SessionManager {
   }
 
   async restoreFromStorage(): Promise<string | undefined> {
-    if (!this.tokenStorage || this.accessToken !== undefined) return undefined;
+    if (this.storage) {
+      try {
+        const storedAccess = await this.storage.getToken(`${this.prefix}access_token`);
+        const storedRefresh = await this.storage.getToken(`${this.prefix}refresh_token`);
+        const storedApiKey = await this.storage.getToken(`${this.prefix}api_key`);
+        if (storedAccess) this.accessToken = storedAccess;
+        if (storedRefresh) this.refreshToken = storedRefresh;
+        if (storedApiKey) this.apiKey = storedApiKey;
+      } catch (err) {
+        console.warn('Failed to read tokens from storage:', err);
+      }
+    }
+    if (!this.tokenStorage || this.accessToken !== undefined) return this.accessToken;
     try {
       const token = await this.tokenStorage.getToken();
       if (!token) return undefined;
