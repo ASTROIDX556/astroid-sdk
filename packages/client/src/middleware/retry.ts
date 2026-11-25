@@ -112,6 +112,12 @@ export interface RetryMiddlewareConfig extends RetryMiddlewareOptions {
   /** Alias for maxDelayMs. */
   maxDelay?: number;
 
+  /** Alias for baseDelayMs. */
+  minTimeout?: number;
+
+  /** Alias for maxDelayMs. */
+  maxTimeout?: number;
+
   /**
    * Multiplier applied per attempt when computing exponential backoff:
    * `baseDelayMs * backoffFactor^(attempt - 1)` (then jittered).
@@ -210,8 +216,8 @@ const DEFAULT_MAX_DELAY_MS = 8_000;
  */
 export function createRetryMiddleware(options: RetryMiddlewareConfig = {}): Middleware {
   const maxRetries = options.maxRetries ?? options.retries ?? DEFAULT_MAX_RETRIES;
-  const baseDelayMs = options.baseDelayMs ?? options.baseDelay ?? DEFAULT_BASE_DELAY_MS;
-  const maxDelayMs = options.maxDelayMs ?? options.maxDelay ?? DEFAULT_MAX_DELAY_MS;
+  const baseDelayMs = options.baseDelayMs ?? options.baseDelay ?? options.minTimeout ?? DEFAULT_BASE_DELAY_MS;
+  const maxDelayMs = options.maxDelayMs ?? options.maxDelay ?? options.maxTimeout ?? DEFAULT_MAX_DELAY_MS;
   const retryableStatuses = options.retryableStatuses ?? options.retryableStatusCodes;
   const retryableStatusCodes = options.retryableStatusCodes ?? options.retryableStatuses;
 

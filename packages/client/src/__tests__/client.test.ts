@@ -185,6 +185,34 @@ describe('#382 — 503 Service Unavailable retries', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
+  it('respects Retry-After header on 429 responses', async () => {
+    vi.useFakeTimers();
+    const fetchMock = fetchQueue(
+      new Response(JSON.stringify({ error: { code: 'RATE_LIMITED', message: 'Too many requests' } }), {
+        status: 429,
+        headers: { 'content-type': 'application/json', 'retry-after': '2' },
+      }),
+      okResponse({ walletId: 'w_retry_after' }),
+    );
+    const client = new Astroid({
+      ...BASE_CONFIG,
+      fetch: fetchMock,
+      maxRetries: 1,
+      baseDelay: 10,
+      jitter: false,
+    });
+
+    const pending = client.wallets.get('w_retry_after');
+    // Advance by less than Retry-After (2s = 2000ms)
+    await vi.advanceTimersByTimeAsync(1_500);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Advance past 2000ms
+    await vi.advanceTimersByTimeAsync(600);
+    await expect(pending).resolves.toMatchObject({ walletId: 'w_retry_after' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it('does not retry client-side 4xx responses other than 429', async () => {
     const fetchMock = vi.fn(async () => errorResponse(400, 'BAD_REQUEST', 'Invalid id'));
     const client = new Astroid({
