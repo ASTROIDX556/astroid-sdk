@@ -112,6 +112,12 @@ export interface RetryMiddlewareConfig extends RetryMiddlewareOptions {
   /** Alias for maxDelayMs. */
   maxDelay?: number;
 
+  /** Alias for baseDelayMs. */
+  minTimeout?: number;
+
+  /** Alias for maxDelayMs. */
+  maxTimeout?: number;
+
   /**
    * Multiplier applied per attempt when computing exponential backoff:
    * `baseDelayMs * backoffFactor^(attempt - 1)` (then jittered).
