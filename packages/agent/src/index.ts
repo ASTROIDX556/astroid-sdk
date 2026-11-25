@@ -76,4 +76,5 @@ export {
   type ScopedAgent,
 } from './scopes.js';
 
-export type { ListAgentsOptions, AgentFilterStatus } from './types.js';
+export type { ListAgentsOptions, AgentFilterStatus, AgentQueryOptions, AgentSortOrder, AgentQuery } from './types.js';
+export { serializeAgentQuery, createAgentQueryString } from './query.js';

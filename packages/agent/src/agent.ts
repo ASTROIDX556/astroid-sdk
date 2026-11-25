@@ -27,6 +27,7 @@ import {
   assertValidCreateAgentSchema,
   assertValidUpdateAgentSchema,
 } from './schemas.js';
+import { serializeAgentQuery } from './query.js';
 
 /** Filters accepted by {@link AgentResource.list}. */
 export type AgentListParams = ListAgentsParams;
@@ -150,7 +151,7 @@ export class AgentResource extends Resource {
     options?: RequestOptionsExtras,
   ): Promise<Paginated<Agent>> {
     assertValidAgentQueryParams(params);
-    return this.listData<Agent>('/agents', toAgentListQuery(params), options);
+    return this.listData<Agent>('/agents', serializeAgentQuery(params), options);
   }
 
   /**
