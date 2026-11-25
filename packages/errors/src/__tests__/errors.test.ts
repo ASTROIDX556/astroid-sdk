@@ -39,6 +39,14 @@ import { errorClassForCode } from '../index.js';
 /* -------------------------------------------------------------------------- */
 
 describe('errorClassForStatus (issue #271 / #279)', () => {
+  it('covers status codes 400, 401, 403, 404, 429, and 500 explicitly', () => {
+    expect(errorClassForStatus(400)).toBe(ValidationError);
+    expect(errorClassForStatus(401)).toBe(AuthenticationError);
+    expect(errorClassForStatus(403)).toBe(ForbiddenError);
+    expect(errorClassForStatus(404)).toBe(NotFoundError);
+    expect(errorClassForStatus(429)).toBe(RateLimitError);
+    expect(errorClassForStatus(500)).toBe(InternalServerError);
+  });
   it('maps 400 to ValidationError', () => {
     expect(errorClassForStatus(400)).toBe(ValidationError);
   });
