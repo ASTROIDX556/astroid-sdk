@@ -36,15 +36,17 @@ export interface RawHttpResponse {
  */
 export function createErrorFromResponse(response: RawHttpResponse): AstroidError {
   const status = response.status;
-  const body = response.body;
+  const body = (typeof response.body === 'object' && response.body !== null
+    ? response.body
+    : {}) as Record<string, any>;
   const message =
-    body?.message ||
-    body?.error ||
+    body.message ||
+    body.error ||
     response.message ||
     response.statusText ||
     `HTTP Error ${status}`;
 
-  const details = typeof body === 'object' && body !== null ? body : { body };
+  const details: Record<string, unknown> = typeof response.body === 'object' && response.body !== null ? { ...(response.body as Record<string, unknown>) } : { body: response.body };
 
   if (response.headers) {
     const retryAfterHeader =
@@ -57,7 +59,7 @@ export function createErrorFromResponse(response: RawHttpResponse): AstroidError
     }
   }
 
-  const options = { status, details, code: body?.code };
+  const options: AstroidErrorOptions = { status, details, code: body.code };
 
   if (status === 400 || status === 422) {
     if (body?.code === 'POLICY_VIOLATION' || body?.policyId) {

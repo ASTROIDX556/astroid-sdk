@@ -506,6 +506,15 @@ function isNotFound(error: unknown): boolean {
  * Drop `undefined` / `null` entries so they never reach the query string, and
  * serialise event-type filters as a comma-separated list.
  */
+function toAgentListQuery(params: AgentListParams = {}): Record<string, string> {
+  const query: Record<string, string> = {};
+  if (params.status) query.status = params.status;
+  if (params.walletAddress) query.walletAddress = params.walletAddress;
+  if (params.limit) query.limit = String(params.limit);
+  if (params.page) query.page = String(params.page);
+  return query;
+}
+
 function toAgentEventQuery(
   params?: ListAgentEventsParams,
 ): Record<string, string | number | boolean> | undefined {
