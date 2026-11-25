@@ -990,6 +990,7 @@ export {
   type ParsedError,
 } from './errors.js';
 export { createErrorParserMiddleware } from './error-parser-middleware.js';
+export { createCorrelationMiddleware } from './middleware/correlation.js';
 
 // Pluggable request/response interceptors and the built-in debug logger.
 export {
