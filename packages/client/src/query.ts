@@ -1,94 +1,8 @@
 /**
- * Query parameter serialization helper for @astroid/client.
- *
- * List/search endpoints take filters, pagination cursors and boolean flags in
- * the query string. This module provides a single pure helper,
- * {@link serializeQuery}, that turns a loosely-typed params record into a
- * URL-encoded `?…` suffix:
- *
- * - `string` / `number` / `boolean` are stringified (`true` → `"true"`).
- * - `Date` instances are serialized with `toISOString()` (invalid dates omitted).
- * - Arrays are serialized per `arrayFormat` (`bracket-index` by default,
- *   `repeat` or `comma` on request); `null` / `undefined` / `''` items are dropped.
- * - Nested plain objects are flattened with bracket notation
- *   (`{ filter: { asset: 'USDC' } }` → `filter[asset]=USDC`).
- * - `null`, `undefined` and `''` values are omitted, as are empty arrays /
- *   objects and non-finite numbers (`NaN`, `±Infinity`).
- * - Everything else is encoded with `URLSearchParams`, so special characters
- *   (`&`, `=`, spaces, unicode, …) are percent-encoded correctly.
- *
- * @example
- * ```ts
- * serializeQuery({ search: 'bot 1', limit: 10, active: true });
- * // '?search=bot+1&limit=10&active=true'
- *
- * serializeQuery({ from: new Date('2026-01-01T00:00:00.000Z') });
- * // '?from=2026-01-01T00%3A00%3A00.000Z'
- *
- * serializeQuery({ tag: ['a', 'b'] }, { arrayFormat: 'repeat' });
- * // '?tag=a&tag=b'
- * ```
- *
- * @module
+ * Standardized query parameter serialization utility.
+ * @packageDocumentation
  */
 
-export type QueryParamScalar = string | number | boolean | bigint | Date;
-
-export type QueryParamValue =
-  | QueryParamScalar
-  | null
-  | undefined
-  | QueryParamValue[]
-  | { [key: string]: QueryParamValue };
-
-export type QueryParams = Record<string, QueryParamValue>;
-
-/** How array values are encoded into the query string. */
-export type QueryArrayFormat =
-  /** `?tag[0]=a&tag[1]=b` (default; preserves element order explicitly). */
-  | 'bracket-index'
-  /** `?tag=a&tag=b` (matches `@astroid/core`'s `buildQueryString`). */
-  | 'repeat'
-  /** `?tag=a,b` (matches the agent-events `eventTypes` convention). */
-  | 'comma';
-
-/** Options for {@link serializeQuery}. */
-export interface SerializeQueryOptions {
-  /**
-   * Array encoding. Default `'bracket-index'`.
-   *
-   * - `'bracket-index'`: `key[0]=a&key[1]=b`
-   * - `'repeat'`: `key=a&key=b`
-   * - `'comma'`: `key=a,b`
-   */
-  arrayFormat?: QueryArrayFormat;
-}
-
-/**
- * Serializes an object of query parameters into a URL-encoded query string.
- *
- * Pure function: takes a params record, returns `''` or a `?…` string.
- * Omits keys with `null` / `undefined` / `''` values (and empty arrays/objects).
- *
- * @param params Query parameters to serialize.
- * @param options Array encoding (defaults to indexed brackets).
- * @returns `''` when nothing is serializable, otherwise a `?`-prefixed string.
- */
-export function serializeQuery(params?: QueryParams, options?: SerializeQueryOptions): string {
-  if (!params) {
-    return '';
-  }
-
-  const searchParams = new URLSearchParams();
-  const arrayFormat = options?.arrayFormat ?? 'bracket-index';
-
-  for (const [key, value] of Object.entries(params)) {
-    appendParam(searchParams, key, value, arrayFormat);
-  }
-
-  const serialized = searchParams.toString();
-  return serialized ? `?${serialized}` : '';
-}
 
 function appendParam(
   searchParams: URLSearchParams,
@@ -189,4 +103,38 @@ function isPlainObject(value: unknown): value is Record<string, QueryParamValue>
   if (value instanceof Date) return false;
   const proto = Object.getPrototypeOf(value) as unknown;
   return proto === Object.prototype || proto === null;
+}
+export type QueryParamScalar = string | number | boolean | Date;
+export type QueryParamValue = QueryParamScalar | QueryParamScalar[] | null | undefined;
+export type QueryParams = Record<string, QueryParamValue>;
+
+export type QueryArrayFormat = 'comma' | 'repeat';
+
+export interface SerializeQueryOptions {
+  arrayFormat?: QueryArrayFormat;
+}
+
+/**
+ * Serializes a parameter record into a URL-encoded query string.
+ * Supports strings, numbers, booleans, Date objects (ISO-8601), and arrays.
+ * Omit null, undefined, and empty arrays.
+ */
+export function serializeQuery(
+  params?: QueryParams,
+  options?: SerializeQueryOptions,
+): string;
+export function serializeQuery(
+  params?: QueryParams | null,
+  options?: SerializeQueryOptions,
+): string {
+  if (!params) return '';
+  const arrayFormat = options?.arrayFormat ?? 'bracket-index';
+  const searchParams = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(params)) {
+    appendParam(searchParams, key, value, arrayFormat);
+  }
+
+  const serialized = searchParams.toString();
+  return serialized ? `?${serialized}` : '';
 }
