@@ -7,6 +7,7 @@ export {
   simulateTransaction,
   simulateTransactionFee,
   type SimulationOptions,
+  type SimulationRequest,
   type SimulationResult,
   type TransactionSimulationResult,
 } from './simulation.js';

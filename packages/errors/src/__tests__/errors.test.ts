@@ -14,6 +14,12 @@
 
 import { describe, it, expect } from 'vitest';
 import {
+  PolicyViolationError,
+  InsufficientFundsError,
+  BudgetExceededError,
+  ApprovalRequiredError,
+} from '../index.js';
+import {
   AstroidError,
   ApiError,
   AuthenticationError,
@@ -60,6 +66,13 @@ describe('errorClassForStatus (issue #271 / #279)', () => {
 
   it('maps 409 to ConflictError', () => {
     expect(errorClassForStatus(409)).toBe(ConflictError);
+  });
+
+  it('maps policy and budget error codes via errorClassForCode', () => {
+    expect(errorClassForCode('POLICY_VIOLATION')).toBe(PolicyViolationError);
+    expect(errorClassForCode('BUDGET_EXCEEDED')).toBe(BudgetExceededError);
+    expect(errorClassForCode('INSUFFICIENT_FUNDS')).toBe(InsufficientFundsError);
+    expect(errorClassForCode('APPROVAL_REQUIRED')).toBe(ApprovalRequiredError);
   });
 
   it('maps 422 to ValidationError', () => {
