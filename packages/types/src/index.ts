@@ -13,7 +13,7 @@ export * from './dto.js';
  * @see {@link PolicySimulationResult}
  * @see {@link PolicyReasonCode}
  */
-export * from './policy.js';
+export type { PolicyType, CreatePolicyInput, UpdatePolicyInput, SimulatePolicyInput } from './policy.js';
 export * from './analytics.js';
 export * from './agent-events.js';
 export * from './webhooks.js';

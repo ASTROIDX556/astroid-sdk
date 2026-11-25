@@ -301,6 +301,18 @@ export interface ListBudgetAlertsParams extends PaginationParams {
   channel?: BudgetAlertChannel;
 }
 
+/** DTO for setting budget thresholds. */
+export interface SetBudgetThresholdsInput {
+  thresholds: number[];
+}
+
+/** Parameters for querying budget alerts. */
+export interface GetBudgetAlertsParams {
+  budgetId?: string;
+  status?: BudgetAlertStatus;
+  channel?: BudgetAlertChannel;
+}
+
 /** Alias for {@link BudgetAlert}. */
 export type BudgetThresholdAlert = BudgetAlert;
 
