@@ -1,4 +1,5 @@
 import { describe, it, expect, expectTypeOf } from 'vitest';
+import { MAX_PAGINATION_LIMIT, MIN_PAGINATION_LIMIT } from './index.js';
 import type {
   CursorPaginated,
   CursorPaginationParams,
@@ -15,6 +16,11 @@ interface SampleItem {
 }
 
 describe('@astroid/types — pagination', () => {
+  it('exports the shared Astroid API page-size bounds', () => {
+    expect(MIN_PAGINATION_LIMIT).toBe(1);
+    expect(MAX_PAGINATION_LIMIT).toBe(200);
+  });
+
   it('PaginationParams exposes only optional request parameters', () => {
     expectTypeOf<PaginationParams>().toEqualTypeOf<{
       page?: number;

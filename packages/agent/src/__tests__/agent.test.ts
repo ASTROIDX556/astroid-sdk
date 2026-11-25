@@ -231,6 +231,70 @@ describe('AgentResource CRUD', () => {
       expect(result.meta?.total).toBe(1);
       expect(result.meta?.page).toBe(1);
     });
+
+    it('serializes cursor, limit and order as query parameters', async () => {
+      http.get.mockResolvedValue(httpOk([]));
+
+      await resource.listAgents({ cursor: 'cur_abc', limit: 25, order: 'asc' });
+
+      expect(http.get).toHaveBeenCalledWith('/agents', {
+        query: { cursor: 'cur_abc', limit: 25, order: 'asc' },
+      });
+    });
+
+    it('listAgents() accepts limit and order without any filters', async () => {
+      http.get.mockResolvedValue(httpOk([]));
+
+      await resource.listAgents({ limit: 10, order: 'desc' });
+
+      expect(http.get).toHaveBeenCalledWith('/agents', {
+        query: { limit: 10, order: 'desc' },
+      });
+    });
+
+    it('drops invalid order values instead of sending them to the API', async () => {
+      http.get.mockResolvedValue(httpOk([]));
+
+      await resource.list({ order: 'sideways' as never });
+      expect(http.get).toHaveBeenLastCalledWith('/agents', { query: {} });
+    });
+
+    it('clamps out-of-bound and fractional limits into [1, 200]', async () => {
+      http.get.mockResolvedValue(httpOk([]));
+
+      await resource.list({ limit: 0 });
+      expect(http.get).toHaveBeenLastCalledWith('/agents', { query: { limit: 1 } });
+
+      await resource.list({ limit: 500 });
+      expect(http.get).toHaveBeenLastCalledWith('/agents', { query: { limit: 200 } });
+
+      await resource.list({ limit: 10.7 });
+      expect(http.get).toHaveBeenLastCalledWith('/agents', { query: { limit: 10 } });
+
+      await resource.list({ limit: Number.POSITIVE_INFINITY });
+      expect(http.get).toHaveBeenLastCalledWith('/agents', { query: {} });
+    });
+
+    it('listAgents() resolves an empty result set to an empty page', async () => {
+      http.get.mockResolvedValue(httpOk([]));
+
+      const result = await resource.listAgents({ cursor: 'cur_none' });
+
+      expect(result.data).toEqual([]);
+      expect(result.meta.total).toBe(0);
+    });
+
+    it('iterateByCursor stops when the API returns an invalid (empty) cursor', async () => {
+      http.get.mockResolvedValue(httpOk([]));
+
+      const items: Agent[] = [];
+      for await (const agent of resource.iterateByCursor({ cursor: 'cur_1' })) {
+        items.push(agent);
+      }
+
+      expect(items).toEqual([]);
+      expect(http.get).toHaveBeenCalledTimes(1);
+    });
   });
 
   // -------------------------------------------------------------------------

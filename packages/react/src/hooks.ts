@@ -27,6 +27,7 @@ export {
   type UpdateAgentStatusVariables,
   type UpdateAgentMetadataVariables,
 } from './hooks/useAgents.js';
+export { useAgentMutations, type UseAgentMutationsResult } from './hooks/useAgentMutations.js';
 export {
   snapshotAgentCache,
   rollbackAgentCache,
