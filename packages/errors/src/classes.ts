@@ -45,7 +45,7 @@ export class PolicyViolationError extends AstroidError {
   readonly rule?: string;
 
   constructor(message: string, options?: AstroidErrorOptions) {
-    super(message, options);
+    super(message, options ?? {});
     this.policyId = (this.details?.policyId as string) ?? undefined;
     this.rule = (this.details?.rule as string) ?? undefined;
   }
