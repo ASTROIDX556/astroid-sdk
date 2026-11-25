@@ -45,7 +45,7 @@ import {
 } from './pagination.js';
 import { buildFilterQuery, buildListQuery } from './filters.js';
 import type { CommonListFilters } from './filters.js';
-// removed duplicate import of createCorrelationMiddleware
+import { createCorrelationMiddleware, correlationMiddleware, CORRELATION_ID_HEADER, REQUEST_ID_HEADER, X_CORRELATION_ID_HEADER, type CorrelationTracingConfig } from './middleware/correlation.js';
 import { createRateLimiterMiddleware } from './middleware/rate-limiter.js';
 import { createLoggingMiddleware, type LoggingMiddlewareOptions } from './middleware/logging.js';
 import { createErrorParserMiddleware } from './error-parser-middleware.js';
