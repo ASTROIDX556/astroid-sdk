@@ -16,6 +16,11 @@ export {
   extractApiError,
   type ErrorEnvelopeInput,
 } from './mapper.js';
+
+export {
+  createErrorFromResponse,
+  type RawHttpResponse,
+} from './factory.js';
 import { extractApiError, mapStatusToError } from './mapper.js';
 
 export {
