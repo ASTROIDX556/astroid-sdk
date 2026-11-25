@@ -192,10 +192,19 @@ export {
 } from './crypto.js';
 
 /** Filters accepted by {@link WalletResource.list}. */
+/**
+ * Filters and pagination parameters accepted by {@link WalletResource.list}.
+ *
+ * @public
+ */
 export interface WalletListParams extends PaginationParams {
+  /** Filter wallets by their lifecycle status. */
   status?: WalletStatus;
+  /** Filter wallets by their assigned wallet type. */
   walletType?: string;
+  /** Filter wallets by the ID of the bound agent. */
   agentId?: string;
+  /** Filter wallets by Stellar network identifier. */
   network?: string;
   /** Filter by the wallet's Stellar public address (G…). */
   stellarAddress?: string;
@@ -209,8 +218,27 @@ export interface WalletListParams extends PaginationParams {
  * public {@link Wallet}, and imports accept a secret that the backend stores
  * encrypted and never echoes back.
  */
+/**
+ * Client resource for managing agent wallets on Stellar.
+ *
+ * Exposes methods to create, import, fund, list, retrieve, update status,
+ * inspect balances, and transfer funds from wallets.
+ *
+ * @public
+ */
 export class WalletResource extends Resource {
-  /** Provision a brand-new managed wallet (the backend generates the keypair). */
+  /**
+   * Provision a brand-new managed wallet where the backend generates the keypair.
+   * 
+   * @param input Creation parameters including network, agent ID, and wallet type.
+   * @param options Optional request options extras.
+   * @returns The created wallet object.
+   * 
+   * @example
+   * ```ts
+   * const wallet = await astroid.wallets.create({ network: 'PUBLIC', walletType: 'AGENT' });
+   * ```
+   */
   async create(input: CreateWalletInput, options?: RequestOptionsExtras): Promise<Wallet> {
     const res = await this.client.post<Wallet>('/wallets', input, options);
     return res.data;
@@ -219,13 +247,33 @@ export class WalletResource extends Resource {
   /**
    * Import an existing Stellar account. The optional `secretKey` is transmitted
    * once for encrypted custody and is never logged or returned.
+   *
+   * @param input Import parameters containing secret key and metadata.
+   * @param options Optional request options extras.
+   * @returns The imported wallet object.
+   *
+   * @example
+   * ```ts
+   * const wallet = await astroid.wallets.import({ secretKey: 'S...' });
+   * ```
    */
   async import(input: ImportWalletInput, options?: RequestOptionsExtras): Promise<Wallet> {
     const res = await this.client.post<Wallet>('/wallets/import', input, options);
     return res.data;
   }
 
-  /** Fetch a single wallet by id. */
+  /**
+   * Fetch a single wallet by its unique identifier.
+   *
+   * @param walletId Unique wallet identifier.
+   * @param options Optional request options extras.
+   * @returns The requested wallet object.
+   *
+   * @example
+   * ```ts
+   * const wallet = await astroid.wallets.get('wlt_123');
+   * ```
+   */
   async get(walletId: string, options?: RequestOptionsExtras): Promise<Wallet> {
     return this.getData<Wallet>(`/wallets/${encodeURIComponent(walletId)}`, undefined, options);
   }
@@ -250,6 +298,15 @@ export class WalletResource extends Resource {
    *
    * Uses the list endpoint's `stellarAddress` filter and returns the first
    * match, or `undefined` when no wallet is bound to the address.
+   *
+   * @param stellarAddress Stellar public address string.
+   * @param options Optional request options extras.
+   * @returns The matching wallet object or undefined.
+   *
+   * @example
+   * ```ts
+   * const wallet = await astroid.wallets.getByAddress('G123...');
+   * ```
    */
   async getByAddress(
     stellarAddress: string,
@@ -259,7 +316,18 @@ export class WalletResource extends Resource {
     return res.data[0];
   }
 
-  /** List wallets, with optional status/type/agent filters and pagination. */
+  /**
+   * List wallets with optional status/type/agent filters and pagination.
+   *
+   * @param params Filtering and pagination parameters.
+   * @param options Optional request options extras.
+   * @returns Paginated list of wallets.
+   *
+   * @example
+   * ```ts
+   * const page = await astroid.wallets.list({ limit: 10 });
+   * ```
+   */
   async list(
     params: WalletListParams = {},
     options?: RequestOptionsExtras,

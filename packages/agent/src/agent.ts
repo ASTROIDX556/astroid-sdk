@@ -15,7 +15,6 @@ import type {
   PaginatedResponse,
   UpdateAgentParams,
 } from '@astroid/types';
-import { MAX_PAGINATION_LIMIT, MIN_PAGINATION_LIMIT } from '@astroid/types';
 import {
   assertValidAgentId,
   assertValidBatchConcurrency,
@@ -28,6 +27,7 @@ import {
   assertValidCreateAgentSchema,
   assertValidUpdateAgentSchema,
 } from './schemas.js';
+import { serializeAgentQuery } from './query.js';
 
 /** Filters accepted by {@link AgentResource.list}. */
 export type AgentListParams = ListAgentsParams;
@@ -151,7 +151,7 @@ export class AgentResource extends Resource {
     options?: RequestOptionsExtras,
   ): Promise<Paginated<Agent>> {
     assertValidAgentQueryParams(params);
-    return this.listData<Agent>('/agents', toAgentListQuery(params), options);
+    return this.listData<Agent>('/agents', serializeAgentQuery(params), options);
   }
 
   /**
@@ -522,47 +522,6 @@ function toAgentEventQuery(
   return query;
 }
 
-/**
- * Clamp a caller-supplied list `limit` into the Astroid API bounds
- * `[MIN_PAGINATION_LIMIT, MAX_PAGINATION_LIMIT]` (shared with
- * `@astroid/client` via `@astroid/types`).
- *
- * - Non-numeric, non-finite values yield `undefined` so the parameter is
- *   omitted from the query instead of sending garbage to the API.
- * - Fractional values are floored; values below the minimum clamp up to
- *   {@link MIN_PAGINATION_LIMIT} and values above the maximum clamp down to
- *   {@link MAX_PAGINATION_LIMIT}.
- */
-function normalizeListLimit(limit: ListAgentsParams['limit']): number | undefined {
-  if (typeof limit !== 'number' || !Number.isFinite(limit)) return undefined;
-  const floored = Math.floor(limit);
-  if (floored < MIN_PAGINATION_LIMIT) return MIN_PAGINATION_LIMIT;
-  if (floored > MAX_PAGINATION_LIMIT) return MAX_PAGINATION_LIMIT;
-  return floored;
-}
-
-/**
- * Keep only the `'asc'` / `'desc'` sort directions, so an invalid `order`
- * value is dropped from the query string instead of reaching the API.
- */
-function normalizeListOrder(order: ListAgentsParams['order']): ListAgentsParams['order'] {
-  return order === 'asc' || order === 'desc' ? order : undefined;
-}
-
-function toAgentListQuery(params: AgentListOptions = {}): Record<string, string | number> {
-  const query: Record<string, string | number> = {};
-  if (params.page !== undefined) query.page = params.page;
-  const limit = normalizeListLimit(params.limit);
-  if (limit !== undefined) query.limit = limit;
-  if (params.cursor !== undefined) query.cursor = params.cursor;
-  const order = normalizeListOrder(params.order);
-  if (order !== undefined) query.order = order;
-  if (params.status !== undefined) query.status = params.status;
-  if (params.role !== undefined) query.role = params.role;
-  if (params.tag !== undefined) query.tag = params.tag;
-  if (params.search !== undefined) query.search = params.search;
-  return query;
-}
 
 /** Alias of {@link AgentResource} matching the `*sResource` client naming. */
 export const AgentsResource = AgentResource;
