@@ -45,7 +45,7 @@ import {
 } from './pagination.js';
 import { buildFilterQuery, buildListQuery } from './filters.js';
 import type { CommonListFilters } from './filters.js';
-import { createCorrelationMiddleware } from './middleware/correlation.js';
+// removed duplicate import of createCorrelationMiddleware
 import { createRateLimiterMiddleware } from './middleware/rate-limiter.js';
 import { createLoggingMiddleware, type LoggingMiddlewareOptions } from './middleware/logging.js';
 import { createErrorParserMiddleware } from './error-parser-middleware.js';
@@ -990,7 +990,7 @@ export {
   type ParsedError,
 } from './errors.js';
 export { createErrorParserMiddleware } from './error-parser-middleware.js';
-export { createCorrelationMiddleware } from './middleware/correlation.js';
+// removed duplicate export of createCorrelationMiddleware
 
 // Pluggable request/response interceptors and the built-in debug logger.
 export {
