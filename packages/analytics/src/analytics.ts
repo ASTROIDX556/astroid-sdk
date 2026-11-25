@@ -17,6 +17,10 @@
 import type { HttpClient, RequestOptionsExtras } from '@astroid/core';
 import type {
   AgentAnalytics,
+  AgentMetricsParams,
+  AgentMetricsReport,
+  AnalyticsOverview,
+  GlobalAnalyticsParams,
   AnalyticsMetricsResponse,
   MetricsQueryParams,
   Timeframe,
@@ -327,6 +331,52 @@ export async function getAgentExecutionCounts(
  * });
  * ```
  */
+export async function getAgentMetrics(
+  client: HttpClient,
+  params: AgentMetricsParams = {},
+  options?: RequestOptionsExtras,
+): Promise<AgentMetricsReport> {
+  if (params.startDate && params.endDate) {
+    const start = new Date(params.startDate);
+    const end = new Date(params.endDate);
+    if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && start > end) {
+      throw new Error('startDate must not be after endDate');
+    }
+  }
+  const res = await client.get<AgentMetricsReport>('/analytics/agents/metrics', {
+    ...(options ?? {}),
+    query: { ...params },
+  });
+  return res.data;
+}
+
+export async function getGlobalMetrics(
+  client: HttpClient,
+  params: GlobalAnalyticsParams = {},
+  options?: RequestOptionsExtras,
+): Promise<AnalyticsOverview> {
+  if (params.startDate && params.endDate) {
+    const start = new Date(params.startDate);
+    const end = new Date(params.endDate);
+    if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && start > end) {
+      throw new Error('startDate must not be after endDate');
+    }
+  }
+  const res = await client.get<AnalyticsOverview>('/analytics/overview', {
+    ...(options ?? {}),
+    query: { ...params },
+  });
+  return res.data;
+}
+
+export async function getGlobalAnalytics(
+  client: HttpClient,
+  params: GlobalAnalyticsParams = {},
+  options?: RequestOptionsExtras,
+): Promise<AnalyticsOverview> {
+  return getGlobalMetrics(client, params, options);
+}
+
 export async function getMetricsInRange(
   client: HttpClient,
   params: MetricsQueryParams = {},
