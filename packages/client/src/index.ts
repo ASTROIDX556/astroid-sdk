@@ -45,7 +45,8 @@ import {
 } from './pagination.js';
 import { buildFilterQuery, buildListQuery } from './filters.js';
 import type { CommonListFilters } from './filters.js';
-import { createCorrelationMiddleware } from './middleware/correlation.js';
+import { createCorrelationMiddleware, type CorrelationTracingConfig } from './middleware/correlation.js';
+export { correlationMiddleware, CORRELATION_ID_HEADER, REQUEST_ID_HEADER, X_CORRELATION_ID_HEADER, type CorrelationTracingConfig } from './middleware/correlation.js';
 import { createRateLimiterMiddleware } from './middleware/rate-limiter.js';
 import { createLoggingMiddleware, type LoggingMiddlewareOptions } from './middleware/logging.js';
 import { createErrorParserMiddleware } from './error-parser-middleware.js';
@@ -990,6 +991,7 @@ export {
   type ParsedError,
 } from './errors.js';
 export { createErrorParserMiddleware } from './error-parser-middleware.js';
+// removed duplicate export of createCorrelationMiddleware
 
 // Pluggable request/response interceptors and the built-in debug logger.
 export {
