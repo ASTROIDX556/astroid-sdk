@@ -26,7 +26,7 @@ import { AstroidError } from './base.js';
 export interface RawHttpResponse {
   status: number;
   statusText?: string;
-  body?: any;
+  body?: unknown;
   headers?: Record<string, string | string[] | undefined>;
   message?: string;
 }
