@@ -445,6 +445,38 @@ describe('BudgetClient', () => {
     await client.deleteThresholdAlert('bud_1', 'alt_1');
     expect(http.delete).toHaveBeenCalledWith('/v1/budgets/bud_1/alerts/alt_1');
   });
+
+  it('setBudgetThresholds() configures budget alert thresholds and validates ranges', async () => {
+    const mockAlerts = [{ id: 'alt_1', thresholdPercent: 80 }];
+    http.post.mockResolvedValue(mockAlerts);
+
+    const result = await client.setBudgetThresholds('bud_1', { thresholds: [50, 80] });
+    expect(http.post).toHaveBeenCalledWith('/v1/budgets/bud_1/thresholds', { thresholds: [50, 80] });
+    expect(result).toBe(mockAlerts);
+
+    await expect(
+      client.setBudgetThresholds('bud_1', { thresholds: [-10, 80] }),
+    ).rejects.toBeInstanceOf(ValidationError);
+
+    await expect(
+      client.setBudgetThresholds('bud_1', { thresholds: [80, 150] }),
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it('getBudgetAlerts() fetches budget alerts with optional filters and handles duplicate subscriptions', async () => {
+    const mockAlerts = [
+      { id: 'alt_1', budgetId: 'bud_1', thresholdPercent: 80, channel: 'WEBHOOK', target: 'https://example.com' },
+      { id: 'alt_2', budgetId: 'bud_1', thresholdPercent: 80, channel: 'WEBHOOK', target: 'https://example.com' },
+    ];
+    http.get.mockResolvedValue(mockAlerts);
+
+    const alerts = await client.getBudgetAlerts('bud_1', { status: 'ACTIVE' });
+    expect(http.get).toHaveBeenCalledWith('/v1/budgets/bud_1/alerts', { query: { status: 'ACTIVE', budgetId: 'bud_1' } });
+    expect(alerts.length).toBe(2);
+
+    const uniqueThresholds = new Set(alerts.map((a: { thresholdPercent: number }) => a.thresholdPercent));
+    expect(uniqueThresholds.size).toBe(1);
+  });
 });
 
 /* -------------------------------------------------------------------------- */

@@ -783,6 +783,40 @@ export class BudgetClient {
   }
 
   /**
+   * Configure budget alert thresholds and validate percentage ranges.
+   *
+   * @param budgetId The budget id.
+   * @param input    The thresholds input containing an array of percentage numbers.
+   */
+  async setBudgetThresholds(budgetId: string, input: { thresholds: number[] }): Promise<BudgetAlert[]> {
+    if (!input || !Array.isArray(input.thresholds)) {
+      throw new ValidationError('thresholds must be an array of numbers.', {
+        code: 'INVALID_THRESHOLD',
+      });
+    }
+    for (const t of input.thresholds) {
+      if (typeof t !== 'number' || t < 0 || t > 100) {
+        throw new ValidationError('Threshold percentages must be between 0 and 100.', {
+          code: 'INVALID_THRESHOLD',
+          details: { threshold: t },
+        });
+      }
+    }
+    return this.http.post<BudgetAlert[]>(`${BASE_PATH}/${encodeURIComponent(budgetId)}/thresholds`, input);
+  }
+
+  /**
+   * Fetch budget alerts with optional filters.
+   *
+   * @param budgetId The budget id.
+   * @param params   Optional query filters for alerts.
+   */
+  async getBudgetAlerts(budgetId: string, params?: ListBudgetAlertsParams): Promise<BudgetAlert[]> {
+    const query = toBudgetQuery({ ...params, budgetId });
+    return this.http.get<BudgetAlert[]>(`${BASE_PATH}/${encodeURIComponent(budgetId)}/alerts`, { query });
+  }
+
+  /**
    * Subscribe to budget limit utilization alert milestones (issue #443).
    *
    * Registers a threshold alert (e.g. at 80% or 100% of the budget) delivering
