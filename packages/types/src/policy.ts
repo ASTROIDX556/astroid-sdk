@@ -7,6 +7,7 @@
  */
 
 import type { PolicyType } from './enums.js';
+export type { PolicyType };
 
 /* -------------------------------------------------------------------------- */
 /* Policy conditions and decision reasons                                      */
@@ -309,6 +310,23 @@ export interface PolicySimulationResult {
   /** Human-readable summary of the decision. */
   explanation: string;
 }
+
+export interface CreatePolicyInput {
+  name: string;
+  description?: string;
+  type: PolicyType;
+  rules?: PolicyRule[];
+  enabled?: boolean;
+}
+
+export interface UpdatePolicyInput {
+  name?: string;
+  description?: string;
+  rules?: PolicyRule[];
+  enabled?: boolean;
+}
+
+export type SimulatePolicyInput = PolicySimulationInput;
 
 export interface SimulatePolicyRequest {
   walletId?: string;
