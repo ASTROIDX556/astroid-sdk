@@ -52,3 +52,52 @@ export {
   parseAgentEntity,
   normalizeCreateAgentDto,
 } from './agent.js';
+
+export type AgentId = string & { readonly __brand: 'AgentId' };
+export type WalletId = string & { readonly __brand: 'WalletId' };
+export type PolicyId = string & { readonly __brand: 'PolicyId' };
+export type BudgetId = string & { readonly __brand: 'BudgetId' };
+
+export function isAgentId(value: unknown): value is AgentId {
+  return typeof value === 'string' && /^agt_[a-zA-Z0-9]{12,}$/.test(value);
+}
+
+export function isWalletId(value: unknown): value is WalletId {
+  return typeof value === 'string' && /^wal_[a-zA-Z0-9]{12,}$/.test(value);
+}
+
+export function isPolicyId(value: unknown): value is PolicyId {
+  return typeof value === 'string' && /^pol_[a-zA-Z0-9]{12,}$/.test(value);
+}
+
+export function isBudgetId(value: unknown): value is BudgetId {
+  return typeof value === 'string' && /^bud_[a-zA-Z0-9]{12,}$/.test(value);
+}
+
+export function formatAgentId(id: string): AgentId {
+  if (!isAgentId(id)) {
+    throw new Error(`Invalid AgentId format: ${id}`);
+  }
+  return id;
+}
+
+export function formatWalletId(id: string): WalletId {
+  if (!isWalletId(id)) {
+    throw new Error(`Invalid WalletId format: ${id}`);
+  }
+  return id;
+}
+
+export function formatPolicyId(id: string): PolicyId {
+  if (!isPolicyId(id)) {
+    throw new Error(`Invalid PolicyId format: ${id}`);
+  }
+  return id;
+}
+
+export function formatBudgetId(id: string): BudgetId {
+  if (!isBudgetId(id)) {
+    throw new Error(`Invalid BudgetId format: ${id}`);
+  }
+  return id;
+}
