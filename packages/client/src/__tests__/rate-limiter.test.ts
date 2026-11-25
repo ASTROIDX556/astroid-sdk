@@ -156,6 +156,26 @@ describe('rate-limiter middleware — queue management', () => {
   });
 });
 
+describe('rate-limiter middleware — Retry-After header attachment and propagation', () => {
+  it('attaches Retry-After header values to the resulting RateLimitError instance', async () => {
+    const fetchMock = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({ error: { message: 'Rate limited', code: 'RATE_LIMITED' } }),
+        { status: 429, headers: { 'content-type': 'application/json', 'retry-after': '45' } },
+      );
+    });
+
+    const client = new Astroid({
+      ...BASE,
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+
+    const err = await client.wallets.get('w_retry').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(RateLimitError);
+    expect((err as RateLimitError).retryAfter).toBe(45);
+  });
+});
+
 describe('rate-limiter middleware — Retry-After propagation', () => {
   it('honours Retry-After on 429 and backs off subsequent requests', async () => {
     let callCount = 0;
