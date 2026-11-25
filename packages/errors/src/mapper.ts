@@ -66,6 +66,11 @@ import {
  * errorClassForStatus(418); // → AstroidError (no more specific class applies)
  * ```
  */
+/**
+ * Maps an HTTP status code to its corresponding AstroidError class.
+ * @param status - The HTTP status code (e.g. 400, 401, 403, 404, 429, 500).
+ * @returns The specific AstroidError subclass or AstroidError base class.
+ */
 export function errorClassForStatus(status: number): typeof AstroidError {
   if (status === 401) return AuthenticationError;
   if (status === 403) return ForbiddenError;
@@ -81,6 +86,11 @@ export function errorClassForStatus(status: number): typeof AstroidError {
  * Infer a machine-readable error code from an HTTP status when the API did not
  * supply one (e.g. a bare 502 from a proxy). Always returns a valid
  * {@link ApiErrorCode}-style string so errors remain consistently typed.
+ */
+/**
+ * Converts an HTTP status code into a machine-readable error code string.
+ * @param status - The HTTP status code.
+ * @returns The canonical error code string.
  */
 export function statusCodeToCode(status: number): string {
   if (status === 401) return ApiErrorCode.AUTHENTICATION_ERROR;
@@ -117,6 +127,11 @@ export interface ErrorEnvelopeInput {
  * Understands both the standard envelope (`{ error: { code, message } }`) and
  * a flat top-level shape (`{ code, message }`). Returns `undefined` when no
  * usable envelope is present.
+ */
+/**
+ * Extracts an API error DTO from an arbitrary response body safely, handling malformed JSON.
+ * @param body - The raw response body.
+ * @returns The parsed ApiErrorDto or undefined.
  */
 export function extractApiError(body: unknown): ApiErrorDto | undefined {
   if (typeof body !== 'object' || body === null) return undefined;
