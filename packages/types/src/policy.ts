@@ -8,7 +8,7 @@
 
 import type { PolicyType } from './enums.js';
 export type { PolicyType };
-export type { SimulatePolicyInput, CreatePolicyInput, UpdatePolicyInput } from './dto.js';
+// SimulatePolicyInput, CreatePolicyInput, and UpdatePolicyInput are exported from dto.ts
 
 /* -------------------------------------------------------------------------- */
 /* Policy conditions and decision reasons                                      */
