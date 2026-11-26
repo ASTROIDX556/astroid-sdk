@@ -111,7 +111,7 @@ export const X_CORRELATION_ID_HEADER = 'x-correlation-id';
  * Header names accepted as caller-supplied tracing headers (lowercase, as they
  * appear in `PreparedRequest.headers`).
  */
-const TRACING_HEADER_NAMES = [
+export const TRACING_HEADER_NAMES = [
   CORRELATION_ID_HEADER,
   X_CORRELATION_ID_HEADER,
   REQUEST_ID_HEADER,
