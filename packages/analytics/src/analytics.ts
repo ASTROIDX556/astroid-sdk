@@ -17,12 +17,16 @@
 import type { HttpClient, RequestOptionsExtras } from '@astroid/core';
 import type {
   AgentAnalytics,
+  AgentMetricsParams,
+  AgentMetricsReport,
+  AnalyticsOverview,
+  GlobalAnalyticsParams,
   AnalyticsMetricsResponse,
-  MetricsQueryParams,
   Timeframe,
   TimeRangeQueryParams,
   VolumeSummary,
 } from '@astroid/types';
+import type { AnalyticsMetricsQuery } from './types.js';
 
 /* -------------------------------------------------------------------------- */
 /* Public types                                                                */
@@ -187,13 +191,18 @@ export function buildAnalyticsPath(
 /* -------------------------------------------------------------------------- */
 
 /**
- * Serialise a {@link TimeRangeQueryParams} DTO into a `URLSearchParams`.
+ * Serialise a {@link TimeRangeQueryParams} (or {@link AnalyticsMetricsQuery})
+ * DTO into a `URLSearchParams`.
  *
- * Values are normalised and validated before serialisation: `startTime` and
- * `endTime` are converted to ISO-8601 UTC (accepting `Date` instances too),
- * unparseable dates and `undefined` fields are omitted, and `interval` is
- * emitted verbatim so a bad input never produces `startTime=Invalid%20Date`
- * on the wire.
+ * Values are normalised and validated before serialisation: `startDate` /
+ * `endDate` (the issue #563 aliases) and `startTime` / `endTime` are converted
+ * to ISO-8601 UTC (accepting `Date` instances too), unparseable dates and
+ * `undefined` fields are omitted, and `interval` is emitted verbatim so a bad
+ * input never produces `startTime=Invalid%20Date` on the wire.
+ *
+ * When both spellings are supplied, `startDate`/`endDate` take precedence and
+ * are serialised under those parameter names; otherwise the legacy
+ * `startTime`/`endTime` names are preserved for backwards compatibility.
  *
  * @example
  * ```ts
@@ -203,15 +212,28 @@ export function buildAnalyticsPath(
  *   interval: 'hour',
  * }).toString();
  * // "startTime=2026-01-01T00%3A00%3A00.000Z&endTime=2026-01-02T00%3A00%3A00.000Z&interval=hour"
+ *
+ * buildTimeRangeQuery({
+ *   startDate: new Date('2026-01-01T00:00:00.000Z'),
+ *   endDate: '2026-02-01T00:00:00.000Z',
+ *   interval: 'week',
+ * }).toString();
+ * // "startDate=2026-01-01T00%3A00%3A00.000Z&endDate=2026-02-01T00%3A00%3A00.000Z&interval=week"
  * ```
  */
 export function buildTimeRangeQuery(params: TimeRangeQueryParams): URLSearchParams {
   const searchParams = new URLSearchParams();
 
+  const range = params as TimeRangeQueryParams & Partial<AnalyticsMetricsQuery>;
+  const startDate = toIso8601(range.startDate);
+  const endDate = toIso8601(range.endDate);
   const startTime = toIso8601(params.startTime as string | Date | undefined);
   const endTime = toIso8601(params.endTime as string | Date | undefined);
-  if (startTime !== undefined) searchParams.set('startTime', startTime);
-  if (endTime !== undefined) searchParams.set('endTime', endTime);
+
+  if (startDate !== undefined) searchParams.set('startDate', startDate);
+  else if (startTime !== undefined) searchParams.set('startTime', startTime);
+  if (endDate !== undefined) searchParams.set('endDate', endDate);
+  else if (endTime !== undefined) searchParams.set('endTime', endTime);
   if (params.interval !== undefined) searchParams.set('interval', params.interval);
   if (params.asset !== undefined) searchParams.set('asset', params.asset);
   if (params.walletId !== undefined) searchParams.set('walletId', params.walletId);
@@ -229,7 +251,7 @@ export function buildTimeRangeQuery(params: TimeRangeQueryParams): URLSearchPara
  * @returns A path string such as `/analytics/metrics?startTime=…&interval=…`.
  */
 export function buildTimeRangePath(
-  params: MetricsQueryParams = {},
+  params: AnalyticsMetricsQuery = {},
   basePath = '/analytics/metrics',
 ): string {
   const searchParams = buildTimeRangeQuery(params);
@@ -327,15 +349,58 @@ export async function getAgentExecutionCounts(
  * });
  * ```
  */
+export async function getAgentMetrics(
+  client: HttpClient,
+  params: AgentMetricsParams = {},
+  options?: RequestOptionsExtras,
+): Promise<AgentMetricsReport> {
+  if (params.startDate && params.endDate) {
+    const start = new Date(params.startDate);
+    const end = new Date(params.endDate);
+    if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && start > end) {
+      throw new Error('startDate must not be after endDate');
+    }
+  }
+  const res = await client.get<AgentMetricsReport>('/analytics/agents/metrics', {
+    ...(options ?? {}),
+    query: { ...params },
+  });
+  return res.data;
+}
+
+export async function getGlobalMetrics(
+  client: HttpClient,
+  params: GlobalAnalyticsParams = {},
+  options?: RequestOptionsExtras,
+): Promise<AnalyticsOverview> {
+  if (params.startDate && params.endDate) {
+    const start = new Date(params.startDate);
+    const end = new Date(params.endDate);
+    if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && start > end) {
+      throw new Error('startDate must not be after endDate');
+    }
+  }
+  const res = await client.get<AnalyticsOverview>('/analytics/overview', {
+    ...(options ?? {}),
+    query: { ...params },
+  });
+  return res.data;
+}
+
+export async function getGlobalAnalytics(
+  client: HttpClient,
+  params: GlobalAnalyticsParams = {},
+  options?: RequestOptionsExtras,
+): Promise<AnalyticsOverview> {
+  return getGlobalMetrics(client, params, options);
+}
+
 export async function getMetricsInRange(
   client: HttpClient,
-  params: MetricsQueryParams = {},
+  params: AnalyticsMetricsQuery = {},
   options?: RequestOptionsExtras,
 ): Promise<AnalyticsMetricsResponse> {
-  const res = await client.get<AnalyticsMetricsResponse>(
-    buildTimeRangePath(params),
-    options,
-  );
+  const res = await client.get<AnalyticsMetricsResponse>(buildTimeRangePath(params), options);
   return res.data;
 }
 

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { HttpClient } from '@astroid/core';
 import type { AgentMetricsReport, AnalyticsOverview } from '@astroid/types';
-import { AnalyticsResource } from '../index.js';
+import { getAgentMetrics, getGlobalAnalytics } from '../index.js';
 
 const AGENT_METRICS: AgentMetricsReport = {
   interval: 'day',
@@ -21,13 +21,12 @@ function createClient() {
   return { client: { get } as unknown as HttpClient, get };
 }
 
-describe('AnalyticsResource metrics', () => {
-  it('fetches per-agent metrics with the requested time range and resolution', async () => {
+describe('Metrics aggregation query methods', () => {
+  it('fetches per-agent metrics via standalone function', async () => {
     const { client, get } = createClient();
     get.mockResolvedValue({ data: AGENT_METRICS });
-    const analytics = new AnalyticsResource(client);
 
-    const result = await analytics.getAgentMetrics({
+    const result = await getAgentMetrics(client, {
       startDate: '2026-01-01T00:00:00.000Z',
       endDate: '2026-02-01T00:00:00.000Z',
       resolution: 'day',
@@ -43,12 +42,11 @@ describe('AnalyticsResource metrics', () => {
     expect(result).toEqual(AGENT_METRICS);
   });
 
-  it('fetches global analytics for the requested time range and resolution', async () => {
+  it('fetches global analytics via standalone function', async () => {
     const { client, get } = createClient();
     get.mockResolvedValue({ data: GLOBAL_ANALYTICS });
-    const analytics = new AnalyticsResource(client);
 
-    const result = await analytics.getGlobalAnalytics({
+    const result = await getGlobalAnalytics(client, {
       startDate: '2026-01-01T00:00:00.000Z',
       endDate: '2026-02-01T00:00:00.000Z',
       resolution: 'day',

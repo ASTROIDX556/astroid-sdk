@@ -28,6 +28,9 @@ export type {
   EventListener,
   Unsubscribe,
 } from './index.js';
+// Retry configuration types live in `./types.ts` (issue #559); the rest are
+// re-exported from the package entry point.
+export type { RetryMiddlewareConfig } from './types.js';
 export * from './index.js';
 
 export default Astroid;

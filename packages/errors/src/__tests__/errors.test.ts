@@ -14,6 +14,12 @@
 
 import { describe, it, expect } from 'vitest';
 import {
+  PolicyViolationError,
+  InsufficientFundsError,
+  BudgetExceededError,
+  ApprovalRequiredError,
+} from '../index.js';
+import {
   AstroidError,
   ApiError,
   AuthenticationError,
@@ -39,6 +45,14 @@ import { errorClassForCode } from '../index.js';
 /* -------------------------------------------------------------------------- */
 
 describe('errorClassForStatus (issue #271 / #279)', () => {
+  it('covers status codes 400, 401, 403, 404, 429, and 500 explicitly', () => {
+    expect(errorClassForStatus(400)).toBe(ValidationError);
+    expect(errorClassForStatus(401)).toBe(AuthenticationError);
+    expect(errorClassForStatus(403)).toBe(ForbiddenError);
+    expect(errorClassForStatus(404)).toBe(NotFoundError);
+    expect(errorClassForStatus(429)).toBe(RateLimitError);
+    expect(errorClassForStatus(500)).toBe(InternalServerError);
+  });
   it('maps 400 to ValidationError', () => {
     expect(errorClassForStatus(400)).toBe(ValidationError);
   });
@@ -60,6 +74,13 @@ describe('errorClassForStatus (issue #271 / #279)', () => {
 
   it('maps 409 to ConflictError', () => {
     expect(errorClassForStatus(409)).toBe(ConflictError);
+  });
+
+  it('maps policy and budget error codes via errorClassForCode', () => {
+    expect(errorClassForCode('POLICY_VIOLATION')).toBe(PolicyViolationError);
+    expect(errorClassForCode('BUDGET_EXCEEDED')).toBe(BudgetExceededError);
+    expect(errorClassForCode('INSUFFICIENT_FUNDS')).toBe(InsufficientFundsError);
+    expect(errorClassForCode('APPROVAL_REQUIRED')).toBe(ApprovalRequiredError);
   });
 
   it('maps 422 to ValidationError', () => {

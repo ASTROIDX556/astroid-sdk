@@ -16,6 +16,8 @@ export {
   useUpdateAgentMetadata,
   useArchiveAgent,
   useDeleteAgent,
+  useAgentMutations,
+  type UseAgentMutationsResult,
   useSimulatePolicy,
   type WalletMutationVariables,
   type WalletMutationResult,

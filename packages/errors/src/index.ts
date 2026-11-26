@@ -91,6 +91,10 @@ export const AstroidInsufficientFundsError = InsufficientFundsError;
 /** Alias for {@link PolicyViolationError} — matches the naming used in API docs and client middleware. */
 export const AstroidPolicyViolationError = PolicyViolationError;
 
+/** Alias for {@link AuthenticationError} — matches alternative naming conventions. */
+export const UnauthorizedError = AuthenticationError;
+export type UnauthorizedError = AuthenticationError;
+
 /**
  * Maps an API error code to its concrete error class. Unknown codes fall back to
  * the base `AstroidError`.

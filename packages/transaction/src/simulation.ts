@@ -28,6 +28,27 @@ import { validateTransactionEnvelope } from './validator.js';
 export interface SimulationOptions {
   networkPassphrase?: string;
   feeBufferPercentage?: number;
+  client?: {
+    post<T>(path: string, body?: unknown): Promise<{ data: T }>;
+  };
+}
+
+export interface SimulationRequest {
+  transactionXdr: string;
+  networkPassphrase?: string;
+}
+
+export interface SimulationResult {
+  baseFee: number;
+  estimatedFee: number;
+  feeBufferPercentage: number;
+  isViable: boolean;
+  error?: TransactionSimulationError;
+  remote?: {
+    performed: boolean;
+    success: boolean;
+    data?: unknown;
+  };
 }
 
 export interface SimulationResult {
@@ -41,6 +62,52 @@ export interface SimulationResult {
 /**
  * Simulates a Stellar transaction fee and viability from an XDR string or Transaction object.
  */
+export async function simulateTransactionWithClient(
+  transactionOrXdr: string | Transaction,
+  options?: SimulationOptions,
+): Promise<SimulationResult> {
+  const localResult = simulateTransactionFee(transactionOrXdr, options);
+  if (!localResult.isViable || !options?.client) {
+    return localResult;
+  }
+
+  let xdrString = '';
+  if (typeof transactionOrXdr === 'string') {
+    xdrString = transactionOrXdr;
+  } else {
+    xdrString = transactionOrXdr.toXDR();
+  }
+
+  try {
+    const response = await options.client.post<unknown>('/transactions/simulate', {
+      transactionXdr: xdrString,
+      networkPassphrase: options.networkPassphrase ?? Networks.PUBLIC,
+    });
+    return {
+      ...localResult,
+      remote: {
+        performed: true,
+        success: true,
+        data: response.data,
+      },
+    };
+  } catch (error) {
+    const err = normalizeTransactionError(error, 'Remote transaction simulation failed', {
+      transactionXdr: xdrString,
+      isSimulation: true,
+    });
+    return {
+      ...localResult,
+      isViable: false,
+      error: err,
+      remote: {
+        performed: true,
+        success: false,
+      },
+    };
+  }
+}
+
 export function simulateTransactionFee(
   transactionOrXdr: string | Transaction,
   options?: SimulationOptions,

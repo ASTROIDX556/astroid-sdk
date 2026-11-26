@@ -185,6 +185,34 @@ describe('#382 — 503 Service Unavailable retries', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
+  it('respects Retry-After header on 429 responses', async () => {
+    vi.useFakeTimers();
+    const fetchMock = fetchQueue(
+      new Response(JSON.stringify({ error: { code: 'RATE_LIMITED', message: 'Too many requests' } }), {
+        status: 429,
+        headers: { 'content-type': 'application/json', 'retry-after': '2' },
+      }),
+      okResponse({ walletId: 'w_retry_after' }),
+    );
+    const client = new Astroid({
+      ...BASE_CONFIG,
+      fetch: fetchMock,
+      maxRetries: 1,
+      baseDelay: 10,
+      jitter: false,
+    });
+
+    const pending = client.wallets.get('w_retry_after');
+    // Advance by less than Retry-After (2s = 2000ms)
+    await vi.advanceTimersByTimeAsync(1_500);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Advance past 2000ms
+    await vi.advanceTimersByTimeAsync(600);
+    await expect(pending).resolves.toMatchObject({ walletId: 'w_retry_after' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it('does not retry client-side 4xx responses other than 429', async () => {
     const fetchMock = vi.fn(async () => errorResponse(400, 'BAD_REQUEST', 'Invalid id'));
     const client = new Astroid({
@@ -299,5 +327,124 @@ describe('#382 — idempotency policy', () => {
 
     await expect(postClient.http.post('/wallets', { label: 'Ops' })).rejects.toBeDefined();
     expect(postFetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Non-idempotent retry permission, abort behaviour, timer cleanup            */
+/* -------------------------------------------------------------------------- */
+
+describe('#543 — explicit retry permission for non-idempotent requests', () => {
+  it('retries a POST when explicitly permitted via `retryable: true`', async () => {
+    const fetchMock = fetchQueue(errorResponse(503), okResponse({ id: 'p2' }));
+    const client = new Astroid({
+      ...BASE_CONFIG,
+      fetch: fetchMock,
+      maxRetries: 2,
+      baseDelay: 1,
+      jitter: false,
+    });
+
+    await expect(
+      client.http.post('/wallets', { label: 'Ops' }, { retryable: true }),
+    ).resolves.toMatchObject({ data: { id: 'p2' } });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries a POST carrying an idempotency key by default', async () => {
+    const fetchMock = fetchQueue(errorResponse(503), okResponse({ id: 'p3' }));
+    const client = new Astroid({
+      ...BASE_CONFIG,
+      fetch: fetchMock,
+      maxRetries: 2,
+      baseDelay: 1,
+      jitter: false,
+    });
+
+    await expect(
+      client.http.post('/wallets', { label: 'Ops' }, { idempotencyKey: 'key_1' }),
+    ).resolves.toMatchObject({ data: { id: 'p3' } });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('#543 — abort behaviour', () => {
+  it('rejects immediately when the signal is already aborted, without calling fetch', async () => {
+    const fetchMock = vi.fn();
+    const client = new Astroid({
+      ...BASE_CONFIG,
+      fetch: fetchMock,
+      maxRetries: 2,
+      baseDelay: 1,
+      jitter: false,
+    });
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(client.http.get('/wallets', { signal: controller.signal })).rejects.toMatchObject(
+      { name: 'AbortError' },
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('stops retrying when the caller aborts mid-flight', async () => {
+    const fetchMock = vi.fn().mockImplementation(
+      (_url, init: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () => {
+            reject(new DOMException('The operation was aborted.', 'AbortError'));
+          });
+        }),
+    );
+    const client = new Astroid({
+      ...BASE_CONFIG,
+      fetch: fetchMock as unknown as typeof fetch,
+      maxRetries: 3,
+      baseDelay: 1,
+      jitter: false,
+    });
+    const controller = new AbortController();
+
+    const pending = client.http.get('/wallets', { signal: controller.signal });
+    // Let the request start, then abort mid-flight.
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('#543 — timer cleanup', () => {
+  it('clears the timeout timer after a successful response', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn(async () => okResponse({ id: 'ok' }));
+    const client = new Astroid({
+      ...BASE_CONFIG,
+      fetch: fetchMock,
+      timeoutMs: 50,
+      jitter: false,
+    });
+
+    const res = await client.http.get('/wallets');
+    expect(res.data).toEqual({ id: 'ok' });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('clears the retry backoff timer when the request settles', async () => {
+    vi.useFakeTimers();
+    const fetchMock = fetchQueue(errorResponse(503), okResponse({ id: 'ok' }));
+    const client = new Astroid({
+      ...BASE_CONFIG,
+      fetch: fetchMock,
+      maxRetries: 2,
+      baseDelay: 1,
+      jitter: false,
+    });
+
+    const pending = client.http.get('/wallets');
+    await vi.advanceTimersByTimeAsync(10);
+    await expect(pending).resolves.toMatchObject({ data: { id: 'ok' } });
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
