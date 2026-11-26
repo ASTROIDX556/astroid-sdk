@@ -111,7 +111,7 @@ export const X_CORRELATION_ID_HEADER = 'x-correlation-id';
  * Header names accepted as caller-supplied tracing headers (lowercase, as they
  * appear in `PreparedRequest.headers`).
  */
-const TRACING_HEADER_NAMES = [
+export const TRACING_HEADER_NAMES = [
   CORRELATION_ID_HEADER,
   X_CORRELATION_ID_HEADER,
   REQUEST_ID_HEADER,
@@ -170,6 +170,9 @@ function normalizeTracingHeaders(
   }
   return normalized;
 }
+
+/** Singleton correlation middleware instance (no telemetry hooks). */
+export const correlationMiddleware = createCorrelationMiddleware();
 
 /**
  * Create the request ID / correlation tracing middleware.
@@ -269,13 +272,8 @@ export function createCorrelationMiddleware(
         status: res.status,
         durationMs,
         success: res.status >= 200 && res.status < 300,
+        headers: res.headers,
       });
     },
   };
 }
-
-/** Singleton correlation middleware instance (no telemetry hooks). */
-export const correlationMiddleware = createCorrelationMiddleware();
-
-/** Re-export the accepted tracing header names for consumers and tests. */
-export const TRACED_HEADERS = TRACING_HEADER_NAMES;
