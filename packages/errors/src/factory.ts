@@ -20,7 +20,7 @@ import {
   RateLimitError,
   InternalServerError,
 } from './classes.js';
-import { AstroidError } from './base.js';
+import { AstroidError, type AstroidErrorOptions } from './base.js';
 
 /** Raw HTTP response shape for mapping. */
 export interface RawHttpResponse {

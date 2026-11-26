@@ -29,6 +29,19 @@ import {
 } from './schemas.js';
 import { serializeAgentQuery } from './query.js';
 
+
+/**
+ * Drop `undefined` / `null` entries so they never reach the query string, and
+ * serialise event-type filters as a comma-separated list.
+ */
+function toAgentListQuery(params: AgentListParams = {}): Record<string, string> {
+  const query: Record<string, string> = {};
+  if (params.status) query.status = params.status;
+  if (params.walletAddress) query.walletAddress = params.walletAddress;
+  if (params.limit) query.limit = String(params.limit);
+  if (params.page) query.page = String(params.page);
+  return query;
+}
 /** Filters accepted by {@link AgentResource.list}. */
 export type AgentListParams = ListAgentsParams;
 export type AgentListOptions = ListAgentsParams;
@@ -502,18 +515,7 @@ function isNotFound(error: unknown): boolean {
   );
 }
 
-/**
- * Drop `undefined` / `null` entries so they never reach the query string, and
- * serialise event-type filters as a comma-separated list.
- */
-function toAgentListQuery(params: AgentListParams = {}): Record<string, string> {
-  const query: Record<string, string> = {};
-  if (params.status) query.status = params.status;
-  if (params.walletAddress) query.walletAddress = params.walletAddress;
-  if (params.limit) query.limit = String(params.limit);
-  if (params.page) query.page = String(params.page);
-  return query;
-}
+
 
 function toAgentEventQuery(
   params?: ListAgentEventsParams,
