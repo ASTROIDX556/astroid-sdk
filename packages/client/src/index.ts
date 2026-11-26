@@ -76,82 +76,19 @@ import type {
 } from '@astroid/types';
 import { createErrorTranslatorMiddleware } from './middleware/error.js';
 import { createTokenRefreshInterceptor } from './token-refresh.js';
+import type { RetryClientOptions } from './types.js';
 
 /**
  * Configuration accepted by `new Astroid({ ... })`.
  *
  * Extends the core client config with shorthand retry options
  * (`retries` / `minTimeout` / `maxTimeout` / `backoffFactor` (`factor`) /
- * `retryableStatuses` / `jitter`) for convenience. Each is merged into the
- * `retry` block, so the full {@link RetryOptions} surface (and the resolved
- * {@link RetryConfig}) remains available for advanced use.
+ * `retryableStatuses` / `jitter`), declared in `./types.ts` as
+ * {@link RetryClientOptions}. Each is merged into the `retry` block, so the
+ * full {@link RetryOptions} surface (and the resolved {@link RetryConfig})
+ * remains available for advanced use.
  */
-export interface AstroidClientConfig extends CoreClientConfig {
-  /** Maximum number of retries after the first attempt (shorthand for `retry.maxRetries`). */
-  retries?: number;
-  /** Maximum number of retries after the first attempt (alias for `retries` / `retry.maxRetries`). */
-  maxRetries?: number;
-  /**
-   * Minimum (base) backoff delay in ms before the first retry — the delay grows
-   * exponentially from here (shorthand for `retry.baseDelayMs`).
-   */
-  minTimeout?: number;
-  /** Base backoff delay in ms before the first retry (alias for `minTimeout` / `retry.baseDelayMs`). */
-  baseDelay?: number;
-  /** Base backoff delay in ms before the first retry (alias for `minTimeout` / `retry.baseDelayMs`). */
-  baseDelayMs?: number;
-  /**
-   * Maximum backoff delay in ms for any single retry (shorthand for
-   * `retry.maxDelayMs`).
-   */
-  maxTimeout?: number;
-  /** Maximum backoff delay in ms for any single retry (alias for `maxTimeout` / `retry.maxDelayMs`). */
-  maxDelay?: number;
-  /** Maximum backoff delay in ms for any single retry (alias for `maxTimeout` / `retry.maxDelayMs`). */
-  maxDelayMs?: number;
-  /**
-   * HTTP statuses that should be retried (shorthand for
-   * `retry.retryableStatuses`). Defaults to `[408, 429, 500, 502, 503, 504]`.
-   */
-  retryableStatuses?: number[];
-  /**
-   * HTTP status codes that should be retried (alias for `retryableStatuses` /
-   * `retry.retryableStatusCodes`). Defaults to `[408, 429, 500, 502, 503, 504]`.
-   */
-  retryableStatusCodes?: number[];
-  /**
-   * Exponential growth factor applied between retries — the uncapped delay for
-   * retry `n` is `retry.baseDelayMs * backoffFactor^(n-1)` (shorthand for
-   * `retry.backoffFactor`). Defaults to `2`; use `1` for a constant delay and
-   * values above `2` to back off more aggressively.
-   */
-  backoffFactor?: number;
-  /**
-   * Exponential growth factor applied between retries (alias for
-   * {@link AstroidClientConfig.backoffFactor} / `retry.backoffFactor`).
-   * Defaults to `2`.
-   */
-  factor?: number;
-  /**
-   * Apply full jitter to each backoff delay (shorthand for `retry.jitter`).
-   * Default `true`; set to `false` for deterministic delays.
-   */
-  jitter?: boolean;
-  /**
-   * Base retry delay in ms. Legacy alias for {@link AstroidClientConfig.minTimeout}.
-   * @deprecated Prefer `minTimeout` or `baseDelay`.
-   */
-  retryDelay?: number;
-  /**
-   * Configurable retry policy for transient errors (408, 429, 5xx gateway errors,
-   * and transport timeouts).
-   * Alias for `retry`.
-   */
-  retryPolicy?: boolean | Partial<RetryConfig>;
-  /**
-   * Configurable retry policy (alias for `retry`).
-   */
-  retryOptions?: boolean | Partial<RetryConfig>;
+export interface AstroidClientConfig extends CoreClientConfig, RetryClientOptions {
   /** Request/response logging hooks with automatic header redaction. */
   logging?: LoggingMiddlewareOptions;
   /**
@@ -871,6 +808,14 @@ export {
 // and `retryMiddleware` are already re-exported above; these add the pieces the
 // retry module owns directly.
 export { computeRetryDelay, type RetryMiddlewareConfig } from './retry.js';
+// Public retry configuration types (issue #559). `AstroidClientConfig` extends
+// `RetryClientOptions`, so these are the canonical names for the retry knobs
+// accepted by `new Astroid({ ... })`.
+export type { RetryClientOptions } from './types.js';
+export type {
+  RetryOptions as ClientRetryOptions,
+  RetryConfig as ClientRetryConfig,
+} from './types.js';
 export {
   createRateLimiterMiddleware,
   rateLimiterMiddleware,
