@@ -97,6 +97,21 @@ describe('X-Request-ID generation (issue #255)', () => {
     expect(prepared.headers[REQUEST_ID_HEADER]).toBe('corr-123');
   });
 
+  it('honors a caller-supplied x-request-id header', async () => {
+    const mw = createCorrelationMiddleware();
+    const prepared = await mw.onRequest!(makePreparedRequest({ headers: { 'x-request-id': 'custom-req-hdr' } }));
+    expect(prepared.headers['x-request-id']).toBe('custom-req-hdr');
+  });
+
+  it('automatically injects X-Request-ID when absent and respects explicit overrides', async () => {
+    const mw = createCorrelationMiddleware();
+    const reqWithout = await mw.onRequest!(makePreparedRequest());
+    expect(reqWithout.headers[REQUEST_ID_HEADER]).toMatch(UUID_V4_RE);
+
+    const reqWithOverride = await mw.onRequest!(makePreparedRequest({ requestId: 'explicit-req-id-999' }));
+    expect(reqWithOverride.headers[REQUEST_ID_HEADER]).toBe('explicit-req-id-999');
+  });
+
   it('honors a caller-supplied x-request-id header over generating one', async () => {
     const mw = createCorrelationMiddleware();
     const prepared = await mw.onRequest!(
