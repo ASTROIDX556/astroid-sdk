@@ -163,6 +163,10 @@ export interface ListAgentsParams {
   tag?: string;
   /** Case-insensitive substring match against the agent name. */
   search?: string;
+  /** Only agents created at or after this instant (ISO-8601). */
+  from?: IsoDateTime;
+  /** Only agents created at or before this instant (ISO-8601). */
+  to?: IsoDateTime;
 }
 
 /* -------------------------------------------------------------------------- */
