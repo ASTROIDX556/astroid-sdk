@@ -272,7 +272,6 @@ export function createCorrelationMiddleware(
         status: res.status,
         durationMs,
         success: res.status >= 200 && res.status < 300,
-        headers: res.headers,
       });
     },
   };
