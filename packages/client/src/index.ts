@@ -57,8 +57,15 @@ import {
   type RequestInterceptor,
   type ResponseInterceptor,
 } from './interceptors.js';
-import { AgentResource } from '@astroid/agent';
-import { AnalyticsResource } from '@astroid/analytics';
+
+import {
+  serializeQuery,
+  type QueryParams,
+  type QueryParamValue,
+  type QueryParamScalar,
+  type QueryArrayFormat,
+  type SerializeQueryOptions,
+} from './query.js';
 import { AuthResource, SessionManager, createSessionMiddleware } from '@astroid/auth';
 import { BudgetResource } from '@astroid/budget';
 import { NotificationResource } from '@astroid/notification';
@@ -959,6 +966,19 @@ export {
   type UnauthorizedHandler,
 } from './token-refresh.js';
 
+// Standardized query-parameter serialization (issue #264): strings, numbers,
+// booleans, Dates (ISO), arrays and nested objects; null/undefined omitted.
+export {
+  serializeQuery,
+  type QueryParams,
+  type QueryParamValue,
+  type QueryParamScalar,
+  type QueryArrayFormat,
+  type SerializeQueryOptions,
+} from './query.js';
+
+
+
 // Shared auto-pagination helpers — cursor (keyset) iteration for any list
 // endpoint, plus query-parameter builders for standalone list requests.
 export type { PaginationParams, PaginatedResponse, ResponseMeta };
@@ -993,17 +1013,6 @@ export {
   type PaginationCursors,
   type PaginationHeadersInput,
 } from './pagination.js';
-
-// Standardized query-parameter serialization (issue #264): strings, numbers,
-// booleans, Dates (ISO), arrays and nested objects; null/undefined omitted.
-export {
-  serializeQuery,
-  type QueryParams,
-  type QueryParamValue,
-  type QueryParamScalar,
-  type QueryArrayFormat,
-  type SerializeQueryOptions,
-} from './query.js';
 
 // Typed list-filter builders and cursor-iteration helpers: pagination
 // (`limit`, `cursor`, `order`/`direction`) plus common filters (`search`,

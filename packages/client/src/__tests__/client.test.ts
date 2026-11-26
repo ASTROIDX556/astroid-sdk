@@ -9,7 +9,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AstroidTimeoutError, ServerError } from '@astroid/errors';
-import { Astroid, type AstroidClientConfig } from '../index.js';
+import { Astroid, serializeQuery, type AstroidClientConfig } from '../index.js';
 
 /* -------------------------------------------------------------------------- */
 /* Helpers                                                                     */
@@ -327,6 +327,56 @@ describe('#382 — idempotency policy', () => {
 
     await expect(postClient.http.post('/wallets', { label: 'Ops' })).rejects.toBeDefined();
     expect(postFetch).toHaveBeenCalledTimes(1);
+  });
+});
+/* -------------------------------------------------------------------------- */
+/* Query parameter serialization                                               */
+/* -------------------------------------------------------------------------- */
+
+describe('serializeQuery', () => {
+  it('serializes primitive strings, numbers, and booleans', () => {
+    const result = serializeQuery({
+      search: 'test',
+      limit: 10,
+      active: true,
+      zero: 0,
+      falseVal: false,
+    });
+    expect(result).toBe('search=test&limit=10&active=true&zero=0&falseVal=false');
+  });
+
+  it('omits null and undefined values', () => {
+    const result = serializeQuery({
+      search: 'test',
+      cursor: null,
+      order: undefined,
+    });
+    expect(result).toBe('search=test');
+  });
+
+  it('serializes Date objects to ISO-8601 strings', () => {
+    const date = new Date('2026-01-01T00:00:00.000Z');
+    const result = serializeQuery({
+      startDate: date,
+    });
+    expect(result).toBe('startDate=2026-01-01T00%3A00%3A00.000Z');
+  });
+
+  it('serializes arrays according to the configured format', () => {
+    const arr = ['USDC', 'EURC'];
+    const commaResult = serializeQuery({ asset: arr }, { arrayFormat: 'comma' });
+    expect(commaResult).toBe('asset=USDC%2CEURC');
+
+    const repeatResult = serializeQuery({ asset: arr }, { arrayFormat: 'repeat' });
+    expect(repeatResult).toBe('asset=USDC&asset=EURC');
+  });
+
+  it('ignores empty arrays', () => {
+    const result = serializeQuery({
+      asset: [],
+      search: 'test',
+    });
+    expect(result).toBe('search=test');
   });
 });
 
