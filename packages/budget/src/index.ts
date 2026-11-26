@@ -122,6 +122,7 @@ import { Resource, type RequestOptionsExtras } from '@astroid/core';
 import type {
   Budget,
   BudgetAlert,
+  BudgetMetrics,
   BudgetExpenditureSummary,
   BudgetExpenditureSummaryParams,
   BudgetHistoryEntry,
@@ -638,6 +639,20 @@ export class BudgetResource extends Resource {
     options?: RequestOptionsExtras,
   ): Promise<BudgetUtilization> {
     return this.utilization(budgetId, options);
+  }
+
+  /**
+   * Retrieve budget utilization metrics and threshold status across budgets (issue #619).
+   *
+   * @param params Optional query filters including threshold percentage.
+   * @param options Extra request options forwarded to the HTTP client.
+   * @returns Budget metrics and utilization summary.
+   */
+  async getBudgetMetrics(
+    params: { thresholdPercent?: number; agentId?: string; walletId?: string } = {},
+    options?: RequestOptionsExtras,
+  ): Promise<BudgetMetrics> {
+    return this.getData<BudgetMetrics>('/budgets/metrics', toBudgetQuery(params), options);
   }
 
   /**
