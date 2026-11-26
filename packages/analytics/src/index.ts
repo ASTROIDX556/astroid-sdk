@@ -32,9 +32,9 @@ import type {
   TransactionVolumeReport,
   TimeSeriesDataParams,
   TimeSeriesDataResponse,
-  MetricsQueryParams,
 } from '@astroid/types';
 import { getMetricsInRange } from './analytics.js';
+import type { AnalyticsMetricsQuery } from './types.js';
 import { getAgentMetrics, getGlobalAnalytics } from './metrics.js';
 // Re-export the aggregated-metrics query helpers (issue #78) from the package
 // entry point so consumers can call them directly as well as through
@@ -42,6 +42,10 @@ import { getAgentMetrics, getGlobalAnalytics } from './metrics.js';
 // which failed the `dts` build (`TS6192: All imports in import declaration are
 // unused`).
 export { getAgentMetrics, getGlobalAnalytics } from './metrics.js';
+
+// Time-series aggregation query types (issue #563): date range plus
+// `'hour' | 'day' | 'week'` interval granularity for `getMetrics`.
+export type { AnalyticsDateRange, AnalyticsInterval, AnalyticsMetricsQuery } from './types.js';
 
 export {
   AnalyticsQueryResource,
@@ -424,8 +428,13 @@ export class AnalyticsResource extends Resource {
   }
 
   /**
-   * Strongly typed metrics query with explicit time-range filtering
-   * (`startTime`, `endTime`, `interval`) — issue #403.
+   * Strongly typed metrics query with explicit time-range filtering —
+   * issues #403 and #563.
+   *
+   * Accepts either the legacy `startTime`/`endTime` bounds or the
+   * `startDate`/`endDate` aliases, plus an `interval` bucket granularity of
+   * `'hour' | 'day' | 'week'`. `Date` instances and ISO-8601 strings are both
+   * accepted for the range bounds and are normalised to ISO-8601 UTC.
    *
    * The range parameters are serialised into a `URLSearchParams` and appended
    * to the `/analytics/metrics` endpoint request; invalid or missing dates and
@@ -434,15 +443,15 @@ export class AnalyticsResource extends Resource {
    * @example
    * ```ts
    * const report = await astroid.analytics.getMetrics({
-   *   startTime: '2026-01-01T00:00:00.000Z',
-   *   endTime: '2026-01-08T00:00:00.000Z',
+   *   startDate: '2026-01-01T00:00:00.000Z',
+   *   endDate: '2026-01-08T00:00:00.000Z',
    *   interval: 'day',
    *   metrics: ['transaction_volume'],
    * });
    * ```
    */
   async getMetrics(
-    query: MetricsQueryParams = {},
+    query: AnalyticsMetricsQuery = {},
     options?: RequestOptionsExtras,
   ): Promise<AnalyticsMetricsResponse> {
     return getMetricsInRange(this.client, query, options);
