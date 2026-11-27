@@ -7,6 +7,8 @@
  */
 
 import type { PolicyType } from './enums.js';
+export type { PolicyType };
+// SimulatePolicyInput, CreatePolicyInput, and UpdatePolicyInput are exported from dto.ts
 
 /* -------------------------------------------------------------------------- */
 /* Policy conditions and decision reasons                                      */
@@ -310,6 +312,23 @@ export interface PolicySimulationResult {
   explanation: string;
 }
 
+export interface CreatePolicyInput {
+  name: string;
+  description?: string;
+  type: PolicyType;
+  rules?: PolicyRule[];
+  enabled?: boolean;
+}
+
+export interface UpdatePolicyInput {
+  name?: string;
+  description?: string;
+  rules?: PolicyRule[];
+  enabled?: boolean;
+}
+
+export type SimulatePolicyInput = PolicySimulationInput;
+
 export interface SimulatePolicyRequest {
   walletId?: string;
   asset: string;
@@ -551,7 +570,7 @@ export interface PolicySimulationEvaluation {
   /** The breached rules, in the order the API reported them. */
   violatedRules: PolicyRuleBreach[];
   /**
-   * The 0..1 risk score reported by the API, clamped to the `0`–`1` range.
+   * The 0..1 risk score reported by the API, clamped to the `0`–1 range.
    * `0` when the API reported no risk assessment.
    */
   riskScore: number;
@@ -576,10 +595,10 @@ export interface PolicySimulationEvaluation {
  * day* and is evaluated locally by `evaluatePolicy` in `@astroid/policy`.
  */
 export interface PolicyAllowedHours {
-  /** Inclusive start hour in 24-hour time (`0`–`23`). */
+  /** Inclusive start hour in 24-hour time (`0`–23). */
   startHour: number;
   /**
-   * Exclusive end hour (`0`–`23`). A value less than or equal to `startHour`
+   * Exclusive end hour (`0`–23). A value less than or equal to `startHour`
    * describes a window that wraps past midnight (e.g. `22` → `6` permits
    * 22:00–23:59 and 00:00–05:59).
    */
