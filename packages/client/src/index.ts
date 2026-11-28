@@ -971,11 +971,6 @@ export {
   CORRELATION_ID_HEADER,
   REQUEST_ID_HEADER,
   X_CORRELATION_ID_HEADER,
-  CorrelationTracingConfig,
-  correlationMiddleware,
-  CORRELATION_ID_HEADER,
-  REQUEST_ID_HEADER,
-  X_CORRELATION_ID_HEADER,
   type CorrelationTracingConfig,
 } from './middleware/correlation.js';
 
