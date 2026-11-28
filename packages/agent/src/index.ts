@@ -76,4 +76,4 @@ export {
   type ScopedAgent,
 } from './scopes.js';
 
-export type { ListAgentsOptions, AgentFilterStatus } from './types.js';
+export type { ListAgentsOptions, AgentFilterStatus, AgentFilterOptions } from './types.js';

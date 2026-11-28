@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { Budget, BudgetHistoryEntry } from '@astroid/types';
 
-import { calculateUtilization, estimateBurnRate, isThresholdExceeded } from '../metrics.js';
+import { calculateUtilization, estimateBurnRate, getBudgetMetrics, isThresholdExceeded } from '../metrics.js';
 
 function makeBudget(overrides: Partial<Budget> = {}): Budget {
   return {
@@ -132,6 +132,39 @@ describe('isThresholdExceeded', () => {
 
     expect(result.exceeded).toBe(true);
     expect(result.level).toBe('warn');
+  });
+});
+
+describe('getBudgetMetrics', () => {
+  it('returns metrics for all budgets when no options are supplied', () => {
+    const b1 = makeBudget({ id: 'b1', limitAmount: '100', spent: '50' });
+    const b2 = makeBudget({ id: 'b2', limitAmount: '200', spent: '10' });
+    const metrics = getBudgetMetrics([b1, b2]);
+    expect(metrics).toHaveLength(2);
+    expect(metrics[0]?.budgetId).toBe('b1');
+    expect(metrics[0]?.utilization).toBe(0.5);
+    expect(metrics[1]?.budgetId).toBe('b2');
+  });
+
+  it('filters budgets by threshold ratio or percentage', () => {
+    const b1 = makeBudget({ id: 'b1', limitAmount: '100', spent: '50' });
+    const b2 = makeBudget({ id: 'b2', limitAmount: '100', spent: '85' });
+    const metrics = getBudgetMetrics([b1, b2], { threshold: 0.8 });
+    expect(metrics).toHaveLength(1);
+    expect(metrics[0]?.budget.id).toBe('b2');
+
+    const metricsPercent = getBudgetMetrics([b1, b2], { threshold: 80 });
+    expect(metricsPercent).toHaveLength(1);
+    expect(metricsPercent[0]?.budget.id).toBe('b2');
+  });
+
+  it('filters by period and enabled status', () => {
+    const b1 = makeBudget({ id: 'b1', period: 'DAILY', enabled: true, limitAmount: '100', spent: '50' });
+    const b2 = makeBudget({ id: 'b2', period: 'MONTHLY', enabled: true, limitAmount: '100', spent: '50' });
+    const b3 = makeBudget({ id: 'b3', period: 'DAILY', enabled: false, limitAmount: '100', spent: '50' });
+    
+    expect(getBudgetMetrics([b1, b2, b3], { period: 'DAILY' })).toHaveLength(2);
+    expect(getBudgetMetrics([b1, b2, b3], { enabled: false })).toHaveLength(1);
   });
 });
 

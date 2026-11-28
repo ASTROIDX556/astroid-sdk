@@ -30,6 +30,7 @@ import {
 } from './schemas.js';
 
 /** Filters accepted by {@link AgentResource.list}. */
+export type AgentFilterOptions = ListAgentsParams;
 export type AgentListParams = ListAgentsParams;
 export type AgentListOptions = ListAgentsParams;
 
@@ -523,15 +524,9 @@ function toAgentEventQuery(
 }
 
 /**
- * Clamp a caller-supplied list `limit` into the Astroid API bounds
- * `[MIN_PAGINATION_LIMIT, MAX_PAGINATION_LIMIT]` (shared with
- * `@astroid/client` via `@astroid/types`).
- *
- * - Non-numeric, non-finite values yield `undefined` so the parameter is
- *   omitted from the query instead of sending garbage to the API.
- * - Fractional values are floored; values below the minimum clamp up to
- *   {@link MIN_PAGINATION_LIMIT} and values above the maximum clamp down to
- *   {@link MAX_PAGINATION_LIMIT}.
+ * Normalize the agent list filters into the wire query expected by the API.
+ * Keep this local to the resource so the validation and serialization rules
+ * stay in one place.
  */
 function normalizeListLimit(limit: ListAgentsParams['limit']): number | undefined {
   if (typeof limit !== 'number' || !Number.isFinite(limit)) return undefined;
@@ -541,10 +536,6 @@ function normalizeListLimit(limit: ListAgentsParams['limit']): number | undefine
   return floored;
 }
 
-/**
- * Keep only the `'asc'` / `'desc'` sort directions, so an invalid `order`
- * value is dropped from the query string instead of reaching the API.
- */
 function normalizeListOrder(order: ListAgentsParams['order']): ListAgentsParams['order'] {
   return order === 'asc' || order === 'desc' ? order : undefined;
 }
@@ -561,6 +552,8 @@ function toAgentListQuery(params: AgentListOptions = {}): Record<string, string 
   if (params.role !== undefined) query.role = params.role;
   if (params.tag !== undefined) query.tag = params.tag;
   if (params.search !== undefined) query.search = params.search;
+  if (params.from !== undefined) query.from = params.from;
+  if (params.to !== undefined) query.to = params.to;
   return query;
 }
 

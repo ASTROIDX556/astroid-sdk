@@ -231,7 +231,6 @@ describe('AgentResource CRUD', () => {
       expect(result.meta?.total).toBe(1);
       expect(result.meta?.page).toBe(1);
     });
-
     it('serializes cursor, limit and order as query parameters', async () => {
       http.get.mockResolvedValue(httpOk([]));
 
