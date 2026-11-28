@@ -2,6 +2,9 @@ import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { useAstroidClient } from '../hooks.js';
 import type { AgentAnalytics, AnalyticsQueryParams } from '@astroid/types';
 
+/** Backwards-compatible name for the analytics payload returned by the hook. */
+export type AgentAnalyticsData = AgentAnalytics;
+
 /**
  * Query key factory for agent analytics.
  */
@@ -52,7 +55,7 @@ export function useAgentAnalytics(
 
   return useQuery({
     queryKey: agentAnalyticsKeys.detail(agentId ?? '', params),
-    queryFn: () => astroid.analytics.getAgentAnalytics(agentId as string, params),
+    queryFn: () => astroid.analytics.agents({ ...(params ?? {}), agentId: agentId as string }),
     enabled: Boolean(agentId) && enabled,
     staleTime,
     refetchInterval: refetchInterval ?? false,

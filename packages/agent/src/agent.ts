@@ -524,9 +524,24 @@ function toAgentEventQuery(
 }
 
 /**
- * Clamp a caller-supplied list `limit` into the Astroid API bounds
- * `[MIN_PAGINATION_LIMIT, MAX_PAGINATION_LIMIT]` (shared with
- * `@
+ * Normalize the agent list filters into the wire query expected by the API.
+ * Keep this local to the resource so the validation and serialization rules
+ * stay in one place.
+ */
+function normalizeListLimit(limit: ListAgentsParams['limit']): number | undefined {
+  if (typeof limit !== 'number' || !Number.isFinite(limit)) return undefined;
+  const floored = Math.floor(limit);
+  if (floored < MIN_PAGINATION_LIMIT) return MIN_PAGINATION_LIMIT;
+  if (floored > MAX_PAGINATION_LIMIT) return MAX_PAGINATION_LIMIT;
+  return floored;
+}
+
+function normalizeListOrder(order: ListAgentsParams['order']): ListAgentsParams['order'] {
+  return order === 'asc' || order === 'desc' ? order : undefined;
+}
+
+function toAgentListQuery(params: AgentListOptions = {}): Record<string, string | number> {
+  const query: Record<string, string | number> = {};
   if (params.page !== undefined) query.page = params.page;
   const limit = normalizeListLimit(params.limit);
   if (limit !== undefined) query.limit = limit;
@@ -536,7 +551,6 @@ function toAgentEventQuery(
   if (params.status !== undefined) query.status = params.status;
   if (params.role !== undefined) query.role = params.role;
   if (params.tag !== undefined) query.tag = params.tag;
-  if (params.tags !== undefined) query.tags = Array.isArray(params.tags) ? params.tags.join(',') : params.tags;
   if (params.search !== undefined) query.search = params.search;
   if (params.from !== undefined) query.from = params.from;
   if (params.to !== undefined) query.to = params.to;
