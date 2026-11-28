@@ -1,22 +1,7 @@
 /**
- * Transaction simulation and fee-estimation contracts shared by
- * `@astroid/transaction` and API consumers.
- *
- * These types describe the structured result of the two pre-flight helpers the
- * transaction package exposes — {@link TransactionFeeEstimate} for fee bidding
- * and {@link TransactionSimulationOutcome} for execution viability — so callers
- * can reason about a transaction *before* it is broadcast, whether the estimate
- * came from local envelope decoding or a live Horizon / Astroid API round-trip.
- *
- * @module
+ * Transaction simulation request and response types for Astroid SDK.
  */
 
-import type {
-  PolicyBudgetImpact,
-  PolicyReasonCode,
-  PolicyRiskAssessment,
-  PolicySimulationDecision,
-} from './policy.js';
 
 /**
  * Congestion classification derived from live Horizon fee statistics.
@@ -27,20 +12,6 @@ import type {
  * - `unknown`   — no live sample was available (offline / query failed).
  */
 export type StellarNetworkState = 'normal' | 'busy' | 'congested' | 'unknown';
-
-/** Machine-readable reason a simulated transaction was deemed non-viable. */
-export type TransactionSimulationErrorCode =
-  | 'INVALID_ENVELOPE'
-  | 'ZERO_OR_NEGATIVE_FEE'
-  | 'FEE_BELOW_MINIMUM'
-  | 'FEE_TOO_HIGH'
-  | 'FEE_BUMP_REQUIRED'
-  | 'POLICY_VIOLATION'
-  | 'NO_OPERATIONS'
-  | 'VALIDATION_FAILED'
-  | 'SIMULATION_FAILED'
-  | 'MALFORMED_RESPONSE'
-  | 'NETWORK_ERROR';
 
 /**
  * Estimated on-chain resource consumption reported for a simulated
@@ -87,10 +58,6 @@ export type TransactionSimulationStatus =
   | 'failed'
   | 'fee_bump_required'
   | 'policy_violation';
-
-/* -------------------------------------------------------------------------- */
-/* Fee estimation                                                              */
-/* -------------------------------------------------------------------------- */
 
 /**
  * Options for the `estimateFee` helper.
@@ -142,17 +109,10 @@ export interface TransactionFeeEstimate {
   transactionXdr?: string;
 }
 
-/* -------------------------------------------------------------------------- */
-/* Simulation                                                                  */
-/* -------------------------------------------------------------------------- */
-
-export interface TransactionSimulationRequest {
-  transactionXdr: string;
-  networkPassphrase?: string;
-  agentId?: string;
-  walletId?: string;
-  metadata?: Record<string, unknown>;
-}
+export type PolicyReasonCode = string;
+export type PolicySimulationDecision = 'allow' | 'deny' | 'require_approval';
+export type PolicyRiskAssessment = 'low' | 'medium' | 'high' | 'critical';
+export type PolicyBudgetImpact = { budgetId: string; impactAmount: string }
 
 export interface TransactionSimulationPolicyViolation {
   policyId: string;
@@ -176,7 +136,10 @@ export interface TransactionSimulationPolicyEvaluation {
   explanation?: string;
 }
 
+export type TransactionSimulationErrorCode = string;
+
 export type TransactionPolicyViolation = TransactionSimulationPolicyViolation;
+
 export type TransactionPolicyEvaluation = TransactionSimulationPolicyEvaluation;
 
 /**
@@ -317,4 +280,35 @@ export interface TransactionSimulationOutcome {
   errorMessage?: string;
   success?: boolean;
   status?: TransactionSimulationStatus;
+}
+export interface TransactionSimulationRequest {
+  /** The raw transaction XDR string or envelope payload. */
+  transactionXdr: string;
+  /** Optional network passphrase override. */
+  networkPassphrase?: string;
+  /** Optional wallet ID associated with the simulation. */
+  walletId?: string;
+}
+
+export interface TransactionSimulationResult {
+  /** Whether the transaction simulation succeeded. */
+  success: boolean;
+  /** Estimated fee consumption. */
+  feeCharged: string;
+  /** Result XDR or result codes from Stellar execution. */
+  resultXdr?: string;
+  /** Detailed diagnostic information and error strings if simulation failed. */
+  diagnostics?: {
+    code?: string;
+    message?: string;
+    operations?: string[];
+  };
+  /** Policy compliance evaluation results. */
+  policyCompliance?: {
+    compliant: boolean;
+    violations?: Array<{
+      rule: string;
+      message: string;
+    }>;
+  };
 }
