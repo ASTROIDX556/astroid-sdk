@@ -40,7 +40,16 @@ export class NotFoundError extends AstroidError {}
 export class ConflictError extends AstroidError {}
 
 /** A transaction was blocked because it violates one or more spending policies. */
-export class PolicyViolationError extends AstroidError {}
+export class PolicyViolationError extends AstroidError {
+  readonly policyId?: string;
+  readonly rule?: string;
+
+  constructor(message: string, options?: AstroidErrorOptions) {
+    super(message, options ?? ({} as AstroidErrorOptions));
+    this.policyId = (this.details?.policyId as string) ?? undefined;
+    this.rule = (this.details?.rule as string) ?? undefined;
+  }
+}
 
 /** A transaction was blocked because the source account lacks sufficient funds. */
 export class InsufficientFundsError extends AstroidError {}
