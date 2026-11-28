@@ -4,6 +4,7 @@ import {
   Astroid,
   createRetryMiddleware,
   retryMiddleware,
+  computeRetryDelay,
   backoffDelay,
   isRetryableStatus,
 } from './index.js';
@@ -40,6 +41,17 @@ describe('Exponential Backoff & Retry Logic in Client & Middleware', () => {
     expect(isRetryableStatus(503, [500])).toBe(false);
   });
 
+  it('computes retry delay respecting Retry-After header on 429 rate limit responses', () => {
+    const config = { maxRetries: 3, baseDelayMs: 100, maxDelayMs: 10000 };
+    // 2 seconds Retry-After -> 2000ms
+    expect(computeRetryDelay(1, config, 429, 2)).toBe(2000);
+    // Capped at maxDelayMs
+    expect(computeRetryDelay(1, config, 429, 15)).toBe(10000);
+    // When Retry-After is undefined, falls back to backoffDelay
+    const mockRandomHalf = () => 0.5;
+    expect(computeRetryDelay(1, config, 429, undefined, mockRandomHalf)).toBe(50);
+  });
+
   it('supports constructor retries and retryDelay options', () => {
     const client = new Astroid({
       apiKey: 'sk_test_123',
@@ -48,6 +60,34 @@ describe('Exponential Backoff & Retry Logic in Client & Middleware', () => {
       retryDelay: 200,
     });
     expect(client).toBeDefined();
+  });
+
+  it('retries transient 500 errors and succeeds when backend recovers', async () => {
+    let callCount = 0;
+    const mockFetch = vi.fn().mockImplementation(async () => {
+      callCount++;
+      if (callCount < 3) {
+        return new Response(
+          JSON.stringify({ error: { message: 'Internal server error', code: 'INTERNAL_ERROR' } }),
+          { status: 500, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      return new Response(
+        JSON.stringify({ data: { id: 'w_test', balance: '100' } }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    });
+
+    const client = new Astroid({
+      apiKey: 'sk_test_123',
+      baseUrl: 'https://api.astroid.test/v1',
+      fetch: mockFetch as unknown as typeof fetch,
+      retry: { maxRetries: 3, baseDelayMs: 1, maxDelayMs: 5 },
+    });
+
+    const res = await client.wallets.get('w_test');
+    expect(res).toBeDefined();
+    expect(callCount).toBe(3);
   });
 
   it('non-retryable errors (e.g. 400, 401, 403, 404) throw immediately without retrying', async () => {
