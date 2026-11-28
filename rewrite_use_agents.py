@@ -102,6 +102,9 @@ export function useDeleteAgent(): UseMutationResult<void, Error, string> {
     },
   });
 }
+
+Description — what to implement and the why/impact.
+Autonomous agent workflows require deterministic execution timeframes. If an Astroid API endpoint hangs or responds slowly, HTTP requests in @astroid/client should support configurable timeouts and standard AbortSignal propagation to prevent dangling network operations.
 """
 
 with open('packages/react/src/hooks/useAgents.ts', 'w') as f:
